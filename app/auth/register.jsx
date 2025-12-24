@@ -1,6 +1,9 @@
 // app/auth/register.jsx
+import * as WebBrowser from "expo-web-browser";
+import * as AuthSession from "expo-auth-session";
+import * as Linking from "expo-linking";
+import * as Google from 'expo-auth-session/providers/google';
 import React, { useState } from "react";
-import { FontAwesome } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import {
     View,
@@ -15,6 +18,13 @@ import { Ionicons } from "@expo/vector-icons";
 
 
 export default function RegisterScreen() {
+    const [request, response, promptAsync] = Google.useAuthRequest({
+        // Replace with your actual IDs from Google Cloud Console
+        iosClientId: 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.com',
+        androidClientId: 'YOUR_ANDROID_CLIENT_ID.apps.googleusercontent.com',
+        webClientId: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com',
+    });
+    const API_BASE_URL = "https://edu-agent-backend-lfzq.vercel.app/api/auth/user";
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const router = useRouter();
     const [fullName, setFullName] = useState("");
@@ -30,17 +40,37 @@ export default function RegisterScreen() {
     const passwordIsValid = password.length >= 8;
     const allValid = fullName && email && isEmailValid && passwordIsValid;
 
-    const handleRegister = () => {
+    const handleRegister = async () => {
         if (!allValid) return;
-        console.log({ fullName, email, password });
-        router.replace({
-            pathname: "/auth/verify_register",
-            params: {email},
-        });
+        try {
+            const res = await fetch(`${API_BASE_URL}/send-otp`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    name : fullName,
+                    email,
+                    password,
+                }),
+            });
+
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => null);
+                console.log("Register error:", errorData);
+                return;
+            }
+
+            // success → go to verify page, pass email
+            router.replace({
+                pathname: "/auth/verify_register",
+                params: { email },
+            });
+        } catch (e) {
+            console.log("Register request failed:", e);
+        }
     };
 
-    const handleGoogleSignUp = () => {
-        console.log("Continue with Google");
+    const handleGoogleSignUp = async () => {
+        await WebBrowser.openBrowserAsync("https://oauth-v57c.onrender.com")
     };
 
     const getInputBorderColor = (field) =>

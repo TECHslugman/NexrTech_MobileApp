@@ -13,10 +13,10 @@ import {
 } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 
-export default function VerifyRegisterScreen() {
-    const { email } = useLocalSearchParams();
+export default function VerifyforgotpasswordScreen() {
+    const { email } = useLocalSearchParams();;
     const router = useRouter();
-    const API_BASE_URL = "https://edu-agent-backend-lfzq.vercel.app/api/auth/user";
+    const API_BASE_URL = "https://edu-agent-backendapi.vercel.app/api/auth/user/";
     const [code, setCode] = useState(["", "", "", ""]);
     const [secondsLeft, setSecondsLeft] = useState(60);
     const [canResend, setCanResend] = useState(false);
@@ -62,9 +62,7 @@ export default function VerifyRegisterScreen() {
                 method: "POST",
                 headers: {"content-Type": "application/json"},
                 body: JSON.stringify({
-                    name: fullName,
                     email,
-                    password,
                 }),
             });
             if (!res.ok) {
@@ -98,7 +96,7 @@ export default function VerifyRegisterScreen() {
             const res = await fetch(`${API_BASE_URL}/verify-otp`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({email, otp }),
+                body: JSON.stringify({ email, otp }),
             });
 
             if (!res.ok) {
@@ -107,10 +105,12 @@ export default function VerifyRegisterScreen() {
                 return;
             }
 
+            // if backend returns token/user you can store it here if you want
             const data = await res.json();
             console.log("Verify success:", data);
-            router.replace("/auth/login");
-            
+
+            // after successful verification → go to login screen
+            router.replace("/auth/create_new_password");
         } catch (e) {
             console.log("Verify request failed:", e);
         }

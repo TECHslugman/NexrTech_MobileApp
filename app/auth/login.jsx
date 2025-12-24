@@ -1,6 +1,7 @@
-// app/auth/register.jsx
+// app/auth/login.jsx
 import React, { useState } from "react";
 import { useRouter } from "expo-router";
+import * as SecureStore from 'expo-secure-store';
 import {
   View,
   Text,
@@ -12,10 +13,10 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-export default function RegisterScreen() {
+export default function LoginScreen() {
+  const API_BASE_URL = "https://edu-agent-backend-lfzq.vercel.app/api/auth/user";
   const router = useRouter();
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
   const [email, setEmail] = useState("");
   const [emailtouch, setEmailTouched] = useState(false);
   const [password, setPassword] = useState("");
@@ -27,10 +28,48 @@ export default function RegisterScreen() {
   const emailerror = emailtouch && !isemailvalid && email.length > 0;
   const allValid = email && isemailvalid && passwordIsValid;
 
-  const handleLogin = () => {
+  const handleAfterLogin = async (accessToken) => {
+    try {
+        // Ensure the token is a string before saving
+        const tokenString = typeof accessToken === 'string' ? accessToken : JSON.stringify(accessToken);
+
+        if (!tokenString) {
+            alert("No token received from server");
+            return;
+        }
+
+        await SecureStore.setItemAsync("userToken", tokenString);
+        router.replace("/dummydash");
+    } catch (e) {
+        console.error("Error saving token:", e);
+    }
+};
+
+  const handleLogin = async() => {
     if (!allValid) return;
-    console.log({ email, password });
+    try{
+        const res = await fetch(`${API_BASE_URL}/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+            console.log("Login sucess:", data.message);
+            handleAfterLogin(data.token);
+            
+
+        }else {
+            alert(data.message || "Login failed");
+        }
+    }catch (error) {
+        console.error("Login error:", error);
+        alert("An error occurred. Please try again.");
+    }
   };
+
 
   const handleGoogleSignUp = () => {
     console.log("Continue with Google");
