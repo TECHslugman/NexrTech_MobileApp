@@ -1,25 +1,32 @@
 // app/(app)/dummydash.jsx
 import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
-import * as SecureStore from "expo-secure-store";
+import { useAuth } from "../context/AuthContext"; // Use our new context
 import { useRouter } from "expo-router";
 
 export default function Dashboard() {
   const router = useRouter();
+  
+  // 1. Get signOut and userToken from context
+  const { signOut, userToken } = useAuth(); 
+  
   const [loading, setLoading] = useState(true);
   const [userData, setUserData] = useState(null);
 
   useEffect(() => {
-    // Simulating a fetch to your Vercel backend
     const getProfile = async () => {
       try {
-        const token = await SecureStore.getItemAsync("userToken");
+        // 2. We don't need to fetch from SecureStore anymore! 
+        // The token is already available in 'userToken' from useAuth()
         
-        // This is where you'd call your actual API
-        // const res = await fetch('https://your-api.com/profile', {
-        //   headers: { Authorization: `Bearer ${token}` }
-        // });
-        
+        /* Example of real API call:
+        const res = await fetch('https://your-api.com/profile', {
+           headers: { Authorization: `Bearer ${userToken}` }
+        });
+        const data = await res.json();
+        setUserData(data);
+        */
+
         // Dummy data for now
         setUserData({ name: "Pradeep", role: "Student" });
       } catch (e) {
@@ -30,16 +37,17 @@ export default function Dashboard() {
     };
 
     getProfile();
-  }, []);
+  }, [userToken]); // Re-run if token changes
 
   const handleLogout = async () => {
     try {
-      // 1. Remove the token from storage
-      await SecureStore.deleteItemAsync("userToken");
+      // 3. Use the global signOut function
+      // This automatically clears SecureStore AND updates the Auth State
+      await signOut();
       
-      // 2. Redirect to auth group
-      // Your Auth Guard in _layout.tsx will detect the missing token
-      // and prevent the user from coming back here.
+      // Note: You don't technically need router.replace here because 
+      // the Guard in _layout.tsx will see userToken is null and 
+      // redirect to login automatically. But it's fine to keep as a backup.
       router.replace("/auth/login");
     } catch (e) {
       console.error("Logout failed", e);

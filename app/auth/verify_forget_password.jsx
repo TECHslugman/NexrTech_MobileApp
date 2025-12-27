@@ -16,7 +16,7 @@ import { useLocalSearchParams } from "expo-router";
 export default function VerifyforgotpasswordScreen() {
     const { email } = useLocalSearchParams();;
     const router = useRouter();
-    const API_BASE_URL = "https://edu-agent-backendapi.vercel.app/api/auth/user/";
+    const API_BASE_URL = "https://edu-agent-backend-lfzq.vercel.app/api/auth/user/password-reset";
     const [code, setCode] = useState(["", "", "", ""]);
     const [secondsLeft, setSecondsLeft] = useState(60);
     const [canResend, setCanResend] = useState(false);
@@ -110,7 +110,10 @@ export default function VerifyforgotpasswordScreen() {
             console.log("Verify success:", data);
 
             // after successful verification → go to login screen
-            router.replace("/auth/create_new_password");
+            router.replace({
+                pathname: "/auth/create_new_password",
+                params: {resetToken: data.resetToken}
+            });
         } catch (e) {
             console.log("Verify request failed:", e);
         }

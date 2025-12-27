@@ -1,7 +1,7 @@
 // app/auth/register.jsx
 import * as WebBrowser from "expo-web-browser";
+import { useEffect } from "react";
 import * as AuthSession from "expo-auth-session";
-import * as Linking from "expo-linking";
 import * as Google from 'expo-auth-session/providers/google';
 import React, { useState } from "react";
 import { useRouter } from "expo-router";
@@ -15,14 +15,15 @@ import {
     Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+WebBrowser.maybeCompleteAuthSession();
 
 
 export default function RegisterScreen() {
     const [request, response, promptAsync] = Google.useAuthRequest({
-        // Replace with your actual IDs from Google Cloud Console
-        iosClientId: 'YOUR_IOS_CLIENT_ID.apps.googleusercontent.com',
-        androidClientId: 'YOUR_ANDROID_CLIENT_ID.apps.googleusercontent.com',
-        webClientId: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com',
+        iosClientId: process.env.EXPO_PUBLIC_IOS_CLIENT_ID,
+        androidClientId: process.env.EXPO_PUBLIC_ANDROID_CLIENT_ID,
+        webClientId: process.env.EXPO_PUBLIC_WEB_CLIENT_ID,
+        responseType: 'code'
     });
     const API_BASE_URL = "https://edu-agent-backend-lfzq.vercel.app/api/auth/user";
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -40,6 +41,37 @@ export default function RegisterScreen() {
     const passwordIsValid = password.length >= 8;
     const allValid = fullName && email && isEmailValid && passwordIsValid;
 
+    useEffect(() => {
+        if (response?.type === 'success') {
+            // Extract the token from Google's response
+            const tokenFromGoogle = response.params?.id_token || response.authentication?.idToken;
+
+            if (tokenFromGoogle) {
+                console.log("Token found, calling backend...");
+                handleBackendGoogleSignIn(tokenFromGoogle); // Pass it here
+            }
+        }
+    }, [response]);
+    const handleBackendGoogleSignIn = async (token) => {
+        try {
+            const res = await fetch("https://o-auth-three.vercel.app/auth/mobile", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id_token: token }),
+            });
+
+            const data = await res.json();
+            if (res.ok) {
+                router.replace("/(app)/dummydash");
+            } else {
+                console.log("Backend verification failed :", data.message);
+            }
+
+        } catch (e) {
+            console.log("Google Sign-In error:", e);
+        }
+    };
+
     const handleRegister = async () => {
         if (!allValid) return;
         try {
@@ -47,7 +79,7 @@ export default function RegisterScreen() {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    name : fullName,
+                    name: fullName,
                     email,
                     password,
                 }),
@@ -70,9 +102,15 @@ export default function RegisterScreen() {
     };
 
     const handleGoogleSignUp = async () => {
-        await WebBrowser.openBrowserAsync("https://oauth-v57c.onrender.com")
-    };
+        const redirectUri = AuthSession.makeRedirectUri({
+            scheme:'eduegent',
+            useProxy: false,
+        });
 
+        console.log("Redirecting to Google with:", redirectUri);
+
+        promptAsync({ redirectUri });
+    };
     const getInputBorderColor = (field) =>
         focusedField === field ? "#B9D7EA" : "#E2E8F0";
 

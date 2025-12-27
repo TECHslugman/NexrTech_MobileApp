@@ -58,7 +58,7 @@ export default function VerifyRegisterScreen() {
     const handleResend = async() => {
         if (!canResend) return;
         try{
-            const res = await fetch(`${API_BASE_URL}/send-otp`, {
+            const res = await fetch(`${API_BASE_URL}/resend-otp`, {
                 method: "POST",
                 headers: {"content-Type": "application/json"},
                 body: JSON.stringify({
@@ -110,7 +110,7 @@ export default function VerifyRegisterScreen() {
             const data = await res.json();
             console.log("Verify success:", data);
             router.replace("/auth/login");
-            
+
         } catch (e) {
             console.log("Verify request failed:", e);
         }

@@ -5,13 +5,27 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mobileapp",
+    "scheme": "eduagent",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
+      "bundleIdentifier": "com.pradeep.eduapp",
       "supportsTablet": true
     },
     "android": {
+      "package": "com.pradeep.eduapp",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": {
+            "scheme": "eduagent"
+          },
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -40,12 +54,17 @@
         }
       ],
       "expo-web-browser",
-      "expo-secure-store",
-      "@react-native-google-signin/google-signin"
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "e517df68-30f8-4bcb-9dc2-547677a9a304"
+      }
     }
   }
 }
