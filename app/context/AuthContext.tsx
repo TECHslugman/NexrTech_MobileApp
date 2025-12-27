@@ -38,6 +38,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await SecureStore.setItemAsync('userToken', token);
       setUserToken(token);
+      console.log("Token saved successfully");
     } catch (e) {
       console.error("Error saving session", e);
       throw e; // Pass error up to the UI if needed
@@ -69,4 +70,3 @@ export const useAuth = () => {
   }
   return context;
 };
-export default AuthProvider;

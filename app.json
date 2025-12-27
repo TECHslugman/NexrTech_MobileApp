@@ -14,18 +14,6 @@
     },
     "android": {
       "package": "com.pradeep.eduapp",
-      "intentFilters": [
-        {
-          "action": "VIEW",
-          "data": {
-            "scheme": "eduagent"
-          },
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
-        }
-      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -54,7 +42,8 @@
         }
       ],
       "expo-web-browser",
-      "expo-secure-store"
+      "expo-secure-store",
+      "@react-native-google-signin/google-signin"
     ],
     "experiments": {
       "typedRoutes": true,
