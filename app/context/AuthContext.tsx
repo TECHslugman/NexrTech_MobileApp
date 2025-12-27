@@ -1,6 +1,7 @@
 // app/context/AuthContext.tsx
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 // 1. Define the shape of our Auth state
 interface AuthContextType {
@@ -48,10 +49,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Use this function for Logout
   const signOut = async () => {
     try {
+      // 1. Clear Google's internal session (This forces the account picker next time)
+      await GoogleSignin.signOut();
+
+      // 2. Remove the token from your app's storage
       await SecureStore.deleteItemAsync('userToken');
+
+      // 3. Update state to trigger redirect to Register screen
       setUserToken(null);
+
+      console.log("Logged out from App and Google");
     } catch (e) {
-      console.error("Error clearing session", e);
+      console.error("Error during logout", e);
     }
   };
 

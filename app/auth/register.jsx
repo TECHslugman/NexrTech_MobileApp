@@ -8,6 +8,7 @@ import {
     StyleSheet,
     Pressable,
     Image,
+    ActivityIndicator
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -20,6 +21,7 @@ import {
 export default function RegisterScreen() {
     const { signIn } = useAuth();
     const router = useRouter();
+    const [isGoogleLoading, setIsGoogleLoading] = useState(false);
     const API_BASE_URL = "https://edu-agent-backend-lfzq.vercel.app/api/auth/user";
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -56,10 +58,12 @@ export default function RegisterScreen() {
             const idToken = userInfo.data?.idToken || userInfo.idToken;
 
             if (idToken) {
+                setIsGoogleLoading(true);
                 console.log(" Token found, calling backend...");
                 await handleBackendGoogleSignIn(idToken);
             }
         } catch (error) {
+            setIsGoogleLoading(false);
             if (error.code === statusCodes.SIGN_IN_CANCELLED) {
                 console.log("User cancelled the login flow");
             } else if (error.code === statusCodes.IN_PROGRESS) {
@@ -88,13 +92,14 @@ export default function RegisterScreen() {
                 console.log("SUCCESS: Attempting to navigate to dashboard...");
                 const tokenToStore = data.token || idtoken;
                 await signIn(tokenToStore);
-                try{
+                try {
                     router.replace("/(app)/dummydash");
-                }catch(navError){
+                } catch (navError) {
                     console.log("Navigation to dashboard failed. ", navError);
                 }
-                
+
             } else {
+                setIsGoogleLoading(false);
                 console.log("Backend verification failed:", data.message);
             }
         } catch (e) {
@@ -219,16 +224,26 @@ export default function RegisterScreen() {
 
             {/* Native Google Button */}
             <TouchableOpacity
-                style={styles.googleButton}
+                style={[
+                    styles.googleButton,
+                    isGoogleLoading && { opacity: 0.7 } // Dim button when loading
+                ]}
                 activeOpacity={0.85}
                 onPress={handleGoogleSignUp}
+                disabled={isGoogleLoading} // 3. Disable button while loading
             >
-                <Image
-                    source={require("../../assets/images/google-logo.png")}
-                    style={styles.googleLogo}
-                    resizeMode="contain"
-                />
-                <Text style={styles.googleButtonText}>Continue with Google</Text>
+                {isGoogleLoading ? (
+                    <ActivityIndicator color="#4A5568" /> // 4. Show spinner
+                ) : (
+                    <>
+                        <Image
+                            source={require("../../assets/images/google-logo.png")}
+                            style={styles.googleLogo}
+                            resizeMode="contain"
+                        />
+                        <Text style={styles.googleButtonText}>Continue with Google</Text>
+                    </>
+                )}
             </TouchableOpacity>
 
             {/* Create Account Button */}
