@@ -258,6 +258,16 @@ export default function RegisterScreen() {
                 <Text style={styles.primaryButtonText}>CREATE ACCOUNT</Text>
             </TouchableOpacity>
 
+            <TouchableOpacity
+                style={styles.switchAuthWrapper}
+                onPress={() => router.push("/auth/login")}
+            >
+                <Text style={styles.switchAuthText}>
+                    Already have an account? <Text style={styles.switchAuthLink}>Login</Text>
+                </Text>
+            </TouchableOpacity>
+
+
             <Text style={styles.footerText}>
                 By continuing, you agree to our{" "}
                 <Text style={styles.footerLinkText}>Terms of Service</Text> {"\n"} and{" "}
@@ -269,29 +279,108 @@ export default function RegisterScreen() {
 
 const styles = StyleSheet.create({
     container:
-        { flex: 1, backgroundColor: "#F7FAFC", paddingHorizontal: 24, paddingTop: 80 },
+    {
+        flex: 1,
+        backgroundColor: "#F7FAFC",
+        paddingHorizontal: 24,
+        paddingTop: 80
+    },
     title:
-        { fontSize: 25, fontWeight: "600", color: "#769FCD", textAlign: "center", marginBottom: 40 },
+    {
+        fontSize: 25,
+        fontWeight: "600",
+        color: "#769FCD",
+        textAlign: "center",
+        marginBottom: 40,
+        marginTop: 90
+
+
+    },
     field:
-        { marginBottom: 20 },
+    {
+        marginBottom: 20
+    },
     label:
-        { fontSize: 14, color: "#4A5568", marginBottom: 8 },
-    input: { backgroundColor: "#FFFFFF", borderRadius: 10, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: "#2D3748" },
-    passwordWrapper: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFFFFF", borderRadius: 10, borderWidth: 1 },
-    passwordInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: "#2D3748" },
-    eyeIconWrapper: { paddingHorizontal: 12 },
-    passwordHintRow: { flexDirection: "row", alignItems: "center", marginTop: 6 },
-    bullet: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#A0AEC0", marginRight: 6 },
-    passwordHintText: { fontSize: 12, color: "#A0AEC0" },
-    dividerRow: { flexDirection: "row", alignItems: "center", marginVertical: 18 },
-    divider: { flex: 1, height: 1, backgroundColor: "#E2E8F0" },
-    dividerText: { marginHorizontal: 8, fontSize: 16, color: "#A0AEC0" },
-    googleButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFF", borderRadius: 10, borderWidth: 1, borderColor: "#E2E8F0", paddingVertical: 12, marginBottom: 20 },
-    googleLogo: { width: 20, height: 20, marginRight: 10 },
-    googleButtonText: { fontSize: 16, color: "#4A5568" },
-    primaryButton: { backgroundColor: "#4A4A4A", borderRadius: 24, paddingVertical: 14, alignItems: "center", marginBottom: 12 },
-    primaryButtonText: { color: "#FFFFFF", fontSize: 16, fontWeight: "600" },
-    footerText: { fontSize: 11, color: "#A0AEC0", textAlign: "center", marginTop: 6 },
-    footerLinkText: { color: "#7185A8", textDecorationLine: "underline" },
-    errorText: { color: "#E53E3E", fontSize: 12, marginTop: 4 }
+    {
+        fontSize: 14,
+        color: "#4A5568",
+        marginBottom: 8
+    },
+    input:
+    {
+        backgroundColor: "#FFFFFF",
+        borderRadius: 10,
+        borderWidth: 1,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        fontSize: 14,
+        color: "#2D3748"
+    },
+    passwordWrapper:
+    {
+        flexDirection: "row",
+        alignItems: "center",
+        backgroundColor: "#FFFFFF",
+        borderRadius: 10,
+        borderWidth: 1
+    },
+    passwordInput:
+    {
+        flex: 1,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        fontSize: 14,
+        color: "#2D3748"
+    },
+    eyeIconWrapper:
+    {
+        paddingHorizontal: 12
+    },
+    passwordHintRow:
+    {
+        flexDirection: "row",
+        alignItems: "center",
+        marginTop: 6
+    },
+    bullet:
+    {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: "#A0AEC0",
+        marginRight: 6
+    },
+
+    passwordHintText:
+    {
+        fontSize: 12,
+        color: "#A0AEC0"
+    },
+    dividerRow:
+    {
+        flexDirection: "row", alignItems: "center", marginVertical: 18
+    },
+    divider:
+        { flex: 1, height: 1, backgroundColor: "#E2E8F0" },
+    dividerText:
+        { marginHorizontal: 8, fontSize: 16, color: "#A0AEC0" },
+    googleButton:
+        { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFF", borderRadius: 10, borderWidth: 1, borderColor: "#E2E8F0", paddingVertical: 12, marginBottom: 20 },
+    googleLogo:
+        { width: 20, height: 20, marginRight: 10 },
+    googleButtonText:
+        { fontSize: 16, color: "#4A5568" },
+    primaryButton:
+        { backgroundColor: "#4A4A4A", borderRadius: 24, paddingVertical: 14, alignItems: "center", marginBottom: 12 },
+    primaryButtonText:
+        { color: "#FFFFFF", fontSize: 16, fontWeight: "600" },
+    footerText:
+        { fontSize: 11, color: "#A0AEC0", textAlign: "center", marginTop: 6 },
+    footerLinkText:
+        { color: "#7185A8", textDecorationLine: "underline" },
+    errorText:
+        { color: "#E53E3E", fontSize: 12, marginTop: 4 },
+    switchAuthWrapper: { marginTop: 20, alignItems: 'center', marginBottom: 30 },
+    switchAuthText: { color: "#4A5568", fontSize: 14 },
+    switchAuthLink: { color: "#769FCD", fontWeight: "600"}
 });

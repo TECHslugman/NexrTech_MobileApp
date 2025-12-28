@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import { Slot, useRouter, useSegments } from "expo-router";
 import { View, ActivityIndicator } from "react-native";
 // Ensure this path matches where you saved AuthContext.tsx
-import { AuthProvider, useAuth } from "./context/AuthContext"; 
+import { AuthProvider, useAuth } from "./context/AuthContext";
 
 function RootLayoutNav() {
   const { userToken, isLoading } = useAuth();
@@ -11,16 +11,20 @@ function RootLayoutNav() {
   const router = useRouter();
 
   useEffect(() => {
-    // Wait until the AuthProvider has finished checking SecureStore
     if (isLoading) return;
 
-    const inAuthGroup = segments[0] === "auth";
+    // Use .includes to be safer with folder naming conventions
+    const inAuthGroup = (segments as string[]).includes("auth");
 
-    if (!userToken && !inAuthGroup) {
-      // If NOT logged in and NOT in auth folder -> Go to Login
-      router.replace("/auth/register");
+    if (!userToken) {
+      // If NOT logged in, ONLY redirect if they try to access a protected page (like /dummydash)
+      if (!inAuthGroup) {
+        router.replace("/auth/register");
+      }
+      // If they are ALREADY in the auth group (Register OR Login), DO NOTHING.
+      // This allows them to move between Register and Login freely.
     } else if (userToken && inAuthGroup) {
-      // If logged in and TRYING to go to login/register -> Go to Dashboard
+      // If logged in and in auth folder -> Go to Dashboard
       router.replace("/(app)/dummydash");
     }
   }, [userToken, isLoading, segments]);
