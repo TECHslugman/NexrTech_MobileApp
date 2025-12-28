@@ -22,7 +22,7 @@ export default function RegisterScreen() {
     const { signIn } = useAuth();
     const router = useRouter();
     const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-    const API_BASE_URL = "https://edu-agent-backend-lfzq.vercel.app/api/auth/user";
+    const API_BASE_URL = "https://edu-agent-backend-bplxyxizo-dendups-projects.vercel.app/api/auth/user";
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     // --- State Management ---

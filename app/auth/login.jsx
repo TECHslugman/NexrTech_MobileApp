@@ -17,7 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 export default function LoginScreen() {
     const { signIn } = useAuth();
-    const API_BASE_URL = "https://edu-agent-backend-lfzq.vercel.app/api/auth/user";
+    const API_BASE_URL = "https://edu-agent-backend-bplxyxizo-dendups-projects.vercel.app/api/auth/user";
     const router = useRouter();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const [email, setEmail] = useState("");

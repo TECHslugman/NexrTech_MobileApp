@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 export default function CreatePasswordScreen() {
   const API_BASE_URL =
-    'https://edu-agent-backend-lfzq.vercel.app/api/auth/user/password-reset';
+    'https://edu-agent-backend-bplxyxizo-dendups-projects.vercel.app/api/auth/user/password-reset';
   const router = useRouter();
   const { resetToken } = useLocalSearchParams();
 
