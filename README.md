@@ -1,50 +1,100 @@
-# Welcome to your Expo app 👋
+# 🚀 EduAgent Mobile
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+An intelligent mobile platform featuring a robust, dual-layered authentication system. Built with **React Native (Expo)** and powered by a **Node.js/Vercel** backend, this app provides a seamless onboarding experience via Google OAuth 2.0 and traditional secure email registration.
 
-## Get started
+---
 
-1. Install dependencies
+## ✨ Features
 
-   ```bash
-   npm install
-   ```
+* **Smart Auth Guard:** Automatic redirection based on user session status using Expo Router segments and protected route logic.
+* **Google One-Tap Sign-In:** Integrated native Google Identity tokens for a frictionless "Continue with Google" experience.
+* **Traditional Login:** Secure email and password authentication with real-time field validation.
+* **Persistent Sessions:** Secure on-device token storage using `expo-secure-store`, ensuring users stay logged in across app restarts.
+* **Resilient Networking:** Advanced fetch handling that captures raw server responses to prevent JSON parsing crashes during backend outages.
+* **Fluid UI/UX:** Comprehensive loading states and activity indicators to provide constant feedback during network requests.
 
-2. Start the app
+---
 
-   ```bash
-   npx expo start
-   ```
+## 🛠️ Tech Stack
 
-In the output, you'll find options to open the app in a
+| Component | Technology |
+| :--- | :--- |
+| **Frontend** | React Native (Expo) |
+| **Navigation** | Expo Router (File-based) |
+| **Backend** | Node.js / Express (Vercel Serverless) |
+| **State Management** | React Context API |
+| **Storage** | Expo SecureStore |
+| **Identity** | Google OAuth 2.0 / JWT |
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+---
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## 🚀 Getting Started
 
-## Get a fresh project
+### 1. Prerequisites
+* [Node.js](https://nodejs.org/) (v18 or newer)
+* [Expo Go](https://expo.dev/client) app on your physical device
+* EAS CLI installed (`npm install -g eas-cli`)
 
-When you're ready, run:
+### 2. Environment Variables
+Create a `.env` file in the root directory:
+```env
+EXPO_PUBLIC_WEB_CLIENT_ID=your_google_web_client_id.apps.googleusercontent.com
+API_BASE_URL=[https://your-production-backend.vercel.app/api/auth/user](https://your-production-backend.vercel.app/api/auth/user)
+3. Installation
+Bash
 
-```bash
-npm run reset-project
-```
+# Clone the repository
+git clone [https://github.com/yourusername/eduagent-mobile.git](https://github.com/yourusername/eduagent-mobile.git)
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+# Install dependencies
+npm install
 
-## Learn more
+# Start the development server with a clean cache
+npx expo start -c
+🔒 Authentication Flow
+The app implements a Triangle of Trust architecture to handle user access:
 
-To learn more about developing your project with Expo, look at the following resources:
+Bootstrapping: The AuthProvider checks SecureStore for an existing userToken immediately upon app launch.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+The Guard: The _layout.tsx monitors the userToken. If no token exists, it restricts the user to the /auth folder (Register/Login).
 
-## Join the community
+Handshake: Upon successful login (OAuth or Manual), the backend returns a token. The app saves this to SecureStore and updates the global userToken state.
 
-Join our community of developers creating universal apps.
+Automatic Entry: The Layout Guard detects the new token state and instantly triggers router.replace to move the user into the /(app) protected group.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+📁 Project Structure
+Plaintext
+
+├── app/
+│   ├── (app)/               # Protected routes (Dashboard, AI Tools)
+│   ├── auth/                # Public routes (Login, Register, OTP)
+│   ├── context/             # AuthContext.tsx (Global auth state)
+│   └── _layout.tsx          # The "Gatekeeper" - Route guard logic
+├── assets/                  # Images and brand assets
+├── components/              # Reusable UI (Buttons, Inputs)
+└── app.json                 # Expo config & Android Package Name
+⚠️ Troubleshooting
+DEPLOYMENT_NOT_FOUND: This occurs if your API_BASE_URL points to an old Vercel deployment. Always use your Production Domain in the .env file rather than a unique deployment hash.
+
+JSON Parse Error: Our logic captures raw text responses. If you see this, check the console logs for "Raw Server Response" to see if the backend is returning an HTML error page (like a 404 or 500) instead of JSON.
+
+Metro Connection: Ensure your mobile device and computer are on the same Wi-Fi network. For physical devices on corporate or public Wi-Fi, use the npx expo start --tunnel flag.
+
+🤝 Contributing
+Contributions are what make the open-source community such an amazing place to learn, inspire, and create.
+
+Fork the Project
+
+Create your Feature Branch (git checkout -b feature/AmazingFeature)
+
+Commit your Changes (git commit -m 'Add some AmazingFeature')
+
+Push to the Branch (git push origin feature/AmazingFeature)
+
+Open a Pull Request
+
+📝 License
+Distributed under the MIT License. See LICENSE for more information.
+
+
+Would you like me to add a **"Screenshots"** section placeholder or a **"API Endpoints
