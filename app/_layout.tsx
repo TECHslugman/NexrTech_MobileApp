@@ -13,7 +13,6 @@ function RootLayoutNav() {
   useEffect(() => {
     if (isLoading) return;
 
-    // Use .includes to be safer with folder naming conventions
     const inAuthGroup = (segments as string[]).includes("auth");
 
     if (!userToken) {
