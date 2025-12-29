@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import {
     View,
+    Alert,
     Text,
     TextInput,
     TouchableOpacity,
@@ -93,7 +94,7 @@ export default function RegisterScreen() {
                 const tokenToStore = data.token || idtoken;
                 await signIn(tokenToStore);
                 try {
-                    router.replace("/(app)/dummydash");
+                    router.replace("/(app)/decision");
                 } catch (navError) {
                     console.log("Navigation to dashboard failed. ", navError);
                 }
@@ -124,6 +125,15 @@ export default function RegisterScreen() {
             if (!res.ok) {
                 const errorData = await res.json().catch(() => null);
                 console.log("Register error:", errorData);
+
+                // Simple alert for existing email
+                Alert.alert(
+                    "Email Already Registered",
+                    "This email is already registered. Please login instead.",
+                    [
+                        { text: "OK", onPress: () => router.push("/auth/login") }
+                    ]
+                );
                 return;
             }
 
@@ -133,6 +143,7 @@ export default function RegisterScreen() {
             });
         } catch (e) {
             console.log("Register request failed:", e);
+            Alert.alert("Error", "Registration failed. Please try again.");
         }
     };
 
@@ -382,5 +393,5 @@ const styles = StyleSheet.create({
         { color: "#E53E3E", fontSize: 12, marginTop: 4 },
     switchAuthWrapper: { marginTop: 20, alignItems: 'center', marginBottom: 30 },
     switchAuthText: { color: "#4A5568", fontSize: 14 },
-    switchAuthLink: { color: "#769FCD", fontWeight: "600"}
+    switchAuthLink: { color: "#769FCD", fontWeight: "600" }
 });
