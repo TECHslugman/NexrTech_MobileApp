@@ -6,14 +6,12 @@ import {
   TouchableOpacity, 
   FlatList, 
   Image, 
-  StyleSheet, 
-  SafeAreaView 
+  StyleSheet,  
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-// Mock Data - Replace require paths with your actual image locations
 const AGENCIES = [
   { id: '1', name: 'BODHI5', image: require('../../assets/images/decision_page/bodhi5.png') },
   { id: '2', name: 'Education Pro', image: require('../../assets/images/decision_page/edupro.png') },
@@ -65,7 +63,7 @@ export default function AgencySelection() {
       {/* Header text from your image */}
       <View style={styles.headerSection}>
         <Text style={styles.titleText}>
-          Choose an Agency before {"\n"}proceeding with your application.</Text> 
+          Choose an Agency before {"\n"}proceeding with your{"\n"}application.</Text> 
       </View>
 
       {/* Search and Filter Row */}
