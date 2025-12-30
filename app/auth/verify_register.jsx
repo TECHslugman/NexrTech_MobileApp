@@ -16,7 +16,7 @@ import { useLocalSearchParams } from "expo-router";
 export default function VerifyRegisterScreen() {
     const { email } = useLocalSearchParams();
     const router = useRouter();
-    const API_BASE_URL = "https://edu-agent-backend-bplxyxizo-dendups-projects.vercel.app/api/auth/user";
+    const API_BASE_URL = "https://edu-agent-backend-git-feature-dendup-dendups-projects.vercel.app/api/v1/students/";
     const [code, setCode] = useState(["", "", "", ""]);
     const [secondsLeft, setSecondsLeft] = useState(60);
     const [canResend, setCanResend] = useState(false);
@@ -63,6 +63,7 @@ export default function VerifyRegisterScreen() {
                 headers: {"content-Type": "application/json"},
                 body: JSON.stringify({
                     name: fullName,
+                    phone,
                     email,
                     password,
                 }),

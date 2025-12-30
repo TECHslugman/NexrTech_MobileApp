@@ -23,10 +23,13 @@ export default function RegisterScreen() {
     const { signIn } = useAuth();
     const router = useRouter();
     const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-    const API_BASE_URL = "https://edu-agent-backend-bplxyxizo-dendups-projects.vercel.app/api/auth/user";
+    const API_BASE_URL = "https://edu-agent-backend-git-feature-dendup-dendups-projects.vercel.app/api/v1/students";
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     // --- State Management ---
+    const [loading, setLoading] = useState(false);
+    const [phone, setPhone] = useState("");
+    const [phoneTouched, setPhoneTouched] = useState(false);
     const [fullName, setFullName] = useState("");
     const [email, setEmail] = useState("");
     const [emailtouch, setEmailTouched] = useState(false);
@@ -36,6 +39,8 @@ export default function RegisterScreen() {
 
     // --- Validation Logic ---
     const isEmailValid = emailRegex.test(email);
+    const isPhoneValid = phone.length === 8;
+    const showPhoneError = phoneTouched && !isPhoneValid;
     const showEmailError = emailtouch && !isEmailValid && email.length > 0;
     const passwordIsValid = password.length >= 8;
     const allValid = fullName && email && isEmailValid && passwordIsValid;
@@ -111,39 +116,46 @@ export default function RegisterScreen() {
     // --- Standard Registration Handler ---
     const handleRegister = async () => {
         if (!allValid) return;
+
+        setLoading(true); 
         try {
             const res = await fetch(`${API_BASE_URL}/send-otp`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     name: fullName,
-                    email,
-                    password,
+                    phone: phone, 
+                    email: email.toLowerCase().trim(), 
+                    password: password,
                 }),
             });
 
-            if (!res.ok) {
-                const errorData = await res.json().catch(() => null);
-                console.log("Register error:", errorData);
+            const data = await res.json().catch(() => null); 
 
-                // Simple alert for existing email
-                Alert.alert(
-                    "Email Already Registered",
-                    "This email is already registered. Please login instead.",
-                    [
-                        { text: "OK", onPress: () => router.push("/auth/login") }
-                    ]
-                );
+            if (!res.ok) {
+                if (res.status === 409 || data?.message?.includes("already registered")) {
+                    Alert.alert(
+                        "Account Exists",
+                        "This email is already registered. Please login instead.",
+                        [{ text: "Login", onPress: () => router.push("/auth/login") }]
+                    );
+                } else {
+                    Alert.alert("Error", data?.message || "Something went wrong.");
+                }
                 return;
             }
 
-            router.replace({
+            
+            router.push({ 
                 pathname: "/auth/verify_register",
-                params: { email },
+                params: { email, phone }, 
             });
+
         } catch (e) {
-            console.log("Register request failed:", e);
-            Alert.alert("Error", "Registration failed. Please try again.");
+            console.error("Register request failed:", e);
+            Alert.alert("Network Error", "Please check your internet connection.");
+        } finally {
+            setLoading(false); 
         }
     };
 
@@ -166,6 +178,31 @@ export default function RegisterScreen() {
                     onFocus={() => setFocusedField("name")}
                     onBlur={() => setFocusedField(null)}
                 />
+            </View>
+
+
+            {/* Phone Number Input */}
+            <View style={styles.field}>
+                <Text style={styles.label}>Phone Number</Text>
+                <TextInput
+                    style={[
+                        styles.input,
+                        { borderColor: showPhoneError ? '#E53E3E' : getInputBorderColor("phone") },
+                    ]}
+                    placeholder="Enter your Phone Number"
+                    placeholderTextColor="#969389"
+                    value={phone}
+                    onChangeText={setPhone}
+                    keyboardType="phone-pad" // Shows the number keypad
+                    onFocus={() => setFocusedField("phone")}
+                    onBlur={() => {
+                        setFocusedField(null);
+                        setPhoneTouched(true);
+                    }}
+                />
+                {showPhoneError && (
+                    <Text style={styles.errorText}>Please enter a valid phone number</Text>
+                )}
             </View>
 
             {/* Email Input */}
@@ -237,14 +274,14 @@ export default function RegisterScreen() {
             <TouchableOpacity
                 style={[
                     styles.googleButton,
-                    isGoogleLoading && { opacity: 0.7 } // Dim button when loading
+                    isGoogleLoading && { opacity: 0.7 } 
                 ]}
                 activeOpacity={0.85}
                 onPress={handleGoogleSignUp}
-                disabled={isGoogleLoading} // 3. Disable button while loading
+                disabled={isGoogleLoading} 
             >
                 {isGoogleLoading ? (
-                    <ActivityIndicator color="#4A5568" /> // 4. Show spinner
+                    <ActivityIndicator color="#4A5568" /> 
                 ) : (
                     <>
                         <Image
@@ -303,7 +340,7 @@ const styles = StyleSheet.create({
         color: "#769FCD",
         textAlign: "center",
         marginBottom: 40,
-        marginTop: 90
+        marginTop:30
 
 
     },

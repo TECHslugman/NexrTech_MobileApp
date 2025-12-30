@@ -16,7 +16,7 @@ import { useLocalSearchParams } from "expo-router";
 export default function VerifyforgotpasswordScreen() {
     const { email } = useLocalSearchParams();;
     const router = useRouter();
-    const API_BASE_URL = "https://edu-agent-backend-bplxyxizo-dendups-projects.vercel.app/api/auth/user/password-reset";
+    const API_BASE_URL = "https://edu-agent-backend-git-feature-dendup-dendups-projects.vercel.app/api/v1/students/password-reset";
     const [code, setCode] = useState(["", "", "", ""]);
     const [secondsLeft, setSecondsLeft] = useState(60);
     const [canResend, setCanResend] = useState(false);

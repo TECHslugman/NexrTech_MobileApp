@@ -13,7 +13,7 @@ import { router } from "expo-router";
 
 export default function ForgetPasswordScreen() {
     const [email, setEmail] = useState("");
-    const API_BASE_URL = "https://edu-agent-backend-bplxyxizo-dendups-projects.vercel.app/api/auth/user/password-reset";
+    const API_BASE_URL = "https://edu-agent-backend-git-feature-dendup-dendups-projects.vercel.app/api/v1/students/password-reset";
     const handleSendLink = async () => {
         if (!email || !email.includes("@")) {
             alert("Please enter a valid email address");
