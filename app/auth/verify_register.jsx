@@ -61,11 +61,8 @@ export default function VerifyRegisterScreen() {
             const res = await fetch(Config.url.resendOtp(), {
                 method: "POST",
                 headers: {"content-Type": "application/json"},
-                body: JSON.stringify({
-                    name: fullName,
-                    phone,
+                body: JSON.stringify({ 
                     email,
-                    password,
                 }),
             });
             if (!res.ok) {
@@ -96,10 +93,12 @@ export default function VerifyRegisterScreen() {
         if (otp.length !== 4) return; // or 6
 
         try {
-            const res = await fetch(Config.url.sendOtp(), {
+            const res = await fetch(Config.url.verifyOtp(), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({email, otp }),
+                body: JSON.stringify({
+                    email, 
+                    otp }),
             });
 
             if (!res.ok) {

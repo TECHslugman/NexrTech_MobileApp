@@ -86,7 +86,8 @@ export default function RegisterScreen() {
     const handleBackendGoogleSignIn = async (idtoken) => {
         try {
             console.log("Sending token to backend...");
-            const res = await fetch("https://o-auth-three.vercel.app/auth/mobile", {
+            console.log("ID Token:", idtoken);
+            const res = await fetch("https://edu-agent-backend-nine.vercel.app/mobile", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ id_token: idtoken }), // Sending the idToken to backend

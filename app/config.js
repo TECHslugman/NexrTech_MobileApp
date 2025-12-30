@@ -1,7 +1,7 @@
 // app/config.js
 export const Config = {
   // Base URLs
-  API_BASE_URL: "https://edu-agent-backend-git-master-dendups-projects.vercel.app/api/v1",
+  API_BASE_URL: "https://edu-agent-backend-nine.vercel.app/api/v1",
   
   // Auth Endpoints
   AUTH: {
