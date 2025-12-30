@@ -274,19 +274,9 @@ export default function Dashboard() {
   const [query, setQuery] = useState('');
   const [agencies] = useState(INITIAL_AGENCIES);
 
-  const [selectedId, setSelectedId] = useState(null);
-  const [isFlipped, setIsFlipped] = useState(false);
-
-  const flipRefs = useRef({});
-  const scaleRefs = useRef({});
-  const getFlip = (id) => {
-    if (!flipRefs.current[id]) flipRefs.current[id] = new Animated.Value(0);
-    return flipRefs.current[id];
-  };
-  const getScale = (id) => {
-    if (!scaleRefs.current[id]) scaleRefs.current[id] = new Animated.Value(1);
-    return scaleRefs.current[id];
-  };
+  // Track which card is open
+  const [openCardId, setOpenCardId] = useState(null);
+  const slideAnimRefs = useRef({});
 
   // Sheet
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -303,6 +293,7 @@ export default function Dashboard() {
       useNativeDriver: true,
     }).start();
   };
+
   const closeSheet = () => {
     Animated.timing(sheetAnim, {
       toValue: 0,
@@ -368,54 +359,72 @@ export default function Dashboard() {
     });
   }, [agencies, query, selectedCountries, selectedLevels, selectedCities, minRating]);
 
-  const animateHover = (id, to) => {
-    Animated.spring(getScale(id), {
-      toValue: to,
-      useNativeDriver: true,
-      friction: 6,
-      tension: 120,
-    }).start();
-  };
-
-  const flipTo = (id, to) => {
-    Animated.timing(getFlip(id), {
-      toValue: to,
-      duration: 350,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const onCardPress = (id) => {
-    if (selectedId === null) {
-      setSelectedId(id);
-      setIsFlipped(false);
-      getFlip(id).setValue(0);
-      animateHover(id, 1.02);
-      return;
-    }
-    if (selectedId !== id) {
-      flipTo(selectedId, 0);
-      animateHover(selectedId, 1);
-      setSelectedId(id);
-      setIsFlipped(false);
-      getFlip(id).setValue(0);
-      animateHover(id, 1.02);
-      return;
-    }
-    if (!isFlipped) {
-      setIsFlipped(true);
-      flipTo(id, 1);
-    } else {
-      setIsFlipped(false);
-      flipTo(id, 0);
-    }
-  };
-
   const handleLearnMore = (item) => {
     router.push({
       pathname: '/agency/[id]',
       params: { id: item.id, name: item.name, heroUri: item.imageUri || '' },
     });
+  };
+
+  // Get or create slide animation for a card
+  const getSlideAnim = (id) => {
+    if (!slideAnimRefs.current[id]) {
+      slideAnimRefs.current[id] = new Animated.Value(0);
+    }
+    return slideAnimRefs.current[id];
+  };
+
+  // Handle card press (tap on card)
+  const handleCardPress = (item) => {
+    const id = item.id;
+    const slideAnim = getSlideAnim(id);
+
+    if (openCardId === id) {
+      // Card is open, close it
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 100,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start(() => {
+        setOpenCardId(null);
+      });
+    } else {
+      // Close any open card first
+      if (openCardId) {
+        const prevSlideAnim = getSlideAnim(openCardId);
+        Animated.timing(prevSlideAnim, {
+          toValue: 0,
+          duration: 100,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }).start();
+      }
+
+      // Open this card
+      setOpenCardId(id);
+      Animated.timing(slideAnim, {
+        toValue: 1,
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    }
+  };
+
+  // Close all cards
+  const closeAllCards = () => {
+    if (openCardId) {
+      const slideAnim = getSlideAnim(openCardId);
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 200,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start(() => {
+        setOpenCardId(null);
+      });
+    }
   };
 
   // FRONT: image + rating badge
@@ -431,81 +440,87 @@ export default function Dashboard() {
     );
   };
 
-  // BACK: two half tiles (Placed, Partners) + one full-width Visa tile
+  // BACK: Stats overlay that slides in
   const Back = ({ item }) => {
     const s = item.stats || { placed: 0, visaRate: 0, partners: 0 };
     const visaPct = Math.round((s.visaRate || 0) * 100);
-    return (
-      <View style={styles.backWrap}>
-        <View style={styles.statsGrid}>
-          <StatTile
-            label="Students Placed"
-            value={s.placed}
-            icon={<Feather name="users" size={14} color={COLORS.accent} />}
-          />
-          <StatTile
-            label="Partner Unis"
-            value={s.partners}
-            icon={<Feather name="award" size={14} color={COLORS.accent} />}
-          />
-          <StatVisaFull percent={visaPct} rate={s.visaRate} />
-        </View>
 
-        <TouchableOpacity onPress={() => handleLearnMore(item)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
-          <Text style={styles.learnMore}>View profile</Text>
-        </TouchableOpacity>
-      </View>
+    return (
+      <Pressable
+        style={styles.backContainer}
+        onPress={() => {
+          const slideAnim = getSlideAnim(item.id);
+          Animated.timing(slideAnim, {
+            toValue: 0,
+            duration: 300,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }).start(() => {
+            setOpenCardId(null);
+          });
+        }}
+      >
+        <View style={styles.statsContent}>
+          <View style={styles.statsGrid}>
+            <StatTile
+              label="Students Placed"
+              value={s.placed}
+              icon={<Feather name="users" size={14} color={COLORS.accent} />}
+            />
+            <StatTile
+              label="Partner Unis"
+              value={s.partners}
+              icon={<Feather name="award" size={14} color={COLORS.accent} />}
+            />
+            <StatVisaFull percent={visaPct} rate={s.visaRate} />
+          </View>
+
+          <TouchableOpacity
+            style={styles.viewProfileButton}
+            onPress={() => handleLearnMore(item)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Text style={styles.viewProfileText}>View profile →</Text>
+          </TouchableOpacity>
+        </View>
+      </Pressable>
     );
   };
 
   const renderItem = ({ item }) => {
-    const isSelected = selectedId === item.id;
-    const flip = getFlip(item.id);
-    const scale = getScale(item.id);
+    const slideAnim = getSlideAnim(item.id);
+    const isOpen = openCardId === item.id;
 
-    const frontRotate = flip.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] });
-    const backRotate = flip.interpolate({ inputRange: [0, 1], outputRange: ['180deg', '360deg'] });
-    const frontOpacity = flip.interpolate({ inputRange: [0, 0.5, 1], outputRange: [1, 0, 0] });
-    const backOpacity = flip.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 0, 1] });
+    // Stats slide in from right to left
+    const translateX = slideAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [SCREEN_WIDTH, 0], // From off-screen right to position
+    });
 
     return (
-      <Pressable onPress={() => onCardPress(item.id)}>
+      <View style={styles.cardContainer}>
+        {/* Card base (fixed in place) */}
+        <Pressable
+          style={styles.card}
+          onPress={() => handleCardPress(item)}
+        >
+          <Front item={item} />
+        </Pressable>
+
+        {/* Stats overlay - slides in from right */}
         <Animated.View
           style={[
-            styles.card,
-            isSelected && styles.cardSelected,
-            { transform: [{ scale: isSelected ? scale : 1 }] },
+            styles.statsOverlay,
+            {
+              transform: [{ translateX }],
+              opacity: slideAnim,
+            }
           ]}
+          pointerEvents={isOpen ? 'auto' : 'none'}
         >
-          <View style={styles.cardInner}>
-            <Animated.View
-              pointerEvents={isSelected && isFlipped ? 'none' : 'auto'}
-              style={[
-                styles.face,
-                {
-                  opacity: isSelected ? frontOpacity : 1,
-                  transform: [{ perspective: 1000 }, { rotateY: isSelected ? frontRotate : '0deg' }],
-                },
-              ]}
-            >
-              <Front item={item} />
-            </Animated.View>
-
-            <Animated.View
-              pointerEvents={isSelected && isFlipped ? 'auto' : 'none'}
-              style={[
-                styles.face,
-                {
-                  opacity: isSelected ? backOpacity : 0,
-                  transform: [{ perspective: 1000 }, { rotateY: isSelected ? backRotate : '180deg' }],
-                },
-              ]}
-            >
-              <Back item={item} />
-            </Animated.View>
-          </View>
+          <Back item={item} />
         </Animated.View>
-      </Pressable>
+      </View>
     );
   };
 
@@ -544,6 +559,7 @@ export default function Dashboard() {
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         ListFooterComponent={<View style={{ height: 8 }} />}
+        onScrollBeginDrag={closeAllCards} // Close cards when scrolling
       />
 
       {sheetOpen && (
@@ -590,6 +606,7 @@ export default function Dashboard() {
               setSelectedLevels([]);
               setSelectedCities([]);
               setMinRating(0);
+              closeAllCards();
             }}
             style={{ alignSelf: 'flex-end', marginBottom: 8 }}
             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
@@ -688,37 +705,48 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  listContent: { padding: 16, paddingBottom: 18 },
+
+  // Card container
+  cardContainer: {
+    marginBottom: 14,
+    position: 'relative',
+  },
+
+  // Card (fixed in place)
   card: {
     backgroundColor: COLORS.cardBg,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: COLORS.cardBorder,
-    marginBottom: 14,
     overflow: 'hidden',
-  },
-  cardSelected: {
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
-  },
-  cardInner: {
     height: CARD_HEIGHT,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
-  face: {
+
+  // Stats overlay that slides in
+  statsOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: CARD_HEIGHT,
-    backfaceVisibility: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
+    bottom: 0,
+    backgroundColor: COLORS.cardBg,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    padding: 12,
+    zIndex: 10,
   },
+
+  backContainer: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'space-between',
+  },
+
+  statsContent: {
+    flex: 1,
+  },
+
   frontFill: { width: '100%', height: '100%' },
   fullImage: { width: '100%', height: '100%' },
   ratingBadge: {
@@ -733,12 +761,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     zIndex: 1,
   },
-  backWrap: {
-    width: '100%',
-    height: '100%',
-    padding: 12,
-    justifyContent: 'space-between',
-  },
+
+  // Stats grid
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -764,7 +788,20 @@ const styles = StyleSheet.create({
   },
   statLabel: { color: COLORS.headerText, fontWeight: '700', fontSize: 11 },
   statValue: { color: COLORS.text, fontWeight: '700', fontSize: 16, marginTop: 4 },
+
+  // View profile button
+  viewProfileButton: {
+    alignSelf: 'flex-end',
+    marginTop: 8,
+  },
+  viewProfileText: {
+    color: COLORS.link,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+
   learnMore: { alignSelf: 'flex-end', color: COLORS.link, fontWeight: '700', fontSize: 12, marginTop: 6 },
+  listContent: { padding: 16, paddingBottom: 18 },
   overlay: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: '#000' },
   sheet: {
     position: 'absolute',
