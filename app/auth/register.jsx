@@ -11,6 +11,7 @@ import {
     Image,
     ActivityIndicator
 } from "react-native";
+import {Config, config} from '../config.js';
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 // Import the Native Google Sign-in components
@@ -23,7 +24,6 @@ export default function RegisterScreen() {
     const { signIn } = useAuth();
     const router = useRouter();
     const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-    const API_BASE_URL = "https://edu-agent-backend-git-feature-dendup-dendups-projects.vercel.app/api/v1/students";
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     // --- State Management ---
@@ -119,7 +119,7 @@ export default function RegisterScreen() {
 
         setLoading(true); 
         try {
-            const res = await fetch(`${API_BASE_URL}/send-otp`, {
+            const res = await fetch(Config.url.sendOtp(), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

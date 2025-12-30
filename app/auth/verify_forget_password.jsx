@@ -1,6 +1,7 @@
-// app/auth/verify_register.jsx
+// app/auth/verify_forget_password.jsx
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "expo-router";
+import {Config} from "../config";
 import {
     View,
     Text,
@@ -16,11 +17,9 @@ import { useLocalSearchParams } from "expo-router";
 export default function VerifyforgotpasswordScreen() {
     const { email } = useLocalSearchParams();;
     const router = useRouter();
-    const API_BASE_URL = "https://edu-agent-backend-git-feature-dendup-dendups-projects.vercel.app/api/v1/students/password-reset";
-    const [code, setCode] = useState(["", "", "", ""]);
     const [secondsLeft, setSecondsLeft] = useState(60);
     const [canResend, setCanResend] = useState(false);
-
+     const [code, setCode] = useState(["", "", "", ""]);
     const allInput = code.every((digit) => digit !== "");
     const inputRefs = useRef([]);
 
@@ -58,7 +57,7 @@ export default function VerifyforgotpasswordScreen() {
     const handleResend = async() => {
         if (!canResend) return;
         try{
-            const res = await fetch(`${API_BASE_URL}/send-otp`, {
+            const res = await fetch(Config.url.passwordResetSendOtp(), {
                 method: "POST",
                 headers: {"content-Type": "application/json"},
                 body: JSON.stringify({
@@ -93,7 +92,7 @@ export default function VerifyforgotpasswordScreen() {
         if (otp.length !== 4) return; // or 6
 
         try {
-            const res = await fetch(`${API_BASE_URL}/verify-otp`, {
+            const res = await fetch(Config.url.passwordResetVerifyOtp(), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email, otp }),

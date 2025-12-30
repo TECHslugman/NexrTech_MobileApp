@@ -8,12 +8,14 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  
 } from 'react-native';
+import { Config } from '../config';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function CreatePasswordScreen() {
-  const API_BASE_URL ='https://edu-agent-backend-git-feature-dendup-dendups-projects.vercel.app/api/v1/students/password-reset';
+  const API_BASE_URL ='https://edu-agent-backend-git-master-dendups-projects.vercel.app/password-reset';
   const router = useRouter();
   const { resetToken } = useLocalSearchParams();
 
@@ -42,7 +44,7 @@ export default function CreatePasswordScreen() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/set-new`, {
+      const res = await fetch(Config.url.passwordResetSetNew(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -12,11 +12,11 @@ import {
 
 } from "react-native";
 import { useLocalSearchParams } from "expo-router";
+import { Config } from "../config";
 
 export default function VerifyRegisterScreen() {
     const { email } = useLocalSearchParams();
     const router = useRouter();
-    const API_BASE_URL = "https://edu-agent-backend-git-feature-dendup-dendups-projects.vercel.app/api/v1/students/";
     const [code, setCode] = useState(["", "", "", ""]);
     const [secondsLeft, setSecondsLeft] = useState(60);
     const [canResend, setCanResend] = useState(false);
@@ -58,7 +58,7 @@ export default function VerifyRegisterScreen() {
     const handleResend = async() => {
         if (!canResend) return;
         try{
-            const res = await fetch(`${API_BASE_URL}/resend-otp`, {
+            const res = await fetch(Config.url.resendOtp(), {
                 method: "POST",
                 headers: {"content-Type": "application/json"},
                 body: JSON.stringify({
@@ -96,7 +96,7 @@ export default function VerifyRegisterScreen() {
         if (otp.length !== 4) return; // or 6
 
         try {
-            const res = await fetch(`${API_BASE_URL}/verify-otp`, {
+            const res = await fetch(Config.url.sendOtp(), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({email, otp }),

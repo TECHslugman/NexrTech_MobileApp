@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useRouter } from "expo-router";
+import {Config} from "../config";
 import * as SecureStore from 'expo-secure-store';
 import {
     View,
@@ -17,7 +18,6 @@ import { Ionicons } from "@expo/vector-icons";
 
 export default function LoginScreen() {
     const { signIn } = useAuth();
-    const API_BASE_URL = "https://edu-agent-backend-git-feature-dendup-dendups-projects.vercel.app/api/v1/students/";
     const router = useRouter();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const [email, setEmail] = useState("");
@@ -50,7 +50,7 @@ export default function LoginScreen() {
         if (!allValid || loading ) return;
         setLoading(true);
         try {
-            const res = await fetch(`${API_BASE_URL}/login`, {
+            const res = await fetch(Config.url.login(), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email, password }),

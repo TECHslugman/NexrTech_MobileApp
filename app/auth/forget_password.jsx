@@ -9,18 +9,19 @@ import {
     KeyboardAvoidingView,
     Platform,
 } from "react-native";
+import {Config} from "../config";
 import { router } from "expo-router";
 
 export default function ForgetPasswordScreen() {
     const [email, setEmail] = useState("");
-    const API_BASE_URL = "https://edu-agent-backend-git-feature-dendup-dendups-projects.vercel.app/api/v1/students/password-reset";
+    const API_BASE_URL = "https://edu-agent-backend-git-master-dendups-projects.vercel.app/password-reset";
     const handleSendLink = async () => {
         if (!email || !email.includes("@")) {
             alert("Please enter a valid email address");
             return;
         }
         try {
-            const res = await fetch(`${API_BASE_URL}/send-otp`, {
+            const res = await fetch(Config.url.passwordResetSendOtp(), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email }),
