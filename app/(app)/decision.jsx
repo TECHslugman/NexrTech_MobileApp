@@ -42,12 +42,12 @@ const COLORS = {
 // --- API CONFIG ---
 const API_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1/agency/';
 
-const bodhi5 = require('../../assets/images/agencies/bodhi5.png');
+/*const bodhi5 = require('../../assets/images/agencies/bodhi5.png');
 const eduPro = require('../../assets/images/agencies/edupro.png');
 const yarab = require('../../assets/images/agencies/yarab.png');
 const globalreach = require('../../assets/images/agencies/globalreach.png');
-
-const INITIAL_AGENCIES = [
+*/
+/*const INITIAL_AGENCIES = [
   {
     id: 'bodhi5',
     name: 'BODHI5',
@@ -95,11 +95,11 @@ const INITIAL_AGENCIES = [
     rating: 4.1,
     stats: { placed: 540, visaRate: 0.85, partners: 19 },
   },
-];
+];*/
 
-const COUNTRY_OPTIONS = ['Australia', 'Canada'];
-const LEVEL_OPTIONS = ['Undergraduate', 'Postgraduate'];
-const CITY_OPTIONS = ['Thimphu', 'Paro', 'Phuentsholing'];
+const COUNTRY_OPTIONS = ['NA'];
+const LEVEL_OPTIONS = ['NA'];
+const CITY_OPTIONS = ['NA'];
 
 const CARD_HEIGHT = 172;
 
@@ -214,7 +214,8 @@ export default function Dashboard() {
   const { userToken } = useAuth();
 
   // --- STATE ---
-  const [agencies, setAgencies] = useState(INITIAL_AGENCIES);
+  const [dynamicOptions, setDynamicOptions] = useState({ countries: [], levels: [], cities: [] });
+  const [agencies, setAgencies] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
@@ -231,7 +232,6 @@ export default function Dashboard() {
   const [openCountry, setOpenCountry] = useState(true);
   const [openLevel, setOpenLevel] = useState(false);
   const [openCity, setOpenCity] = useState(false);
-  const [openRating, setOpenRating] = useState(false);
 
   // Sheet States
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -257,6 +257,7 @@ export default function Dashboard() {
 
       // ----------------------------
       if (!response.ok) {
+        console.log(`Fetch failed with status: ${response.status}`);
         const errorText = await response.text();
         console.log("DECISION PAGE ERROR RAW:", errorText);
         throw new Error(`Server Error: ${response.status}`);
@@ -305,6 +306,20 @@ export default function Dashboard() {
       fetchAgencies();
     }
   }, [userToken]);
+
+  useEffect(() => {
+    if (agencies.length > 0) {
+      const uniqueCountries = [...new Set(agencies.map(a => a.country).filter(Boolean))];
+      const uniqueCities = [...new Set(agencies.map(a => a.city).filter(Boolean))];
+      const uniqueLevels = [...new Set(agencies.flatMap(a => a.levels || []).filter(Boolean))];
+
+      setDynamicOptions({
+        countries: uniqueCountries.sort(),
+        cities: uniqueCities.sort(),
+        levels: uniqueLevels.sort(),
+      });
+    }
+  }, [agencies]);
 
   const openSheet = () => {
     setSheetOpen(true);
@@ -482,7 +497,7 @@ export default function Dashboard() {
       ) : (
         <FlatList
           data={filtered}
-          keyExtractor={(item) => item.id.toString()}
+          keyExtractor={(item, index) => item?.id?.toString() || index.toString()}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
@@ -518,11 +533,27 @@ export default function Dashboard() {
           <TouchableOpacity onPress={() => { setSelectedCountries([]); setSelectedLevels([]); setSelectedCities([]); setMinRating(0); closeAllCards(); }} style={{ alignSelf: 'flex-end', marginBottom: 8 }} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
             <Text style={styles.clearAll}>Clear all</Text>
           </TouchableOpacity>
-          <DropSection icon="globe" title="Country" open={openCountry} onToggle={() => setOpenCountry((s) => !s)}>
-            {COUNTRY_OPTIONS.map((c) => (<OptionRow key={c} label={c} selected={selectedCountries.includes(c)} onPress={() => toggleIn(selectedCountries, setSelectedCountries, c)} />))}
+
+          <DropSection icon="globe" title="Country" open={openCountry} onToggle={() => setOpenCountry(!openCountry)}>
+            {dynamicOptions.countries.map((c, index) => (
+              <OptionRow
+                key={`country-${c}-${index}`}
+                label={c}
+                selected={selectedCountries.includes(c)}
+                onPress={() => toggleIn(selectedCountries, setSelectedCountries, c)}
+              />
+            ))}
           </DropSection>
-          <DropSection icon="book-open" title="Level" open={openLevel} onToggle={() => setOpenLevel((s) => !s)}>
-            {LEVEL_OPTIONS.map((lv) => (<OptionRow key={lv} label={lv} selected={selectedLevels.includes(lv)} onPress={() => toggleIn(selectedLevels, setSelectedLevels, lv)} />))}
+
+          <DropSection icon="book-open" title="Level" open={openLevel} onToggle={() => setOpenLevel(!openLevel)}>
+            {dynamicOptions.levels.map((lv) => (
+              <OptionRow
+                key={lv}
+                label={lv}
+                selected={selectedLevels.includes(lv)}
+                onPress={() => toggleIn(selectedLevels, setSelectedLevels, lv)}
+              />
+            ))}
           </DropSection>
           <DropSection icon="map-pin" title="City" open={openCity} onToggle={() => setOpenCity((s) => !s)}>
             {CITY_OPTIONS.map((ct) => (<OptionRow key={ct} label={ct} selected={selectedCities.includes(ct)} onPress={() => toggleIn(selectedCities, setSelectedCities, ct)} />))}

@@ -3,16 +3,16 @@ import {
     View,
     Text,
     StyleSheet,
-    ScrollView,
     TouchableOpacity,
     Image,
     FlatList,
-    ActivityIndicator
+    ActivityIndicator,
+    Dimensions
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { useAuth } from '../../context/AuthContext';;
+import { useAuth } from '../../context/AuthContext';
 
 const COLORS = {
     bg: '#F6F9FC',
@@ -25,25 +25,8 @@ const COLORS = {
     text: '#2E2E2E',
 };
 
-// --- API CONFIG ---
-const API_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1/agency/profile'; // Replace with your URL later
-
-// --- LOCAL ASSET FALLBACKS ---
+const API_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1/agency/profile/';
 const defaultHero = require('../../../assets/images/agencies/default.png');
-
-const HERO_BY_ID = { defaultHero};
-
-// --- FALLBACK DATA (Delete this after API is connected) ---
-const FALLBACK_CONTENT = {
-    about: 'NA',
-    services: ['NA'],
-    process: ['NA'],
-    partners: ["NA"],
-};
-
-const FALLBACK_AGENCIES = {
-    bodhi5: { name: 'NA', est: 'NA', address: 'NA' },
-};
 
 function Dot() {
     return <View style={styles.dot} />;
@@ -54,15 +37,11 @@ export default function AgencyDetails() {
     const router = useRouter();
     const { userToken } = useAuth();
 
-    // --- STATE ---
     const [agencyData, setAgencyData] = useState(null);
     const [loading, setLoading] = useState(true);
-
-    // --- DATA FETCHING ---
     useEffect(() => {
         const loadData = async () => {
             if (!userToken) return;
-
             try {
                 setLoading(true);
                 const response = await fetch(API_URL, {
@@ -80,9 +59,9 @@ export default function AgencyDetails() {
 
                 setAgencyData({
                     name: fullJson.organizationName || paramName,
-                    est: fullJson.createdAt ? new Date(fullJson.createdAt).getFullYear() : "N/A",
+                    est: fullJson.establishment || "N/A",
                     address: fullJson.address || "No address provided",
-                    about: fullJson.description || "No description available",
+                    about: fullJson.about || "No description available",
                     services: fullJson.servicesOffered || [],
                     process: fullJson.process || [],
                     partners: fullJson.partnerUniversities || [],
@@ -90,47 +69,97 @@ export default function AgencyDetails() {
                 });
 
             } catch (error) {
-                console.log("API Error, falling back to local data:", error.message);
-                const meta = FALLBACK_AGENCIES[id] || FALLBACK_AGENCIES.bodhi5;
+                console.log("API Error, falling back:", error.message);
                 setAgencyData({
-                    ...meta,
-                    ...FALLBACK_CONTENT,
-                    name: paramName || meta.name
+                    name: paramName || "Agency Details",
+                    est: "N/A",
+                    address: "Information temporarily unavailable",
+                    about: "Details coming soon...",
+                    services: [],
+                    process: [],
+                    partners: [],
                 });
             } finally {
                 setLoading(false);
             }
         };
-
         loadData();
     }, [id, userToken]);
-    // Resolve Hero Image source
+
     const heroSource = useMemo(() => {
         if (agencyData?.imageUri) return { uri: agencyData.imageUri };
         if (heroUri) return { uri: String(heroUri) };
-        if (HERO_BY_ID[id]) return HERO_BY_ID[id];
-
         return defaultHero;
-    }, [id, heroUri, agencyData]);
+    }, [heroUri, agencyData]);
 
-    const renderPartner = ({ item }) => {
-        return (
-            <View style={styles.partnerTile}>
-                {/* If the university has a logo in its own schema, use it. 
-               Otherwise, show the university name.
-            */}
-                {item.logo ? (
-                    <Image
-                        source={{ uri: item.logo }}
-                        style={styles.partnerLogo}
-                        resizeMode="contain"
-                    />
-                ) : (
-                    <Text style={styles.partnerText}>{item.name}</Text>
-                )}
+    const renderPartner = ({ item, index }) => (
+        <View key={item._id || `p-${index}`} style={styles.partnerTile}>
+            {item.logo ? (
+                <Image source={{ uri: item.logo }} style={styles.partnerLogo} resizeMode="contain" />
+            ) : (
+                <Text style={styles.partnerText}>{item.name}</Text>
+            )}
+        </View>
+    );
+
+    // Everything that was in the ScrollView goes here
+    const renderHeader = () => (
+        <View style={styles.scrollBody}>
+            <View style={styles.heroCard}>
+                <Image source={heroSource} style={styles.heroImage} resizeMode="contain" />
+                <View style={styles.heroDivider} />
             </View>
-        );
-    };
+
+            <View style={styles.dividerRow}>
+                <Text style={styles.estText}>EST. {agencyData.est}</Text>
+            </View>
+
+            <View style={styles.block}>
+                <View style={styles.locationPill}>
+                    <Feather name="map-pin" size={14} color={COLORS.accent} />
+                    <Text style={styles.locationText}>{agencyData.address}</Text>
+                </View>
+            </View>
+
+            <Text style={styles.sectionTitle}>About</Text>
+            <View style={styles.card}>
+                <Text style={styles.cardText}>{agencyData.about}</Text>
+            </View>
+
+            <Text style={styles.sectionTitle}>Our Services</Text>
+            <View style={styles.card}>
+                {agencyData.services?.map((s, idx) => (
+                    <View key={`svc-${idx}`} style={styles.serviceRow}>
+                        <Feather name="check-circle" size={16} color={COLORS.accent} />
+                        <Text style={styles.serviceText}>{s}</Text>
+                    </View>
+                ))}
+            </View>
+
+            <Text style={styles.sectionTitle}>Process</Text>
+            <View style={styles.card}>
+                {agencyData.process?.map((p, idx) => (
+                    <View key={`prc-${idx}`} style={styles.processRow}>
+                        <View style={styles.timelineCol}>
+                            <View style={styles.lineBox}>{idx !== 0 && <View style={styles.line} />}</View>
+                            <Dot />
+                            <View style={styles.lineBox}>{idx !== (agencyData.process.length - 1) && <View style={styles.line} />}</View>
+                        </View>
+                        <Text style={styles.processText}>{p}</Text>
+                    </View>
+                ))}
+            </View>
+
+            <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitleNoMargin}>Our Partners</Text>
+                <TouchableOpacity onPress={() => router.push({ pathname: '/agency/partners/[id]', params: { id } })}>
+                    <Text style={styles.viewMore}>View more</Text>
+                </TouchableOpacity>
+            </View>
+
+            {/* FlatList for partners is handled by the main FlatList below */}
+        </View>
+    );
 
     if (loading) {
         return (
@@ -142,7 +171,6 @@ export default function AgencyDetails() {
 
     return (
         <SafeAreaView style={styles.safe}>
-            {/* Header */}
             <View style={styles.topBar}>
                 <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
                     <Feather name="chevron-left" size={22} color="#52606B" />
@@ -151,84 +179,24 @@ export default function AgencyDetails() {
                 <View style={{ width: 32 }} />
             </View>
 
-            <ScrollView contentContainerStyle={styles.scrollBody} showsVerticalScrollIndicator={false}>
-                {/* Hero Card */}
-                <View style={styles.heroCard}>
-                    <Image source={heroSource} style={styles.heroImage} resizeMode="contain" />
-                    <View style={styles.heroDivider} />
-                </View>
+            <FlatList
+                data={[]} // We use ListFooterComponent for the horizontal partners list
+                renderItem={null}
+                ListHeaderComponent={renderHeader}
+                ListFooterComponent={
+                    <FlatList
+                        data={agencyData.partners}
+                        renderItem={renderPartner}
+                        keyExtractor={(item, index) => item._id || index.toString()}
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
+                        ItemSeparatorComponent={() => <View style={{ width: 10 }} />}
+                    />
+                }
+                showsVerticalScrollIndicator={false}
+            />
 
-                {/* Established Date */}
-                <View style={styles.dividerRow}>
-                    <Text style={styles.estText}>EST. {agencyData.est}</Text>
-                </View>
-
-                {/* Address */}
-                <View style={styles.block}>
-                    <View style={styles.locationPill}>
-                        <Feather name="map-pin" size={14} color={COLORS.accent} />
-                        <Text style={styles.locationText}>{agencyData.address}</Text>
-                    </View>
-                </View>
-
-                {/* About Section */}
-                <Text style={styles.sectionTitle}>About</Text>
-                <View style={styles.card}>
-                    <Text style={styles.cardText}>{agencyData.about}</Text>
-                </View>
-
-                {/* Services Section */}
-                <Text style={styles.sectionTitle}>Our Services</Text>
-                <View style={styles.card}>
-                    {agencyData.services?.map((s, idx) => (
-                        <View key={idx} style={styles.serviceRow}>
-                            <Feather name="check-circle" size={16} color={COLORS.accent} />
-                            <Text style={styles.serviceText}>{s}</Text>
-                        </View>
-                    ))}
-                </View>
-
-                {/* Process Timeline */}
-                <Text style={styles.sectionTitle}>Process</Text>
-                <View style={styles.card}>
-                    {agencyData.process?.map((p, idx) => {
-                        const isFirst = idx === 0;
-                        const isLast = idx === (agencyData.process?.length - 1);
-                        return (
-                            <View key={idx} style={styles.processRow}>
-                                <View style={styles.timelineCol}>
-                                    <View style={styles.lineBox}>{!isFirst && <View style={styles.line} />}</View>
-                                    <Dot />
-                                    <View style={styles.lineBox}>{!isLast && <View style={styles.line} />}</View>
-                                </View>
-                                <Text style={styles.processText}>{p}</Text>
-                            </View>
-                        );
-                    })}
-                </View>
-
-                {/* Partners Section */}
-                <View style={styles.sectionHeaderRow}>
-                    <Text style={styles.sectionTitleNoMargin}>Our Partners</Text>
-                    <TouchableOpacity onPress={() => router.push({ pathname: '/agency/partners/[id]', params: { id } })}>
-                        <Text style={styles.viewMore}>View more</Text>
-                    </TouchableOpacity>
-                </View>
-
-                <FlatList
-                    data={agencyData.partners}
-                    keyExtractor={(item) => item._id || item.name}
-                    renderItem={renderPartner}
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.partnersRow}
-                    ItemSeparatorComponent={() => <View style={{ width: 10 }} />}
-                />
-
-                <View style={{ height: 100 }} />
-            </ScrollView>
-
-            {/* Footer Select Button */}
             <View style={styles.bottomBar}>
                 <TouchableOpacity
                     style={styles.selectBtn}
@@ -242,7 +210,6 @@ export default function AgencyDetails() {
 }
 
 const HERO_HEIGHT = 120;
-
 const styles = StyleSheet.create({
     safe: { flex: 1, backgroundColor: COLORS.bg },
     topBar: {
@@ -262,12 +229,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         backgroundColor: '#F2F6FF',
     },
-    topTitle: {
-        flex: 1,
-        textAlign: 'center',
-        color: COLORS.heading,
-        fontWeight: '600',
-    },
+    topTitle: { flex: 1, textAlign: 'center', color: COLORS.heading, fontWeight: '600' },
     scrollBody: { padding: 16 },
     heroCard: {
         backgroundColor: COLORS.cardBg,
@@ -280,12 +242,7 @@ const styles = StyleSheet.create({
     },
     heroImage: { width: '100%', height: HERO_HEIGHT, alignSelf: 'center' },
     heroDivider: { marginTop: 10, height: 1, backgroundColor: '#E5EAF1' },
-    dividerRow: {
-        marginVertical: 12,
-        borderTopWidth: 1,
-        borderColor: '#E5EAF1',
-        paddingTop: 8,
-    },
+    dividerRow: { marginVertical: 12, borderTopWidth: 1, borderColor: '#E5EAF1', paddingTop: 8 },
     estText: { fontSize: 12, color: '#8696AA' },
     block: { marginBottom: 8 },
     locationPill: {
@@ -301,7 +258,7 @@ const styles = StyleSheet.create({
     locationText: { flex: 1, color: COLORS.text, fontSize: 12, lineHeight: 18 },
     sectionHeaderRow: {
         marginTop: 12,
-        marginBottom: 6,
+        marginBottom: 12,
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
@@ -326,7 +283,6 @@ const styles = StyleSheet.create({
     line: { flex: 1, width: 2, backgroundColor: COLORS.cardBorder, borderRadius: 1 },
     dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.accent },
     processText: { flex: 1, color: COLORS.text, fontSize: 13, lineHeight: 18 },
-    partnersRow: { paddingRight: 4 },
     partnerTile: {
         height: 80,
         width: 140,
@@ -339,7 +295,7 @@ const styles = StyleSheet.create({
         padding: 8,
     },
     partnerLogo: { width: '100%', height: '100%' },
-    partnerText: { color: '#2A2A2A', fontWeight: '700' },
+    partnerText: { color: '#2A2A2A', fontWeight: '700', textAlign: 'center', fontSize: 11 },
     bottomBar: { position: 'absolute', left: 16, right: 16, bottom: 18 },
     selectBtn: {
         paddingVertical: 14,
