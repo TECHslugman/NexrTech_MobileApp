@@ -152,7 +152,15 @@ export default function AgencyDetails() {
 
             <View style={styles.sectionHeaderRow}>
                 <Text style={styles.sectionTitleNoMargin}>Our Partners</Text>
-                <TouchableOpacity onPress={() => router.push({ pathname: '/agency/partners/[id]', params: { id } })}>
+                <TouchableOpacity
+                    onPress={() => router.push({
+                        pathname: '/agency/partners/[id]',
+                        params: {
+                            id: id,
+                            name: agencyData?.name // Pass the name so the partners page header isn't empty
+                        }
+                    })}
+                >
                     <Text style={styles.viewMore}>View more</Text>
                 </TouchableOpacity>
             </View>
