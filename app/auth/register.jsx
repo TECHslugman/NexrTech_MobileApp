@@ -94,11 +94,13 @@ export default function RegisterScreen() {
             });
             console.log("Backend Status:", res.status);
             const data = await res.json();
+            console.log(data);
             console.log("Backend Response Data:", data);
             if (res.ok) {
                 console.log("SUCCESS: Attempting to navigate to dashboard...");
-                const tokenToStore = data.token || idtoken;
+                const tokenToStore = data.accessToken;
                 await signIn(tokenToStore);
+               
                 try {
                     router.replace("/(app)/decision");
                 } catch (navError) {

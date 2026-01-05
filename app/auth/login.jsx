@@ -2,8 +2,9 @@
 import React, { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useRouter } from "expo-router";
-import {Config} from "../config";
+import { Config } from "../config";
 import * as SecureStore from 'expo-secure-store';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import {
     View,
     Text,
@@ -26,6 +27,7 @@ export default function LoginScreen() {
     const [showPassword, setShowPassword] = useState(false);
     const [focusedField, setFocusedField] = useState(null); // 'email' | 'password'
     const [loading, setLoading] = useState(false);
+    const [isGoogleLoading, setIsGoogleLoading] = useState(false);
     const isemailvalid = emailRegex.test(email);
     const passwordIsValid = password.length >= 8;
     const emailerror = emailtouch && !isemailvalid && email.length > 0;
@@ -47,7 +49,7 @@ export default function LoginScreen() {
     };
 
     const handleLogin = async () => {
-        if (!allValid || loading ) return;
+        if (!allValid || loading) return;
         setLoading(true);
         try {
             const res = await fetch(Config.url.login(), {
@@ -56,28 +58,91 @@ export default function LoginScreen() {
                 body: JSON.stringify({ email, password }),
             });
 
-            const data = await res.json();
+            //-----------------
+            const responseText = await res.text();
+            console.log("Server Response Raw:", responseText);
+
+            // Now try to parse it manually
+            const data = JSON.parse(responseText);
+            // ------------------
 
             if (res.ok) {
-                console.log("Login sucess:", data.message);
+                console.log("Login success:", data.message);
                 handleAfterLogin(data.accessToken);
-
-
             } else {
                 alert(data.message || "Login failed");
             }
         } catch (error) {
-            console.error("Login error:", error);
-            alert("An error occurred. Please try again.");
-        }finally{
+            console.error("Login error detail:", error);
+            // If it's still a syntax error, look at the console.log above!
+            alert("Server returned an invalid response.");
+        } finally {
             setLoading(false);
         }
     };
 
+     // --- 2. Google Sign-In Handler ---
+        const handleGoogleSignUp = async () => {
+            try {
+                await GoogleSignin.hasPlayServices();
+                const userInfo = await GoogleSignin.signIn();
+    
+                // The token is located inside userInfo.data (v11+) or userInfo (older)
+                const idToken = userInfo.data?.idToken || userInfo.idToken;
+    
+                if (idToken) {
+                    setIsGoogleLoading(true);
+                    console.log(" Token found, calling backend...");
+                    await handleBackendGoogleSignIn(idToken);
+                }
+            } catch (error) {
+                setIsGoogleLoading(false);
+                if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+                    console.log("User cancelled the login flow");
+                } else if (error.code === statusCodes.IN_PROGRESS) {
+                    console.log("Sign-in is already in progress");
+                } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+                    console.log("Play services not available or outdated");
+                } else {
+                    console.log("Google Sign-In error:", error);
+                }
+            }
+        };
+    
+        // --- 3. Backend Integration ---
+        const handleBackendGoogleSignIn = async (idtoken) => {
+            try {
+                console.log("Sending token to backend...");
+                console.log("ID Token:", idtoken);
+                const res = await fetch("https://edu-agent-backend-nine.vercel.app/google-signin-student", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id_token: idtoken }), // Sending the idToken to backend
+                });
+                console.log("Backend Status:", res.status);
+                const data = await res.json();
+                console.log(data);
+                console.log("Backend Response Data:", data);
+                if (res.ok) {
+                    console.log("SUCCESS: Attempting to navigate to dashboard...");
+                    const tokenToStore = data.accessToken;
+                    await signIn(tokenToStore);
+                   
+                    try {
+                        router.replace("/(app)/decision");
+                    } catch (navError) {
+                        console.log("Navigation to dashboard failed. ", navError);
+                    }
+    
+                } else {
+                    setIsGoogleLoading(false);
+                    console.log("Backend verification failed:", data.message);
+                }
+            } catch (e) {
+                console.log("Backend Connection error:", e);
+            }
+        };
 
-    const handleGoogleSignUp = () => {
-        console.log("Continue with Google");
-    };
 
     const getInputBorderColor = (field) =>
         focusedField === field ? "#B9D7EA" : "#E2E8F0";

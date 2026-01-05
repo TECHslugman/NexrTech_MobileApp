@@ -1,5 +1,4 @@
-// app/decision.jsx
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,6 +12,7 @@ import {
   StatusBar,
   Dimensions,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Feather, AntDesign } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -38,6 +38,9 @@ const COLORS = {
   listBg: '#F7FBFF',
   success: '#57C785',
 };
+
+// --- API CONFIG ---
+const API_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1/agency/';
 
 const bodhi5 = require('../../assets/images/agencies/bodhi5.png');
 const eduPro = require('../../assets/images/agencies/edupro.png');
@@ -86,7 +89,6 @@ const INITIAL_AGENCIES = [
     name: 'GLOBAL REACH',
     subtitle: 'Education matters',
     image: globalreach,
-    imageUri: '',
     country: 'Australia',
     city: 'Paro',
     levels: ['Postgraduate'],
@@ -101,29 +103,7 @@ const CITY_OPTIONS = ['Thimphu', 'Paro', 'Phuentsholing'];
 
 const CARD_HEIGHT = 172;
 
-// Compact read-only star bar (front badge)
-function StarRatingCompact({ rating, size = 12 }) {
-  const filled = Math.round(rating);
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-      <View style={{ flexDirection: 'row', gap: 2 }}>
-        {Array.from({ length: 5 }).map((_, i) => (
-          <AntDesign
-            key={i}
-            name={i < filled ? 'star' : 'star'}
-            size={size}
-            color={i < filled ? COLORS.star : COLORS.starEmpty}
-          />
-        ))}
-      </View>
-      <Text style={{ color: COLORS.textMuted, fontSize: 11, fontWeight: '600' }}>
-        {rating.toFixed(1)}
-      </Text>
-    </View>
-  );
-}
 
-// Thin progress bar (for visa success rate)
 function ProgressBar({ value, height = 5, color = COLORS.success }) {
   const pct = Math.max(0, Math.min(1, value)) * 100;
   return (
@@ -133,7 +113,6 @@ function ProgressBar({ value, height = 5, color = COLORS.success }) {
   );
 }
 
-// Half-width stat tile
 function StatTile({ label, value, suffix, icon }) {
   return (
     <View style={styles.statTile}>
@@ -149,7 +128,6 @@ function StatTile({ label, value, suffix, icon }) {
   );
 }
 
-// Full-width Visa tile
 function StatVisaFull({ percent, rate }) {
   return (
     <View style={styles.statCardFull}>
@@ -167,12 +145,11 @@ function StatVisaFull({ percent, rate }) {
   );
 }
 
-// Animated list-style dropdown
 function DropSection({ icon, title, children, open, onToggle }) {
   const anim = useRef(new Animated.Value(open ? 1 : 0)).current;
   const [contentH, setContentH] = useState(0);
 
-  React.useEffect(() => {
+  useEffect(() => {
     Animated.timing(anim, {
       toValue: open ? 1 : 0,
       duration: 220,
@@ -230,59 +207,104 @@ function OptionRow({ label, selected, onPress }) {
   );
 }
 
-function RatingSelector({ value, onChange }) {
-  return (
-    <View style={{ paddingHorizontal: 10, paddingVertical: 4 }}>
-      <Text style={{ color: COLORS.textMuted, fontSize: 12, marginBottom: 8 }}>Minimum rating</Text>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        {Array.from({ length: 5 }).map((_, i) => {
-          const n = i + 1;
-          const filled = value >= n;
-          return (
-            <TouchableOpacity
-              key={n}
-              onPress={() => onChange(n)}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              style={{ padding: 2 }}
-              activeOpacity={0.85}
-            >
-              <AntDesign name={filled ? 'star' : 'star'} size={20} color={filled ? COLORS.star : COLORS.starEmpty} />
-            </TouchableOpacity>
-          );
-        })}
-        <Text style={{ color: COLORS.textMuted, fontWeight: '600', fontSize: 12 }}>
-          {value > 0 ? `${value}+` : 'Any'}
-        </Text>
-      </View>
-      <TouchableOpacity
-        onPress={() => onChange(5)}
-        style={{ marginTop: 10, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 8 }}
-        activeOpacity={0.85}
-      >
-        <AntDesign name={value >= 5 ? 'star' : 'star'} size={16} color={value >= 5 ? COLORS.star : COLORS.starEmpty} />
-        <Text style={{ color: COLORS.text, fontWeight: '600', fontSize: 12 }}>Top recommended (5.0)</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
 export default function Dashboard() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { signOut } = useAuth();
+  const { userToken } = useAuth();
 
+  // --- STATE ---
+  const [agencies, setAgencies] = useState(INITIAL_AGENCIES);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState('');
-  const [agencies] = useState(INITIAL_AGENCIES);
-
-  // Track which card is open
   const [openCardId, setOpenCardId] = useState(null);
   const slideAnimRefs = useRef({});
 
-  // Sheet
+  // Filter States
+  const [selectedCountries, setSelectedCountries] = useState([]);
+  const [selectedLevels, setSelectedLevels] = useState([]);
+  const [selectedCities, setSelectedCities] = useState([]);
+  const [minRating, setMinRating] = useState(0);
+
+  // Dropdown States
+  const [openCountry, setOpenCountry] = useState(true);
+  const [openLevel, setOpenLevel] = useState(false);
+  const [openCity, setOpenCity] = useState(false);
+  const [openRating, setOpenRating] = useState(false);
+
+  // Sheet States
   const [sheetOpen, setSheetOpen] = useState(false);
   const sheetAnim = useRef(new Animated.Value(0)).current;
   const overlayOpacity = sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 0.4] });
   const sheetTranslateX = sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [SCREEN_WIDTH, 0] });
+
+  // --- DATA FETCHING ---
+  const fetchAgencies = async (isRefresh = false) => {
+    if (!userToken) return;
+
+    try {
+      isRefresh ? setRefreshing(true) : setLoading(true);
+
+      console.log("DEBUG: Sending Token ->", userToken);
+      const response = await fetch(API_URL, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userToken}`,
+        },
+      });
+
+      // ----------------------------
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.log("DECISION PAGE ERROR RAW:", errorText);
+        throw new Error(`Server Error: ${response.status}`);
+      }
+      // ----------------------------
+
+      if (!response.ok) throw new Error('Could not connect to database');
+
+      const jsonResponse = await response.json();
+      const rawData = jsonResponse.agency;
+      const agenciesArray = Array.isArray(rawData) ? rawData : [rawData];
+
+      const formattedData = agenciesArray.map((item) => ({
+        ...item,
+        id: item._id,
+
+        // FRONT OF CARD
+        name: item.organizationName || "Unknown Agency",
+        imageUri: item.logo || null, // Will use placeholder if null
+
+        // BACK OF CARD
+        stats: {
+          placed: item.studentsPlaced || 0,
+          visaRate: item.visaRate || 0.90,
+          partners: item.partnerUniversities?.length || 0,
+        },
+
+        // FILTERING DATA
+        city: item.address ? item.address.split(',')[0].trim() : 'Bhutan',
+        country: item.country || 'Bhutan',
+        rating: item.rating || 5.0, // Default to 5 if null
+        levels: item.levels || ['Undergraduate'],
+      }));
+
+      setAgencies(formattedData);
+
+    } catch (error) {
+      console.error('Fetch Error:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+  useEffect(() => {
+    if (userToken) {
+      fetchAgencies();
+    }
+  }, [userToken]);
 
   const openSheet = () => {
     setSheetOpen(true);
@@ -303,44 +325,11 @@ export default function Dashboard() {
     }).start(({ finished }) => finished && setSheetOpen(false));
   };
 
-  // Dropdowns
-  const [openCountry, setOpenCountry] = useState(true);
-  const [openLevel, setOpenLevel] = useState(false);
-  const [openCity, setOpenCity] = useState(false);
-  const [openRating, setOpenRating] = useState(false);
-
-  // Filters
-  const [selectedCountries, setSelectedCountries] = useState([]);
-  const [selectedLevels, setSelectedLevels] = useState([]);
-  const [selectedCities, setSelectedCities] = useState([]);
-  const [minRating, setMinRating] = useState(0);
-
-  // Logout Handler
   const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await signOut();
-              console.log('Logged out successfully');
-            } catch (error) {
-              console.error('Logout error:', error);
-              Alert.alert('Error', 'Failed to logout. Please try again.');
-            }
-          },
-        },
-      ],
-      { cancelable: true }
-    );
+    Alert.alert('Logout', 'Are you sure you want to logout?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Logout', style: 'destructive', onPress: async () => { await signOut(); } },
+    ]);
   };
 
   const toggleIn = (arr, setArr, value) => {
@@ -362,11 +351,14 @@ export default function Dashboard() {
   const handleLearnMore = (item) => {
     router.push({
       pathname: '/agency/[id]',
-      params: { id: item.id, name: item.name, heroUri: item.imageUri || '' },
+      params: {
+        id: item.id,
+        name: item.name,
+        heroUri: item.imageUri || ''
+      },
     });
   };
 
-  // Get or create slide animation for a card
   const getSlideAnim = (id) => {
     if (!slideAnimRefs.current[id]) {
       slideAnimRefs.current[id] = new Animated.Value(0);
@@ -374,105 +366,72 @@ export default function Dashboard() {
     return slideAnimRefs.current[id];
   };
 
-  // Handle card press (tap on card)
   const handleCardPress = (item) => {
     const id = item.id;
     const slideAnim = getSlideAnim(id);
-
     if (openCardId === id) {
-      // Card is open, close it
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 100,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start(() => {
-        setOpenCardId(null);
-      });
+      Animated.timing(slideAnim, { toValue: 0, duration: 100, useNativeDriver: true }).start(() => setOpenCardId(null));
     } else {
-      // Close any open card first
-      if (openCardId) {
-        const prevSlideAnim = getSlideAnim(openCardId);
-        Animated.timing(prevSlideAnim, {
-          toValue: 0,
-          duration: 100,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }).start();
-      }
-
-      // Open this card
+      if (openCardId) Animated.timing(getSlideAnim(openCardId), { toValue: 0, duration: 100, useNativeDriver: true }).start();
       setOpenCardId(id);
-      Animated.timing(slideAnim, {
-        toValue: 1,
-        duration: 300,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start();
+      Animated.timing(slideAnim, { toValue: 1, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
     }
   };
 
-  // Close all cards
   const closeAllCards = () => {
     if (openCardId) {
-      const slideAnim = getSlideAnim(openCardId);
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 200,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start(() => {
-        setOpenCardId(null);
-      });
+      Animated.timing(getSlideAnim(openCardId), { toValue: 0, duration: 200, useNativeDriver: true }).start(() => setOpenCardId(null));
     }
   };
 
-  // FRONT: image + rating badge
   const Front = ({ item }) => {
-    const source = item.imageUri ? { uri: item.imageUri } : item.image;
+    const source = item.imageUri
+      ? { uri: item.imageUri } : item.image;
+
     return (
       <View style={styles.frontFill}>
-        {source ? <Image source={source} style={styles.fullImage} resizeMode="contain" /> : <View style={styles.fullImage} />}
-        <View style={styles.ratingBadge}>
-          <StarRatingCompact rating={item.rating || 0} />
-        </View>
+        {source ? (
+          <Image
+            source={source}
+            style={styles.fullImage}
+            resizeMode="contain"
+          />
+        ) : (
+          <View style={[styles.fullImage, { backgroundColor: '#EEE', justifyContent: 'center', alignItems: 'center' }]}>
+            <Feather name="image" size={30} color="#CCC" />
+          </View>
+        )}
+
       </View>
     );
   };
 
-  // BACK: Stats overlay that slides in
   const Back = ({ item }) => {
     const s = item.stats || { placed: 0, visaRate: 0, partners: 0 };
-    const visaPct = Math.round((s.visaRate || 0) * 100);
+    const visaPct = s.visaRate <= 1
+      ? Math.round(s.visaRate * 100)
+      : Math.round(s.visaRate);
+    const barRate = s.visaRate > 1 ? s.visaRate / 100 : s.visaRate;
 
     return (
-      <Pressable
-        style={styles.backContainer}
-        onPress={() => {
-          const slideAnim = getSlideAnim(item.id);
-          Animated.timing(slideAnim, {
-            toValue: 0,
-            duration: 300,
-            easing: Easing.out(Easing.cubic),
-            useNativeDriver: true,
-          }).start(() => {
-            setOpenCardId(null);
-          });
-        }}
-      >
+      <Pressable style={styles.backContainer} onPress={() => handleCardPress(item)}>
         <View style={styles.statsContent}>
           <View style={styles.statsGrid}>
+            {/* Displays organizationName-based stats */}
             <StatTile
               label="Students Placed"
-              value={s.placed}
+              value={s.placed || 0}
               icon={<Feather name="users" size={14} color={COLORS.accent} />}
             />
+
             <StatTile
               label="Partner Unis"
-              value={s.partners}
+              value={s.partners || 0}
               icon={<Feather name="award" size={14} color={COLORS.accent} />}
             />
-            <StatVisaFull percent={visaPct} rate={s.visaRate} />
+
+            {/* Pass the calculated percent and rate to the progress bar component */}
+            <StatVisaFull percent={visaPct} rate={barRate} />
           </View>
 
           <TouchableOpacity
@@ -490,34 +449,13 @@ export default function Dashboard() {
   const renderItem = ({ item }) => {
     const slideAnim = getSlideAnim(item.id);
     const isOpen = openCardId === item.id;
-
-    // Stats slide in from right to left
-    const translateX = slideAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [SCREEN_WIDTH, 0], // From off-screen right to position
-    });
-
+    const translateX = slideAnim.interpolate({ inputRange: [0, 1], outputRange: [SCREEN_WIDTH, 0] });
     return (
       <View style={styles.cardContainer}>
-        {/* Card base (fixed in place) */}
-        <Pressable
-          style={styles.card}
-          onPress={() => handleCardPress(item)}
-        >
+        <Pressable style={styles.card} onPress={() => handleCardPress(item)}>
           <Front item={item} />
         </Pressable>
-
-        {/* Stats overlay - slides in from right */}
-        <Animated.View
-          style={[
-            styles.statsOverlay,
-            {
-              transform: [{ translateX }],
-              opacity: slideAnim,
-            }
-          ]}
-          pointerEvents={isOpen ? 'auto' : 'none'}
-        >
+        <Animated.View style={[styles.statsOverlay, { transform: [{ translateX }], opacity: slideAnim }]} pointerEvents={isOpen ? 'auto' : 'none'}>
           <Back item={item} />
         </Animated.View>
       </View>
@@ -528,39 +466,32 @@ export default function Dashboard() {
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" />
       <View style={[styles.header, { paddingTop: Math.max(insets.top + 8, 16) }]}>
-        <Text style={styles.headerTitle}>
-          Choose an Agency before{'\n'}proceeding with your application.
-        </Text>
+        <Text style={styles.headerTitle}>Choose an Agency before{'\n'}proceeding with your application.</Text>
         <View style={styles.searchRow}>
           <View style={styles.searchBox}>
             <Feather name="search" size={18} color="#9CA3AF" style={{ marginRight: 8 }} />
-            <TextInput
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search"
-              placeholderTextColor="#9CA3AF"
-              style={styles.searchInput}
-              returnKeyType="search"
-            />
+            <TextInput value={query} onChangeText={setQuery} placeholder="Search" placeholderTextColor="#9CA3AF" style={styles.searchInput} returnKeyType="search" />
           </View>
-          <TouchableOpacity style={styles.filterBtn} onPress={openSheet}>
-            <Feather name="sliders" size={18} color={COLORS.accent} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-            <Feather name="log-out" size={18} color="#E63946" />
-          </TouchableOpacity>
+          <TouchableOpacity style={styles.filterBtn} onPress={openSheet}><Feather name="sliders" size={18} color={COLORS.accent} /></TouchableOpacity>
+          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}><Feather name="log-out" size={18} color="#E63946" /></TouchableOpacity>
         </View>
       </View>
 
-      <FlatList
-        data={filtered}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        ListFooterComponent={<View style={{ height: 8 }} />}
-        onScrollBeginDrag={closeAllCards} // Close cards when scrolling
-      />
+      {loading ? (
+        <ActivityIndicator size="large" color={COLORS.accent} style={{ marginTop: 20 }} />
+      ) : (
+        <FlatList
+          data={filtered}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          onRefresh={() => fetchAgencies(true)}
+          refreshing={refreshing}
+          onScrollBeginDrag={closeAllCards}
+          ListFooterComponent={<View style={{ height: 8 }} />}
+        />
+      )}
 
       {sheetOpen && (
         <Animated.View style={[styles.overlay, { opacity: overlayOpacity }]}>
@@ -569,12 +500,7 @@ export default function Dashboard() {
       )}
 
       {sheetOpen && (
-        <Animated.View
-          style={[
-            styles.sheet,
-            { paddingTop: Math.max(insets.top + 6, 12), transform: [{ translateX: sheetTranslateX }] },
-          ]}
-        >
+        <Animated.View style={[styles.sheet, { paddingTop: Math.max(insets.top + 6, 12), transform: [{ translateX: sheetTranslateX }] }]}>
           <View style={styles.sheetTopRow}>
             <TouchableOpacity onPress={closeSheet} style={styles.backBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Feather name="chevron-left" size={22} color="#52606B" />
@@ -582,73 +508,24 @@ export default function Dashboard() {
             <Text style={styles.sheetTitle}>Filter</Text>
             <View style={{ width: 32 }} />
           </View>
-
           <View style={styles.sheetSearchRow}>
             <View style={styles.searchBox}>
               <Feather name="search" size={18} color="#9CA3AF" style={{ marginRight: 8 }} />
-              <TextInput
-                value={query}
-                onChangeText={setQuery}
-                placeholder="Search"
-                placeholderTextColor="#9CA3AF"
-                style={styles.searchInput}
-                returnKeyType="search"
-              />
+              <TextInput value={query} onChangeText={setQuery} placeholder="Search" placeholderTextColor="#9CA3AF" style={styles.searchInput} returnKeyType="search" />
             </View>
-            <TouchableOpacity style={styles.sheetApply} onPress={closeSheet}>
-              <Text style={{ color: '#fff', fontWeight: '700' }}>Apply</Text>
-            </TouchableOpacity>
+            <TouchableOpacity style={styles.sheetApply} onPress={closeSheet}><Text style={{ color: '#fff', fontWeight: '700' }}>Apply</Text></TouchableOpacity>
           </View>
-
-          <TouchableOpacity
-            onPress={() => {
-              setSelectedCountries([]);
-              setSelectedLevels([]);
-              setSelectedCities([]);
-              setMinRating(0);
-              closeAllCards();
-            }}
-            style={{ alignSelf: 'flex-end', marginBottom: 8 }}
-            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-          >
+          <TouchableOpacity onPress={() => { setSelectedCountries([]); setSelectedLevels([]); setSelectedCities([]); setMinRating(0); closeAllCards(); }} style={{ alignSelf: 'flex-end', marginBottom: 8 }} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
             <Text style={styles.clearAll}>Clear all</Text>
           </TouchableOpacity>
-
           <DropSection icon="globe" title="Country" open={openCountry} onToggle={() => setOpenCountry((s) => !s)}>
-            {COUNTRY_OPTIONS.map((c) => (
-              <OptionRow
-                key={c}
-                label={c}
-                selected={selectedCountries.includes(c)}
-                onPress={() => toggleIn(selectedCountries, setSelectedCountries, c)}
-              />
-            ))}
+            {COUNTRY_OPTIONS.map((c) => (<OptionRow key={c} label={c} selected={selectedCountries.includes(c)} onPress={() => toggleIn(selectedCountries, setSelectedCountries, c)} />))}
           </DropSection>
-
           <DropSection icon="book-open" title="Level" open={openLevel} onToggle={() => setOpenLevel((s) => !s)}>
-            {LEVEL_OPTIONS.map((lv) => (
-              <OptionRow
-                key={lv}
-                label={lv}
-                selected={selectedLevels.includes(lv)}
-                onPress={() => toggleIn(selectedLevels, setSelectedLevels, lv)}
-              />
-            ))}
+            {LEVEL_OPTIONS.map((lv) => (<OptionRow key={lv} label={lv} selected={selectedLevels.includes(lv)} onPress={() => toggleIn(selectedLevels, setSelectedLevels, lv)} />))}
           </DropSection>
-
           <DropSection icon="map-pin" title="City" open={openCity} onToggle={() => setOpenCity((s) => !s)}>
-            {CITY_OPTIONS.map((ct) => (
-              <OptionRow
-                key={ct}
-                label={ct}
-                selected={selectedCities.includes(ct)}
-                onPress={() => toggleIn(selectedCities, setSelectedCities, ct)}
-              />
-            ))}
-          </DropSection>
-
-          <DropSection icon="star" title="Rating" open={openRating} onToggle={() => setOpenRating((s) => !s)}>
-            <RatingSelector value={minRating} onChange={setMinRating} />
+            {CITY_OPTIONS.map((ct) => (<OptionRow key={ct} label={ct} selected={selectedCities.includes(ct)} onPress={() => toggleIn(selectedCities, setSelectedCities, ct)} />))}
           </DropSection>
         </Animated.View>
       )}
@@ -706,13 +583,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Card container
   cardContainer: {
     marginBottom: 14,
     position: 'relative',
   },
 
-  // Card (fixed in place)
   card: {
     backgroundColor: COLORS.cardBg,
     borderRadius: 14,
@@ -722,7 +597,6 @@ const styles = StyleSheet.create({
     height: CARD_HEIGHT,
   },
 
-  // Stats overlay that slides in
   statsOverlay: {
     position: 'absolute',
     top: 0,
@@ -762,7 +636,6 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
 
-  // Stats grid
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -789,7 +662,6 @@ const styles = StyleSheet.create({
   statLabel: { color: COLORS.headerText, fontWeight: '700', fontSize: 11 },
   statValue: { color: COLORS.text, fontWeight: '700', fontSize: 16, marginTop: 4 },
 
-  // View profile button
   viewProfileButton: {
     alignSelf: 'flex-end',
     marginTop: 8,
