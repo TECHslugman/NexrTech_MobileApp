@@ -25,7 +25,7 @@ const COLORS = {
     text: '#2E2E2E',
 };
 
-const API_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1/agency/profile/';
+const API_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1/agency/profile';
 const defaultHero = require('../../../assets/images/agencies/default.png');
 
 function Dot() {
@@ -44,7 +44,7 @@ export default function AgencyDetails() {
             if (!userToken) return;
             try {
                 setLoading(true);
-                const response = await fetch(API_URL, {
+                const response = await fetch(`${API_URL}/${id}`, {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${userToken}`,
@@ -55,7 +55,7 @@ export default function AgencyDetails() {
                 if (!response.ok) throw new Error('Network response was not ok');
 
                 const json = await response.json();
-                const fullJson = json.profile;
+                const fullJson = json.agency || json.profile || json;
 
                 setAgencyData({
                     name: fullJson.organizationName || paramName,
@@ -86,6 +86,49 @@ export default function AgencyDetails() {
         loadData();
     }, [id, userToken]);
 
+
+    const handleSelectAgency = async () => {
+        console.log("Attempting to select agency with ID:", id);
+        if (!id) { alert("Error: Agency ID is missing."); return; }
+
+        try {
+            setLoading(true);
+            const response = await fetch('https://edu-agent-backend-nine.vercel.app/api/v1/students/select-agency', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${userToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ agencyId: id }) // Double check if backend expects "agencyId" or just "id"
+            });
+
+            const json = await response.json();
+
+            if (!response.ok) {
+                // THIS LINE IS KEY: Look at your terminal/console for this output
+                console.log("--- SERVER ERROR DETAILS ---");
+                console.log("Status:", response.status);
+                console.log("Message:", json);
+                console.log("----------------------------");
+
+                alert(`Server Error (${response.status}): ${json.message || "Internal Server Error"}`);
+                return;
+            }
+
+            // Success logic...
+            router.push({
+                pathname: `/agency/selected/${id}`,
+                params: { name: agencyData?.name }
+            });
+
+        } catch (error) {
+            console.error("Network Error:", error);
+            alert("Check your internet connection.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const heroSource = useMemo(() => {
         if (agencyData?.imageUri) return { uri: agencyData.imageUri };
         if (heroUri) return { uri: String(heroUri) };
@@ -102,7 +145,6 @@ export default function AgencyDetails() {
         </View>
     );
 
-    // Everything that was in the ScrollView goes here
     const renderHeader = () => (
         <View style={styles.scrollBody}>
             <View style={styles.heroCard}>
@@ -154,10 +196,12 @@ export default function AgencyDetails() {
                 <Text style={styles.sectionTitleNoMargin}>Our Partners</Text>
                 <TouchableOpacity
                     onPress={() => router.push({
-                        pathname: '/agency/partners/[id]',
+                        pathname: `/agency/partners/${id}`,
                         params: {
-                            id: id,
-                            name: agencyData?.name // Pass the name so the partners page header isn't empty
+                            id: id, // Pass the ID
+                            name: agencyData?.name, // Pass the Name
+                            // Pass the actual array from your state
+                            partnersData: JSON.stringify(agencyData.partners || [])
                         }
                     })}
                 >
@@ -208,9 +252,14 @@ export default function AgencyDetails() {
             <View style={styles.bottomBar}>
                 <TouchableOpacity
                     style={styles.selectBtn}
-                    onPress={() => router.push({ pathname: '/agency/selected/[id]', params: { id } })}
+                    onPress={handleSelectAgency}
+                    disabled={loading}
                 >
-                    <Text style={styles.selectText}>SELECT</Text>
+                    {loading ? (
+                        <ActivityIndicator color="#FFF" />
+                    ) : (
+                        <Text style={styles.selectText}>SELECT</Text>
+                    )}
                 </TouchableOpacity>
             </View>
         </SafeAreaView>

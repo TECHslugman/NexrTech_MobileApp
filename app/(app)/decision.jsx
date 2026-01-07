@@ -42,65 +42,6 @@ const COLORS = {
 // --- API CONFIG ---
 const API_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1/agency/';
 
-/*const bodhi5 = require('../../assets/images/agencies/bodhi5.png');
-const eduPro = require('../../assets/images/agencies/edupro.png');
-const yarab = require('../../assets/images/agencies/yarab.png');
-const globalreach = require('../../assets/images/agencies/globalreach.png');
-*/
-/*const INITIAL_AGENCIES = [
-  {
-    id: 'bodhi5',
-    name: 'BODHI5',
-    subtitle: 'Education Consultancy & Placement Firm',
-    image: bodhi5,
-    imageUri: '',
-    country: 'Australia',
-    city: 'Thimphu',
-    levels: ['Undergraduate', 'Postgraduate'],
-    rating: 4.7,
-    stats: { placed: 820, visaRate: 0.93, partners: 38 },
-  },
-  {
-    id: 'educationpro',
-    name: 'EducationPro',
-    subtitle: 'Your Door to the Future',
-    image: eduPro,
-    imageUri: '',
-    country: 'Australia',
-    city: 'Phuentsholing',
-    levels: ['Undergraduate'],
-    rating: 4.3,
-    stats: { placed: 610, visaRate: 0.88, partners: 24 },
-  },
-  {
-    id: 'yarab',
-    name: 'YARAB GLOBAL',
-    subtitle: 'Education Consultancy & Placement Firm',
-    image: yarab,
-    imageUri: '',
-    country: 'Canada',
-    city: 'Thimphu',
-    levels: ['Undergraduate', 'Postgraduate'],
-    rating: 4.9,
-    stats: { placed: 1040, visaRate: 0.96, partners: 45 },
-  },
-  {
-    id: 'globalreach',
-    name: 'GLOBAL REACH',
-    subtitle: 'Education matters',
-    image: globalreach,
-    country: 'Australia',
-    city: 'Paro',
-    levels: ['Postgraduate'],
-    rating: 4.1,
-    stats: { placed: 540, visaRate: 0.85, partners: 19 },
-  },
-];*/
-
-const COUNTRY_OPTIONS = ['NA'];
-const LEVEL_OPTIONS = ['NA'];
-const CITY_OPTIONS = ['NA'];
-
 const CARD_HEIGHT = 172;
 
 
@@ -276,7 +217,7 @@ export default function Dashboard() {
 
         // FRONT OF CARD
         name: item.organizationName || "Unknown Agency",
-        imageUri: item.logo || null, // Will use placeholder if null
+        imageUri: item.logo || null,
 
         // BACK OF CARD
         stats: {
@@ -340,13 +281,6 @@ export default function Dashboard() {
     }).start(({ finished }) => finished && setSheetOpen(false));
   };
 
-  const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: async () => { await signOut(); } },
-    ]);
-  };
-
   const toggleIn = (arr, setArr, value) => {
     setArr((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
   };
@@ -365,7 +299,7 @@ export default function Dashboard() {
 
   const handleLearnMore = (item) => {
     router.push({
-      pathname: '/agency/[id]',
+      pathname: `/agency/${item.id}`,
       params: {
         id: item.id,
         name: item.name,
@@ -462,6 +396,7 @@ export default function Dashboard() {
   };
 
   const renderItem = ({ item }) => {
+    if (!item || !item.id) return null;
     const slideAnim = getSlideAnim(item.id);
     const isOpen = openCardId === item.id;
     const translateX = slideAnim.interpolate({ inputRange: [0, 1], outputRange: [SCREEN_WIDTH, 0] });
@@ -488,7 +423,6 @@ export default function Dashboard() {
             <TextInput value={query} onChangeText={setQuery} placeholder="Search" placeholderTextColor="#9CA3AF" style={styles.searchInput} returnKeyType="search" />
           </View>
           <TouchableOpacity style={styles.filterBtn} onPress={openSheet}><Feather name="sliders" size={18} color={COLORS.accent} /></TouchableOpacity>
-          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}><Feather name="log-out" size={18} color="#E63946" /></TouchableOpacity>
         </View>
       </View>
 
@@ -556,7 +490,7 @@ export default function Dashboard() {
             ))}
           </DropSection>
           <DropSection icon="map-pin" title="City" open={openCity} onToggle={() => setOpenCity((s) => !s)}>
-            {CITY_OPTIONS.map((ct) => (<OptionRow key={ct} label={ct} selected={selectedCities.includes(ct)} onPress={() => toggleIn(selectedCities, setSelectedCities, ct)} />))}
+            {dynamicOptions.cities.map((ct) => (<OptionRow key={ct} label={ct} selected={selectedCities.includes(ct)} onPress={() => toggleIn(selectedCities, setSelectedCities, ct)} />))}
           </DropSection>
         </Animated.View>
       )}
