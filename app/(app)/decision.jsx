@@ -184,6 +184,7 @@ export default function Dashboard() {
   const fetchAgencies = async (isRefresh = false) => {
     if (!userToken) return;
 
+
     try {
       isRefresh ? setRefreshing(true) : setLoading(true);
 

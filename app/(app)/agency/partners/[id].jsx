@@ -17,17 +17,16 @@ import { useAuth } from '../../../context/AuthContext';
 
 const { width } = Dimensions.get('window');
 const COLUMN_COUNT = 2;
-const GAP = 16;
-const CARD_SIZE = (width - (GAP * 4)) / COLUMN_COUNT;
+const GAP = 12;
+const CARD_WIDTH = (width - (GAP * 3)) / COLUMN_COUNT;
 
 const COLORS = {
-  bg: '#F8FAFD',      // Very light blue-gray background
-  primary: '#769FCD',
-  cardBg: '#FFFFFF',  // Keep card white but make the shadow/border pop
-  cardBorder: '#EEF2F7',
+  bg: '#FFFFFF',
+  primary: '#3B82F6',
+  text: '#769FCD',
+  textMuted: '#64748B',
+  border: '#E2E8F0',
 };
-
-const DEFAULT_UNI_IMAGE = require('../../../../assets/images/agencies/default.png'); 
 
 export default function AgencyPartners() {
   const { id, name, partnersData } = useLocalSearchParams();
@@ -52,28 +51,48 @@ export default function AgencyPartners() {
     <TouchableOpacity 
       style={styles.partnerCard} 
       onPress={() => handlePressCard(item.websiteUrl)}
-      activeOpacity={0.8}
+      activeOpacity={0.7}
     >
-      <Image 
-        source={item.logo ? { uri: item.logo } : DEFAULT_UNI_IMAGE} 
-        style={styles.logoImage} 
-        resizeMode="contain" 
-      />
+      <View style={styles.cardContent}>
+        <Image 
+          source={item.logo ? { uri: item.logo } : null} 
+          style={styles.logoImage} 
+          resizeMode="contain" 
+          defaultSource={require('../../../../assets/images/agencies/default.png')}
+        />
+        {item.name && (
+          <Text style={styles.partnerName} numberOfLines={2}>
+            {item.name}
+          </Text>
+        )}
+      </View>
     </TouchableOpacity>
   );
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Feather name="chevron-left" size={26} color="#52606B" />
+        <TouchableOpacity 
+          onPress={() => router.back()} 
+          style={styles.backBtn}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Feather name="chevron-left" size={24} color={COLORS.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Our Partners</Text>
+        <Text style={styles.headerTitle}>Partner Universities</Text>
         <View style={{ width: 40 }} />
       </View>
 
       {loading ? (
-        <ActivityIndicator style={{ flex: 1 }} color={COLORS.primary} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading partners...</Text>
+        </View>
+      ) : partners.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Feather name="university" size={48} color="#CBD5E1" />
+          <Text style={styles.emptyTitle}>No partners found</Text>
+        </View>
       ) : (
         <FlatList
           data={partners}
@@ -83,6 +102,11 @@ export default function AgencyPartners() {
           contentContainerStyle={styles.listContainer}
           columnWrapperStyle={styles.columnWrapper}
           showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            <Text style={styles.countText}>
+              {partners.length} partner{partners.length !== 1 ? 's' : ''}
+            </Text>
+          }
         />
       )}
     </SafeAreaView>
@@ -90,37 +114,108 @@ export default function AgencyPartners() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: COLORS.bg },
+  safe: { 
+    flex: 1, 
+    backgroundColor: COLORS.bg 
+  },
+  
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    height: 60,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
     backgroundColor: COLORS.bg,
   },
-  headerTitle: { fontSize: 18, fontWeight: '600', color: COLORS.primary },
-  backBtn: { width: 40, height: 40, justifyContent: 'center' },
-  listContainer: { paddingHorizontal: GAP, paddingBottom: 30 },
-  columnWrapper: { justifyContent: 'space-between' },
-  partnerCard: {
-    width: CARD_SIZE,
-    height: CARD_SIZE,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10, 
-    marginBottom: GAP,
-    padding: 10, 
-    justifyContent: 'center',
+  
+  backBtn: {
+    width: 40,
     alignItems: 'center',
-    
-    // Minimalist border and shadow
-    borderWidth: 1,
-    borderColor: '#F0F4F8',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.03,
-    shadowRadius: 10,
-    elevation: 2,
+    justifyContent: 'center',
   },
-  logoImage: { width: '100%', height: '100%' },
+  
+  headerTitle: { 
+    flex: 1,
+    fontSize: 18, 
+    fontWeight: '500', 
+    color: COLORS.text,
+    textAlign: 'center',
+  },
+  
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  
+  loadingText: {
+    color: COLORS.textMuted,
+    fontSize: 14,
+  },
+  
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  
+  emptyTitle: {
+    color: COLORS.textMuted,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  
+  listContainer: { 
+    paddingHorizontal: GAP, 
+    paddingTop: 16,
+    paddingBottom: 20,
+  },
+  
+  columnWrapper: { 
+    gap: GAP,
+    marginBottom: GAP,
+  },
+  
+  countText: {
+    fontSize: 14,
+    color: COLORS.textMuted,
+    marginBottom: 16,
+    paddingHorizontal: 4,
+  },
+  
+  partnerCard: {
+    width: CARD_WIDTH,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    aspectRatio: 1, // Makes it square
+  },
+  
+  cardContent: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  
+  logoImage: { 
+    width: '100%', 
+    height: '70%', 
+    marginBottom: 12,
+  },
+  
+  partnerName: {
+    fontSize: 12,
+    color: COLORS.text,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 'auto',
+  },
 });
