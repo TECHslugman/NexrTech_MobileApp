@@ -24,6 +24,7 @@ const COLORS = {
     accent: '#E2E8F0',
     lightBlue: '#E8F1FF',
 };
+const GAP = 12;
 
 export default function SelectedAgencyHome() {
     const router = useRouter();
@@ -43,74 +44,69 @@ export default function SelectedAgencyHome() {
             setLoading(true);
 
             try {
-                // 1. AGENCY PROFILE & UNIVERSITIES
-                const agencyRes = await fetch(`${BASE_URL}/agency/profile/${id}`, {
-                    headers: { 'Authorization': `Bearer ${userToken}` }
-                });
+                // Use Promise.all to fetch profile and university data simultaneously for better performance
+                const [agencyRes, uniRes, coursesRes, eventsRes, scholarRes, mentorRes] = await Promise.all([
+                    fetch(`${BASE_URL}/agency/profile/${id}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
+                    fetch(`${BASE_URL}/agency/universities/agency/${id}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
+                    fetch(`${BASE_URL}/agency/courses/agency/${id}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
+                    fetch(`${BASE_URL}/agency/events/agency/${id}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
+                    fetch(`${BASE_URL}/agency/scholarships/agency/${id}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
+                    fetch(`${BASE_URL}/agency/mentors/agency/${id}`, { headers: { 'Authorization': `Bearer ${userToken}` } })
+                ]);
+
+                // 1. Parse Agency Profile
                 if (agencyRes.ok) {
                     const aJson = await agencyRes.json();
                     setAgencyData(aJson.agency || aJson.profile);
-                } else {
-                    setAgencyData({ organizationName: "Agency Name", partnerUniversities: [] });
                 }
 
-                // 2. COURSES
-                const coursesRes = await fetch(`${BASE_URL}/agency/courses/agency/${id}`, {
-                    headers: { 'Authorization': `Bearer ${userToken}` }
-                });
+                // 2. Parse Partner Universities (The New API)
+                if (uniRes.ok) {
+                    const uJson = await uniRes.json();
+                    // Based on your Postman, the data is in university.partnerUniversities
+                    const uniList = uJson.university?.partnerUniversities || [];
+
+                    // Update the agencyData state to include these universities
+                    setAgencyData(prev => ({
+                        ...prev,
+                        partnerUniversities: uniList
+                    }));
+                }
+
+                // 3. Parse Courses
                 if (coursesRes.ok) {
                     const cJson = await coursesRes.json();
-                    if (Array.isArray(cJson.courses)) {
-                        // Convert to objects with id and title
-                        const courseObjects = cJson.courses.map(course => ({
-                            id: course._id || course.id || Math.random().toString(),
-                            title: course.title || "Course"
-                        }));
-                        setCourses(courseObjects);
-                        // LOG COURSE IDs HERE
-                        console.log('=== COURSE IDs FOR POSTMAN ===');
-                        courseObjects.forEach((course, index) => {
-                            console.log(`Course ${index + 1}: "${course.title}" - ID: ${course.id}`);
-
-                            // Specific log for "Bachelor of Civil engerneering" course
-                            if (course.title === "Bachelor of Civil engerneering" || course.title.includes("Bachelor of Civil engerneering")) {
-                                console.log(`✨ FOUND "Bachelor of Civil engerneering" COURSE - ID: ${course.id} ✨`);
-                            }
-                        });
-                        console.log('=============================');
-                    } else {
-                        // If API returns something else
-                        setCourses(cJson.courses || []);
-                    }
-                } else {
-                    // Fallback as objects with id and title only
-                    setCourses([
-                        { id: 'c1', title: "Bachelors of Nursing" },
-                        { id: 'c2', title: "Bachelors of Political Sci." },
-                        { id: 'c3', title: "IT" }
-                    ]);
+                    const courseObjects = (cJson.courses || []).map(course => ({
+                        id: course._id || course.id || Math.random().toString(),
+                        title: course.title || "Course"
+                    }));
+                    setCourses(courseObjects);
                 }
 
-                // 4. SCHOLARSHIPS
-                const scholarRes = await fetch(`${BASE_URL}/agency/scholarships/agency/${id}`, {
-                    headers: { 'Authorization': `Bearer ${userToken}` }
-                });
+                // 4. Parse Events
+                if (eventsRes.ok) {
+                    const eJson = await eventsRes.json();
+                    setEvents(Array.isArray(eJson.events) ? eJson.events : []);
+                }
+
+                // 5. Parse Scholarships
                 if (scholarRes.ok) {
                     const sJson = await scholarRes.json();
-                    setScholarships(sJson.scholarships || []);
-                } else {
-                    setScholarships(["Australia Awards", "The Snow Scholarship"]);
+
+                    const rawScholarships = sJson.scholarship || [];
+                    const scholarObjects = rawScholarships.map(item => ({
+                        id: item._id || item.id || Math.random().toString(),
+                        title: item.title || "Scholarship Program",
+                        // You can also capture the amount or deadline if available in your API
+                    }));
+
+                    setScholarships(scholarObjects);
                 }
 
-                // 5. MENTORS
-                const mentorRes = await fetch(`${BASE_URL}/agency/mentors/agency/${id}`, {
-                    headers: { 'Authorization': `Bearer ${userToken}` }
-                });
+                // 6. Parse Mentors
                 if (mentorRes.ok) {
                     const mJson = await mentorRes.json();
                     setMentors(mJson.mentors || []);
-                } else {
-                    setMentors([{ id: '1', name: 'Karma Dema', bio: '2+ years of mentoring students for higher education abroad', avatar: 'https://via.placeholder.com/100' }]);
                 }
 
             } catch (error) {
@@ -123,7 +119,7 @@ export default function SelectedAgencyHome() {
         fetchAllData();
     }, [id, userToken]);
 
-    const GAP = 12;
+
 
     if (loading) {
         return (
@@ -237,44 +233,82 @@ export default function SelectedAgencyHome() {
                     ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
                 />
 
-                {/* EVENTS */}
+                {/* EVENTS - HORIZONTAL SLIDER */}
                 <SectionHeader
                     title="Upcoming Events"
                     onBtnPress={() => router.push(`/agency/selected/events/${id}`)}
                 />
-                {events.map((event) => (
-                    <TouchableOpacity key={event.id} style={styles.eventCard}>
-                        <View style={styles.eventImageContainer}>
-                            <Image source={{ uri: event.image }} style={styles.eventImg} resizeMode="contain" />
-                        </View>
-                        <View style={styles.eventContent}>
-                            <Text style={styles.eventTitle}>{event.title}</Text>
-                            <View style={styles.eventAction}>
-                                <Text style={styles.eventActionText}>View Details</Text>
-                                <Feather name="arrow-right" size={14} color={COLORS.primary} />
-                            </View>
-                        </View>
-                    </TouchableOpacity>
-                ))}
+                {events.length > 0 ? (
+                    <FlatList
+                        horizontal
+                        data={events}
+                        keyExtractor={(item) => `event-${item.id}`}
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.listContent}
+                        renderItem={({ item }) => (
+                            <TouchableOpacity style={styles.eventCardHorizontal}>
+                                <Image source={{ uri: item.image }} style={styles.eventImgHorizontal} resizeMode="cover" />
+                                <View style={styles.eventContentHorizontal}>
+                                    <Text style={styles.eventTitleHorizontal} numberOfLines={2}>{item.title}</Text>
+                                    <View style={styles.eventDetails}>
+                                        <View style={styles.eventDetailRow}>
+                                            <Feather name="calendar" size={12} color={COLORS.textSecondary} />
+                                            <Text style={styles.eventDetailText}>{item.date}</Text>
+                                        </View>
+                                        <View style={styles.eventDetailRow}>
+                                            <Feather name="clock" size={12} color={COLORS.textSecondary} />
+                                            <Text style={styles.eventDetailText}>{item.time}</Text>
+                                        </View>
+                                    </View>
+                                    <TouchableOpacity style={styles.eventAction}>
+                                        <Text style={styles.eventActionText}>Details</Text>
+                                        <Feather name="arrow-right" size={12} color={COLORS.primary} />
+                                    </TouchableOpacity>
+                                </View>
+                            </TouchableOpacity>
+                        )}
+                        ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
+                    />
+                ) : (
+                    <Text style={styles.noEventsText}>No upcoming events</Text>
+                )}
 
                 {/* SCHOLARSHIPS */}
                 <SectionHeader
                     title="Available Scholarships"
-                    onBtnPress={() => router.push(`/agency/selected/scholarships/${id}`)}
+                    onBtnPress={() => router.push({
+                        pathname: `/agency/selected/scholarships/${id}`,
+                        params: {
+                            initialData: JSON.stringify(scholarships), // Pass the data here
+                            agencyName: agencyData?.organizationName
+                        }
+                    })}
                 />
                 <FlatList
                     horizontal
                     data={scholarships}
-                    keyExtractor={(_, index) => `scholar-${index}`}
+                    keyExtractor={(item) => item.id}
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.listContent}
                     renderItem={({ item }) => (
-                        <View style={styles.scholarshipCard}>
+                        <TouchableOpacity
+                            style={styles.scholarshipCard}
+                            onPress={() => router.push({
+                                pathname: `/agency/selected/scholarships/details`,
+                                params: {
+                                    id: item.id,
+                                    title: item.title
+                                }
+                            })}
+                        >
                             <View style={styles.scholarshipHeader}>
                                 <MaterialIcons name="workspace-premium" size={18} color={COLORS.white} />
                             </View>
-                            <Text style={styles.scholarshipText}>{item}</Text>
-                        </View>
+                            {/* Updated to use item.title */}
+                            <Text style={styles.scholarshipText} numberOfLines={2}>
+                                {item.title}
+                            </Text>
+                        </TouchableOpacity>
                     )}
                     ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
                 />
@@ -287,7 +321,7 @@ export default function SelectedAgencyHome() {
                 <FlatList
                     horizontal
                     data={agencyData?.partnerUniversities || []}
-                    keyExtractor={(item) => item._id || Math.random().toString()}
+                    keyExtractor={(item, index) => item._id || index.toString()}
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.listContent}
                     renderItem={({ item }) => (
@@ -295,11 +329,19 @@ export default function SelectedAgencyHome() {
                             style={styles.uniTile}
                             onPress={() => item.websiteUrl && Linking.openURL(item.websiteUrl)}
                         >
-                            <Image
-                                source={item.logo ? { uri: item.logo } : DEFAULT_IMAGE}
-                                style={styles.uniImg}
-                                resizeMode="contain"
-                            />
+                            {item.logo ? (
+                                <Image
+                                    source={{ uri: item.logo }}
+                                    style={styles.uniImg}
+                                    resizeMode="contain"
+                                />
+                            ) : (
+                                <View style={styles.uniPlaceholder}>
+                                    <Text style={styles.uniPlaceholderText}>
+                                        {item.name?.substring(0, 2).toUpperCase() || 'UN'}
+                                    </Text>
+                                </View>
+                            )}
                         </TouchableOpacity>
                     )}
                     ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
@@ -349,7 +391,7 @@ export default function SelectedAgencyHome() {
 
                 <TouchableOpacity
                     style={styles.navItem}
-                    onPress={() => router.push('/user-profile')}
+                    onPress={() => router.push('/agency/selected/profile')}
                 >
                     <Ionicons name="person-outline" size={22} color="#BFC7D1" />
                     <Text style={styles.navLabel}>Profile</Text>
@@ -541,50 +583,58 @@ const styles = StyleSheet.create({
         fontSize: 15,
         lineHeight: 20,
     },
-    // EVENT CARD
-    eventCard: {
-        width: '100%',
-        height: 160,
-        borderRadius: 16,
+    // EVENT CARD HORIZONTAL
+    eventCardHorizontal: {
+        width: 280,
         backgroundColor: COLORS.white,
-        overflow: 'hidden',
+        borderRadius: 16,
         borderWidth: 1,
         borderColor: COLORS.border,
-        marginBottom: 10,
+        overflow: 'hidden',
+        marginRight: GAP,
     },
-    eventImageContainer: {
+    eventImgHorizontal: {
         width: '100%',
-        height: '65%',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 10,
+        height: 120,
     },
-    eventImg: {
-        width: '100%',
-        height: '100%',
+    eventContentHorizontal: {
+        padding: 12,
     },
-    eventContent: {
-        padding: 14,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    eventTitle: {
-        fontSize: 15,
+    eventTitleHorizontal: {
+        fontSize: 14,
         fontWeight: '600',
         color: COLORS.textPrimary,
-        flex: 1,
-        marginRight: 10,
+        marginBottom: 8,
+    },
+    eventDetails: {
+        marginBottom: 12,
+    },
+    eventDetailRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginBottom: 4,
+    },
+    eventDetailText: {
+        fontSize: 12,
+        color: COLORS.textSecondary,
     },
     eventAction: {
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'flex-end',
+        gap: 4,
     },
     eventActionText: {
         fontSize: 12,
         color: COLORS.primary,
         fontWeight: '600',
-        marginRight: 4,
+    },
+    noEventsText: {
+        textAlign: 'center',
+        color: COLORS.textSecondary,
+        fontStyle: 'italic',
+        marginVertical: 20,
     },
     // SCHOLARSHIP CARD
     scholarshipCard: {
@@ -605,6 +655,7 @@ const styles = StyleSheet.create({
         lineHeight: 20,
     },
     // UNIVERSITY TILE
+
     uniTile: {
         width: 140,
         height: 100,

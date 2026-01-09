@@ -7,7 +7,8 @@ import {
     Image,
     FlatList,
     ActivityIndicator,
-    Dimensions
+    ScrollView,
+    Dimensions,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,19 +19,19 @@ const COLORS = {
     bg: '#F6F9FC',
     primary: '#769FCD',
     accent: '#769FCD',
-    heading: '#87A1C5',
+    heading: '#769FCD',
     cardBg: '#FFFFFF',
     cardBorder: '#E6EEF7',
     pillBg: '#F7FBFC',
     text: '#2E2E2E',
+    textSecondary: '#64748B',
+    border: '#E2E8F0',
+    lightBg: '#F8FAFC',
 };
 
-const API_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1/agency/profile';
+// Base URL for your API
+const BASE_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1';
 const defaultHero = require('../../../assets/images/agencies/default.png');
-
-function Dot() {
-    return <View style={styles.dot} />;
-}
 
 export default function AgencyDetails() {
     const { id, name: paramName, heroUri } = useLocalSearchParams();
@@ -39,37 +40,53 @@ export default function AgencyDetails() {
 
     const [agencyData, setAgencyData] = useState(null);
     const [loading, setLoading] = useState(true);
+
     useEffect(() => {
         const loadData = async () => {
-            if (!userToken) return;
+            if (!userToken || !id) return;
             try {
                 setLoading(true);
-                const response = await fetch(`${API_URL}/${id}`, {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${userToken}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
 
-                if (!response.ok) throw new Error('Network response was not ok');
+                // Fetching from both endpoints simultaneously
+                const [profileRes, partnerRes] = await Promise.all([
+                    fetch(`${BASE_URL}/agency/profile/${id}`, {
+                        headers: { 
+                            'Authorization': `Bearer ${userToken}`,
+                            'Content-Type': 'application/json' 
+                        }
+                    }),
+                    fetch(`${BASE_URL}/agency/universities/agency/${id}`, {
+                        headers: { 
+                            'Authorization': `Bearer ${userToken}`,
+                            'Content-Type': 'application/json' 
+                        }
+                    })
+                ]);
 
-                const json = await response.json();
-                const fullJson = json.agency || json.profile || json;
+                if (!profileRes.ok) throw new Error('Profile API failed');
+
+                const profileJson = await profileRes.json();
+                const partnerJson = await partnerRes.json();
+
+                // Mapping profile data
+                const fullProfile = profileJson.agency || profileJson.profile || profileJson;
+                
+                
+                const partnerList = partnerJson.university?.partnerUniversities || [];
 
                 setAgencyData({
-                    name: fullJson.organizationName || paramName,
-                    est: fullJson.establishment || "N/A",
-                    address: fullJson.address || "No address provided",
-                    about: fullJson.about || "No description available",
-                    services: fullJson.servicesOffered || [],
-                    process: fullJson.process || [],
-                    partners: fullJson.partnerUniversities || [],
-                    imageUri: fullJson.logo || null,
+                    name: fullProfile.organizationName || paramName,
+                    est: fullProfile.establishment || "N/A",
+                    address: fullProfile.address || "No address provided",
+                    about: fullProfile.about || "No description available",
+                    services: fullProfile.servicesOffered || [],
+                    process: fullProfile.process || [],
+                    partners: partnerList, 
+                    imageUri: fullProfile.logo || null,
                 });
 
             } catch (error) {
-                console.log("API Error, falling back:", error.message);
+                console.log("Fetch error:", error.message);
                 setAgencyData({
                     name: paramName || "Agency Details",
                     est: "N/A",
@@ -86,36 +103,27 @@ export default function AgencyDetails() {
         loadData();
     }, [id, userToken]);
 
-
     const handleSelectAgency = async () => {
-        console.log("Attempting to select agency with ID:", id);
         if (!id) { alert("Error: Agency ID is missing."); return; }
 
         try {
             setLoading(true);
-            const response = await fetch('https://edu-agent-backend-nine.vercel.app/api/v1/students/select-agency', {
+            const response = await fetch(`${BASE_URL}/students/select-agency`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${userToken}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ agencyId: id }) // Double check if backend expects "agencyId" or just "id"
+                body: JSON.stringify({ agencyId: id })
             });
 
             const json = await response.json();
 
             if (!response.ok) {
-                // THIS LINE IS KEY: Look at your terminal/console for this output
-                console.log("--- SERVER ERROR DETAILS ---");
-                console.log("Status:", response.status);
-                console.log("Message:", json);
-                console.log("----------------------------");
-
                 alert(`Server Error (${response.status}): ${json.message || "Internal Server Error"}`);
                 return;
             }
 
-            // Success logic...
             router.push({
                 pathname: `/agency/selected/${id}`,
                 params: { name: agencyData?.name }
@@ -136,80 +144,52 @@ export default function AgencyDetails() {
     }, [heroUri, agencyData]);
 
     const renderPartner = ({ item, index }) => (
-        <View key={item._id || `p-${index}`} style={styles.partnerTile}>
+        <TouchableOpacity key={item._id || `p-${index}`} style={styles.partnerTile}>
             {item.logo ? (
                 <Image source={{ uri: item.logo }} style={styles.partnerLogo} resizeMode="contain" />
             ) : (
-                <Text style={styles.partnerText}>{item.name}</Text>
+                <View style={styles.partnerPlaceholder}>
+                    <Text style={styles.partnerText}>{item.name?.charAt(0) || "U"}</Text>
+                </View>
             )}
+        </TouchableOpacity>
+    );
+
+    const HeaderSection = () => (
+        <View style={styles.headerSection}>
+            <View style={styles.heroContainer}>
+                <Image source={heroSource} style={styles.heroImage} resizeMode="contain" />
+                <View style={styles.headerOverlay}>
+                    <Text style={styles.agencyName}>{agencyData.name}</Text>
+                    <View style={styles.headerInfoRow}>
+                        <View style={styles.infoPill}>
+                            <Feather name="calendar" size={12} color="#FFFFFF" />
+                            <Text style={styles.infoPillText}>Est. {agencyData.est}</Text>
+                        </View>
+                        <View style={styles.divider} />
+                        <View style={styles.locationInfo}>
+                            <Feather name="map-pin" size={12} color="#FFFFFF" />
+                            <Text style={styles.locationText} numberOfLines={1}>
+                                {agencyData.address}
+                            </Text>
+                        </View>
+                    </View>
+                </View>
+            </View>
         </View>
     );
 
-    const renderHeader = () => (
-        <View style={styles.scrollBody}>
-            <View style={styles.heroCard}>
-                <Image source={heroSource} style={styles.heroImage} resizeMode="contain" />
-                <View style={styles.heroDivider} />
-            </View>
-
-            <View style={styles.dividerRow}>
-                <Text style={styles.estText}>EST. {agencyData.est}</Text>
-            </View>
-
-            <View style={styles.block}>
-                <View style={styles.locationPill}>
-                    <Feather name="map-pin" size={14} color={COLORS.accent} />
-                    <Text style={styles.locationText}>{agencyData.address}</Text>
+    const Section = ({ title, icon, children }) => (
+        <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+                <View style={styles.sectionIcon}>
+                    <Feather name={icon} size={16} color={COLORS.primary} />
                 </View>
+                <Text style={styles.sectionTitle}>{title}</Text>
             </View>
-
-            <Text style={styles.sectionTitle}>About</Text>
-            <View style={styles.card}>
-                <Text style={styles.cardText}>{agencyData.about}</Text>
+            <View style={styles.sectionContent}>
+                {children}
             </View>
-
-            <Text style={styles.sectionTitle}>Our Services</Text>
-            <View style={styles.card}>
-                {agencyData.services?.map((s, idx) => (
-                    <View key={`svc-${idx}`} style={styles.serviceRow}>
-                        <Feather name="check-circle" size={16} color={COLORS.accent} />
-                        <Text style={styles.serviceText}>{s}</Text>
-                    </View>
-                ))}
-            </View>
-
-            <Text style={styles.sectionTitle}>Process</Text>
-            <View style={styles.card}>
-                {agencyData.process?.map((p, idx) => (
-                    <View key={`prc-${idx}`} style={styles.processRow}>
-                        <View style={styles.timelineCol}>
-                            <View style={styles.lineBox}>{idx !== 0 && <View style={styles.line} />}</View>
-                            <Dot />
-                            <View style={styles.lineBox}>{idx !== (agencyData.process.length - 1) && <View style={styles.line} />}</View>
-                        </View>
-                        <Text style={styles.processText}>{p}</Text>
-                    </View>
-                ))}
-            </View>
-
-            <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionTitleNoMargin}>Our Partners</Text>
-                <TouchableOpacity
-                    onPress={() => router.push({
-                        pathname: `/agency/partners/${id}`,
-                        params: {
-                            id: id, // Pass the ID
-                            name: agencyData?.name, // Pass the Name
-                            // Pass the actual array from your state
-                            partnersData: JSON.stringify(agencyData.partners || [])
-                        }
-                    })}
-                >
-                    <Text style={styles.viewMore}>View more</Text>
-                </TouchableOpacity>
-            </View>
-
-            {/* FlatList for partners is handled by the main FlatList below */}
         </View>
     );
 
@@ -223,33 +203,97 @@ export default function AgencyDetails() {
 
     return (
         <SafeAreaView style={styles.safe}>
+            {/* Header */}
             <View style={styles.topBar}>
                 <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-                    <Feather name="chevron-left" size={22} color="#52606B" />
+                    <Feather name="chevron-left" size={22} color="#FFFFFF" />
                 </TouchableOpacity>
-                <Text style={styles.topTitle}>{agencyData.name}</Text>
-                <View style={{ width: 32 }} />
+                <View style={styles.topSpacer} />
             </View>
 
-            <FlatList
-                data={[]} // We use ListFooterComponent for the horizontal partners list
-                renderItem={null}
-                ListHeaderComponent={renderHeader}
-                ListFooterComponent={
-                    <FlatList
-                        data={agencyData.partners}
-                        renderItem={renderPartner}
-                        keyExtractor={(item, index) => item._id || index.toString()}
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 120 }}
-                        ItemSeparatorComponent={() => <View style={{ width: 10 }} />}
-                    />
-                }
+            {/* Content */}
+            <ScrollView 
                 showsVerticalScrollIndicator={false}
-            />
+                contentContainerStyle={styles.scrollContent}
+            >
+                <HeaderSection />
 
-            <View style={styles.bottomBar}>
+                <View style={styles.contentContainer}>
+                    <Section title="About" icon="info">
+                        <Text style={styles.aboutText}>{agencyData.about}</Text>
+                    </Section>
+
+                    <Section title="Our Services" icon="check-circle">
+                        {agencyData.services?.map((service, index) => (
+                            <View key={`service-${index}`} style={styles.serviceItem}>
+                                <View style={styles.serviceIcon}>
+                                    <Feather name="check" size={14} color="#FFFFFF" />
+                                </View>
+                                <Text style={styles.serviceText}>{service}</Text>
+                            </View>
+                        ))}
+                    </Section>
+
+                    <Section title="Our Process" icon="list">
+                        {agencyData.process?.map((step, index) => (
+                            <View key={`step-${index}`} style={styles.processStep}>
+                                <View style={styles.stepNumber}>
+                                    <Text style={styles.stepNumberText}>{index + 1}</Text>
+                                </View>
+                                <Text style={styles.processText}>{step}</Text>
+                            </View>
+                        ))}
+                    </Section>
+
+                    {/* Partners Section */}
+                    <View style={styles.section}>
+                        <View style={styles.sectionHeader}>
+                            <View style={styles.sectionIcon}>
+                                <Feather name="star" size={16} color={COLORS.primary} />
+                            </View>
+                            <Text style={styles.sectionTitle}>Our Partners</Text>
+                            {agencyData.partners?.length > 0 && (
+                                <TouchableOpacity
+                                    style={styles.viewMoreBtn}
+                                    onPress={() => router.push({
+                                        pathname: `/agency/partners/${id}`,
+                                        params: {
+                                            id: id,
+                                            name: agencyData?.name,
+                                            partnersData: JSON.stringify(agencyData.partners || [])
+                                        }
+                                    })}
+                                >
+                                    <Text style={styles.viewMoreText}>View all</Text>
+                                    <Feather name="chevron-right" size={14} color={COLORS.primary} />
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                        
+                        {agencyData.partners?.length > 0 ? (
+                            <FlatList
+                                data={agencyData.partners.slice(0, 5)}
+                                renderItem={renderPartner}
+                                keyExtractor={(item, index) => item._id || index.toString()}
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                contentContainerStyle={styles.partnersList}
+                                ItemSeparatorComponent={() => <View style={{ width: 12 }} />}
+                            />
+                        ) : (
+                            <View style={styles.emptyPartners}>
+                                <Feather name="university" size={24} color={COLORS.border} />
+                                <Text style={styles.emptyPartnersText}>No partners available</Text>
+                            </View>
+                        )}
+                    </View>
+                </View>
+
+                <View style={styles.bottomSpacing} />
+            </ScrollView>
+
+            {/* Fixed Action Button */}
+            <View style={styles.actionBar}>
                 <TouchableOpacity
                     style={styles.selectBtn}
                     onPress={handleSelectAgency}
@@ -258,7 +302,10 @@ export default function AgencyDetails() {
                     {loading ? (
                         <ActivityIndicator color="#FFF" />
                     ) : (
-                        <Text style={styles.selectText}>SELECT</Text>
+                        <>
+                            <Feather name="check" size={18} color="#FFFFFF" />
+                            <Text style={styles.selectText}>Select Agency</Text>
+                        </>
                     )}
                 </TouchableOpacity>
             </View>
@@ -266,100 +313,293 @@ export default function AgencyDetails() {
     );
 }
 
-const HERO_HEIGHT = 120;
+const { width } = Dimensions.get('window');
+const HERO_HEIGHT = 220;
+
 const styles = StyleSheet.create({
-    safe: { flex: 1, backgroundColor: COLORS.bg },
+    safe: { 
+        flex: 1, 
+        backgroundColor: COLORS.bg 
+    },
     topBar: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 10,
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderBottomWidth: 1,
-        borderColor: '#EDEFF2',
-        backgroundColor: '#FFFFFF',
+        paddingHorizontal: 16,
+        paddingTop: 50,
     },
     backBtn: {
-        height: 32,
-        width: 32,
-        borderRadius: 16,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: 'rgba(0, 0, 0, 0.2)',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#F2F6FF',
-    },
-    topTitle: { flex: 1, textAlign: 'center', color: COLORS.heading, fontWeight: '600' },
-    scrollBody: { padding: 16 },
-    heroCard: {
-        backgroundColor: COLORS.cardBg,
-        borderRadius: 12,
         borderWidth: 1,
-        borderColor: COLORS.cardBorder,
+        borderColor: 'rgba(255, 255, 255, 0.3)',
+    },
+    topSpacer: {
+        flex: 1,
+    },
+    scrollContent: {
+        paddingBottom: 100,
+    },
+    headerSection: {
+        marginBottom: 16,
+    },
+    heroContainer: {
+        height: HERO_HEIGHT,
+        backgroundColor: COLORS.primary,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 40,
+    },
+    heroImage: {
+        width: '100%',
+        height: '100%',
+        maxWidth: 200,
+        maxHeight: 120,
+    },
+    headerOverlay: {
+        position: 'absolute',
+        bottom: 20,
+        left: 20,
+        right: 20,
+    },
+    agencyName: {
+        fontSize: 24,
+        fontWeight: '700',
+        color: '#FFFFFF',
+        marginBottom: 12,
+        textShadowColor: 'rgba(0, 0, 0, 0.2)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 3,
+    },
+    headerInfoRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    infoPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.15)',
         paddingHorizontal: 10,
-        paddingTop: 10,
-        marginBottom: 10,
-    },
-    heroImage: { width: '100%', height: HERO_HEIGHT, alignSelf: 'center' },
-    heroDivider: { marginTop: 10, height: 1, backgroundColor: '#E5EAF1' },
-    dividerRow: { marginVertical: 12, borderTopWidth: 1, borderColor: '#E5EAF1', paddingTop: 8 },
-    estText: { fontSize: 12, color: '#8696AA' },
-    block: { marginBottom: 8 },
-    locationPill: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        gap: 8,
-        backgroundColor: COLORS.pillBg,
+        paddingVertical: 5,
+        borderRadius: 8,
+        gap: 5,
         borderWidth: 1,
-        borderColor: '#EAF2FC',
-        borderRadius: 10,
-        padding: 10,
+        borderColor: 'rgba(255, 255, 255, 0.2)',
     },
-    locationText: { flex: 1, color: COLORS.text, fontSize: 12, lineHeight: 18 },
-    sectionHeaderRow: {
-        marginTop: 12,
-        marginBottom: 12,
+    infoPillText: {
+        fontSize: 11,
+        color: '#FFFFFF',
+        fontWeight: '500',
+    },
+    divider: {
+        width: 1,
+        height: 12,
+        backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    },
+    locationInfo: {
+        flex: 1,
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
+        gap: 5,
     },
-    sectionTitle: { marginTop: 12, marginBottom: 6, color: COLORS.accent, fontWeight: '700' },
-    sectionTitleNoMargin: { color: COLORS.accent, fontWeight: '700' },
-    viewMore: { color: '#9AA7BC', fontWeight: '700', fontSize: 12 },
-    card: {
+    locationText: {
+        fontSize: 12,
+        color: '#FFFFFF',
+        flex: 1,
+        opacity: 0.9,
+    },
+    contentContainer: {
+        paddingHorizontal: 16,
+    },
+    section: {
         backgroundColor: COLORS.cardBg,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
-        padding: 12,
+        borderRadius: 16,
+        padding: 16,
         marginBottom: 12,
-    },
-    cardText: { color: COLORS.text, fontSize: 13, lineHeight: 19 },
-    serviceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-    serviceText: { color: COLORS.text, fontSize: 13 },
-    processRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 10, minHeight: 24 },
-    timelineCol: { width: 16, alignItems: 'center' },
-    lineBox: { flex: 1, width: 2, alignItems: 'center' },
-    line: { flex: 1, width: 2, backgroundColor: COLORS.cardBorder, borderRadius: 1 },
-    dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.accent },
-    processText: { flex: 1, color: COLORS.text, fontSize: 13, lineHeight: 18 },
-    partnerTile: {
-        height: 80,
-        width: 140,
-        borderRadius: 10,
         borderWidth: 1,
         borderColor: COLORS.cardBorder,
-        backgroundColor: COLORS.cardBg,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.04,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    sectionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 16,
+        gap: 10,
+    },
+    sectionIcon: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        backgroundColor: 'rgba(118, 159, 205, 0.1)',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 8,
     },
-    partnerLogo: { width: '100%', height: '100%' },
-    partnerText: { color: '#2A2A2A', fontWeight: '700', textAlign: 'center', fontSize: 11 },
-    bottomBar: { position: 'absolute', left: 16, right: 16, bottom: 18 },
-    selectBtn: {
-        paddingVertical: 14,
-        borderRadius: 20,
+    sectionTitle: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: COLORS.heading,
+        flex: 1,
+    },
+    sectionContent: {
+        paddingHorizontal: 4,
+    },
+    aboutText: {
+        fontSize: 14,
+        color: COLORS.text,
+        lineHeight: 22,
+    },
+    serviceItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 10,
+        gap: 12,
+    },
+    serviceIcon: {
+        width: 22,
+        height: 22,
+        borderRadius: 11,
         backgroundColor: COLORS.primary,
         alignItems: 'center',
         justifyContent: 'center',
     },
-    selectText: { color: '#FFFFFF', fontWeight: '700', fontSize: 16 },
+    serviceText: {
+        flex: 1,
+        fontSize: 14,
+        color: COLORS.textSecondary,
+        lineHeight: 20,
+    },
+    processStep: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        marginBottom: 12,
+        gap: 12,
+    },
+    stepNumber: {
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        backgroundColor: 'rgba(118, 159, 205, 0.1)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+    },
+    stepNumberText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: COLORS.primary,
+    },
+    processText: {
+        flex: 1,
+        fontSize: 14,
+        color: COLORS.textSecondary,
+        lineHeight: 20,
+        paddingTop: 2,
+    },
+    viewMoreBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    viewMoreText: {
+        fontSize: 13,
+        color: COLORS.primary,
+        fontWeight: '500',
+    },
+    partnersList: {
+        paddingVertical: 4,
+    },
+    partnerTile: {
+        width: 70,
+        height: 70,
+        borderRadius: 14,
+        backgroundColor: COLORS.cardBg,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.02,
+        shadowRadius: 2,
+        elevation: 1,
+    },
+    partnerLogo: {
+        width: '100%',
+        height: '100%',
+    },
+    partnerPlaceholder: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 10,
+        backgroundColor: COLORS.lightBg,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    partnerText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: COLORS.primary,
+    },
+    emptyPartners: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 20,
+        gap: 8,
+    },
+    emptyPartnersText: {
+        fontSize: 13,
+        color: COLORS.textSecondary,
+        fontStyle: 'italic',
+    },
+    actionBar: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: COLORS.cardBg,
+        padding: 16,
+        borderTopWidth: 1,
+        borderTopColor: COLORS.border,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
+        elevation: 5,
+    },
+    selectBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 16,
+        borderRadius: 14,
+        backgroundColor: COLORS.primary,
+        gap: 10,
+        shadowColor: COLORS.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 6,
+    },
+    selectText: {
+        color: '#FFFFFF',
+        fontWeight: '600',
+        fontSize: 16,
+    },
+    bottomSpacing: {
+        height: 90,
+    },
 });
