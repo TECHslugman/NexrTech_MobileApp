@@ -4,6 +4,7 @@ import { Slot, useRouter, useSegments } from "expo-router";
 import { View, ActivityIndicator } from "react-native";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 
+
 function RootLayoutNav() {
   const { userToken, isLoading } = useAuth();
   const segments = useSegments();

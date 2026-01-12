@@ -8,6 +8,7 @@ import {
     Image,
     ActivityIndicator,
     StatusBar,
+    Alert,
     Linking
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -31,7 +32,7 @@ const COLORS = {
 export default function CourseDetail() {
     const router = useRouter();
     const params = useLocalSearchParams();
-    
+
     // DEBUG: Log all parameters
     console.log('=== COURSE DETAILS DEBUG ===');
     console.log('All params:', params);
@@ -39,10 +40,10 @@ export default function CourseDetail() {
     console.log('Agency ID:', params.agencyId);
     console.log('Course Name:', params.courseName);
     console.log('============================');
-    
+
     // Destructure after logging
     const { courseId, agencyId, courseName } = params;
-    
+
     const { userToken } = useAuth();
     const [loading, setLoading] = useState(true);
     const [courseData, setCourseData] = useState(null);
@@ -51,12 +52,12 @@ export default function CourseDetail() {
         const fetchCourseDetails = async () => {
             try {
                 setLoading(true);
-                
+
                 // Fetch course details from API
                 const courseResponse = await fetch(
                     `https://edu-agent-backend-nine.vercel.app/api/v1/agency/courses/${courseId}`,
                     {
-                        headers: { 
+                        headers: {
                             'Authorization': `Bearer ${userToken}`,
                             'Content-Type': 'application/json'
                         }
@@ -64,11 +65,11 @@ export default function CourseDetail() {
                 );
 
                 console.log('Course API Status:', courseResponse.status);
-                
+
                 if (courseResponse.ok) {
                     const courseJson = await courseResponse.json();
                     console.log('Course API Response:', courseJson);
-                    
+
                     if (courseJson.course) {
                         setCourseData(courseJson.course);
                     } else {
@@ -105,7 +106,7 @@ export default function CourseDetail() {
             },
             entryRequirements: [
                 "No data",
-                
+
             ],
             status: "null",
             intakes: null,
@@ -119,12 +120,12 @@ export default function CourseDetail() {
     // Format tuition fee
     const formatTuitionFee = () => {
         if (!courseData?.tuitionFee?.totalfee) return "Contact for details";
-        
+
         const { totalfee, currency } = courseData.tuitionFee;
         try {
             const feeNumber = parseInt(totalfee);
             if (isNaN(feeNumber)) return `${currency} ${totalfee}`;
-            
+
             if (currency === 'AUD') {
                 return `AUD $${feeNumber.toLocaleString()} per year`;
             }
@@ -160,7 +161,7 @@ export default function CourseDetail() {
             <View style={styles.center}>
                 <Feather name="alert-circle" size={50} color={COLORS.textSecondary} />
                 <Text style={styles.errorText}>Course details not found</Text>
-                <TouchableOpacity 
+                <TouchableOpacity
                     style={styles.retryButton}
                     onPress={() => router.back()}
                 >
@@ -173,19 +174,19 @@ export default function CourseDetail() {
     return (
         <SafeAreaView style={styles.safe} edges={['bottom']}>
             <StatusBar barStyle="light-content" />
-            
+
             {/* Header with dynamic color based on course level */}
             <View style={[
-                styles.header, 
+                styles.header,
                 { backgroundColor: courseData.level === 'graduate' ? '#4ECDC4' : '#FF6B6B' }
             ]}>
-                <TouchableOpacity 
-                    style={styles.backBtn} 
+                <TouchableOpacity
+                    style={styles.backBtn}
                     onPress={() => router.back()}
                 >
                     <Ionicons name="chevron-back" size={26} color="#FFF" />
                 </TouchableOpacity>
-                
+
                 <View style={styles.headerContent}>
                     <Text style={styles.courseLevel}>
                         {courseData.level?.toUpperCase() || 'UNDERGRADUATE'}
@@ -193,7 +194,7 @@ export default function CourseDetail() {
                     <Text style={styles.courseTitle} numberOfLines={2}>
                         {courseData.title}
                     </Text>
-                    
+
                     <View style={styles.courseMeta}>
                         <View style={styles.metaItem}>
                             <Feather name="clock" size={16} color="rgba(255,255,255,0.8)" />
@@ -215,8 +216,8 @@ export default function CourseDetail() {
                 </View>
             </View>
 
-            <ScrollView 
-                showsVerticalScrollIndicator={false} 
+            <ScrollView
+                showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
             >
                 {/* About Section */}
@@ -293,18 +294,18 @@ export default function CourseDetail() {
                             <MaterialIcons name="school" size={20} color={COLORS.primaryBlue} />
                             <Text style={styles.sectionTitle}>Provided By</Text>
                         </View>
-                        
+
                         <View style={styles.universityCard}>
-                            <Image 
-                                source={courseData.providedBy.logo ? 
-                                    { uri: courseData.providedBy.logo } : 
+                            <Image
+                                source={courseData.providedBy.logo ?
+                                    { uri: courseData.providedBy.logo } :
                                     DEFAULT_UNI_LOGO
-                                } 
-                                style={styles.universityLogo} 
-                                resizeMode="contain" 
+                                }
+                                style={styles.universityLogo}
+                                resizeMode="contain"
                                 onError={() => console.log('Failed to load university logo')}
                             />
-                            
+
                             <View style={styles.universityInfo}>
                                 <Text style={styles.universityName}>
                                     {courseData.providedBy.name || 'University Partner'}
@@ -360,12 +361,19 @@ export default function CourseDetail() {
 
             {/* Sticky Apply Button */}
             <View style={styles.bottomBar}>
-                <TouchableOpacity 
+                <TouchableOpacity
                     style={[
                         styles.applyButton,
                         courseData.status !== 'open' && styles.applyButtonDisabled
                     ]}
                     disabled={courseData.status !== 'open'}
+                    onPress={() => router.push({
+                        pathname: '/agency/selected/documentupload/passportUpload',
+                        params: {
+                            courseId: courseId,
+                            agencyId: agencyId
+                        }
+                    })}
                 >
                     <Text style={styles.applyText}>
                         {courseData.status === 'open' ? 'APPLY NOW' : 'APPLICATIONS CLOSED'}
@@ -377,13 +385,13 @@ export default function CourseDetail() {
 }
 
 const styles = StyleSheet.create({
-    safe: { 
-        flex: 1, 
-        backgroundColor: COLORS.bg 
+    safe: {
+        flex: 1,
+        backgroundColor: COLORS.bg
     },
-    center: { 
-        flex: 1, 
-        justifyContent: 'center', 
+    center: {
+        flex: 1,
+        justifyContent: 'center',
         alignItems: 'center',
         paddingHorizontal: 40,
     },

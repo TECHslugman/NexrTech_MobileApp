@@ -1,152 +1,146 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, StatusBar } from 'react-native';
+import { 
+    View, Text, StyleSheet, FlatList, TouchableOpacity, 
+    ActivityIndicator, StatusBar, TextInput 
+} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
 
+const COLORS = {
+    bg: '#F8FAFD',
+    primary: '#769FCD',
+    white: '#FFFFFF',
+    textPrimary: '#2D3748',
+    textSecondary: '#718096',
+    border: '#EEF2F7',
+    card1: '#FF6B6B',
+    card2: '#949BFF',
+    lightBlue: '#E8F1FF',
+};
+
 export default function AgencyCourseList() {
-    // Get ALL parameters from navigation
-    const { id, courses: coursesParam, agencyName } = useLocalSearchParams();
+    const { id, agencyName, courses: coursesParam } = useLocalSearchParams();
     const router = useRouter();
     const { userToken } = useAuth();
 
     const [courses, setCourses] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [isSearching, setIsSearching] = useState(false);
+
+    // Unified Load Function
+    const loadCourses = async (query = '') => {
+        try {
+            if (query.length > 0) setIsSearching(true);
+            else setLoading(true);
+
+            // Toggle URL based on search input
+            const url = query.trim().length > 0
+                ? `https://edu-agent-backend-nine.vercel.app/api/v1/students/courses/query/${id}/search?q=${query}`
+                : `https://edu-agent-backend-nine.vercel.app/api/v1/agency/courses/agency/${id}`;
+
+            const res = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${userToken}` }
+            });
+
+            if (res.ok) {
+                const json = await res.json();
+                // Map to 'course' as seen in your Postman screenshot
+                const coursesData = json.course || json.courses || json.data || [];
+                setCourses(coursesData);
+            }
+        } catch (e) {
+            console.log("Fetch error:", e);
+        } finally {
+            setLoading(false);
+            setIsSearching(false);
+        }
+    };
 
     useEffect(() => {
-        console.log('=== COURSE LIST PAGE DEBUG ===');
-        console.log('Agency ID from route [id]:', id);
-        console.log('Courses parameter received:', coursesParam);
-        console.log('Agency Name:', agencyName);
-        console.log('==============================');
-
-        // First try to use courses passed from home page
-        if (coursesParam) {
-            try {
-                // Parse the courses if they were passed as JSON string
-                let parsedCourses = coursesParam;
-                if (typeof coursesParam === 'string') {
-                    parsedCourses = JSON.parse(coursesParam);
-                }
-                
-                console.log('Parsed courses from home page:', parsedCourses);
-                
-                if (Array.isArray(parsedCourses) && parsedCourses.length > 0) {
-                    // Use courses from home page immediately
-                    setCourses(parsedCourses);
-                    setLoading(false);
-                    return; // Don't fetch from API
-                }
-            } catch (error) {
-                console.log('Error parsing courses param:', error);
-                // Continue to fetch from API
-            }
-        }
-
-        // If no courses were passed or parsing failed, fetch from API
-        const loadCourses = async () => {
-            try {
-                console.log('Fetching courses from API for agency:', id);
-                
-                // Fetching courses for this specific Agency ID
-                const res = await fetch(`https://edu-agent-backend-nine.vercel.app/api/v1/agency/courses/agency/${id}`, {
-                    headers: { 'Authorization': `Bearer ${userToken}` }
-                });
-
-                console.log('API Response Status:', res.status);
-                
-                if (res.ok) {
-                    const json = await res.json();
-                    console.log('API Response Data:', json);
-                    
-                    // Handle different response structures
-                    const coursesData = json.courses || json.data || [];
-                    console.log('Courses data from API:', coursesData);
-                    setCourses(coursesData);
-                } else {
-                    console.log('API failed, using fallback');
-                    // Fallback Provisionary Data
-                    setCourses([
-                        { id: 'c1', name: "Bachelors of Nursing", title: "Bachelors of Nursing" },
-                        { id: 'c2', name: "Bachelors of Political Sci.", title: "Bachelors of Political Sci." },
-                        { id: 'c3', name: "Business Management", title: "Business Management" },
-                        { id: 'c4', name: "IT & Computer Science", title: "IT & Computer Science" },
-                        { id: 'c5', name: "Architecture", title: "Architecture" },
-                        { id: 'c6', name: "Public Health", title: "Public Health" }
-                    ]);
-                }
-            } catch (e) {
-                console.log("Fetch error:", e);
-                setCourses([{ id: 'c1', name: "Nursing", title: "Nursing" }, { id: 'c2', name: "Politics", title: "Politics" }]);
-            } finally {
-                setLoading(false);
-            }
-        };
-        
         loadCourses();
-    }, [id, userToken, coursesParam]); // Add coursesParam to dependencies
+    }, [id]);
 
-    // Helper function to get course display name
-    const getCourseDisplayName = (course) => {
-        return course.title || course.name || 'Unnamed Course';
-    };
-
-    // Helper function to get course ID
-    const getCourseId = (course) => {
-        return course._id || course.id || Math.random().toString();
-    };
+    const getCourseDisplayName = (course) => course.title || course.name || 'Unnamed Course';
+    const getCourseId = (course) => course._id || course.id || Math.random().toString();
 
     const renderCourseItem = ({ item, index }) => (
         <TouchableOpacity
-            style={[styles.card, { backgroundColor: index % 2 === 0 ? '#FF6B6B' : '#949BFF' }]}
+            style={[
+                styles.card, 
+                { backgroundColor: index % 2 === 0 ? COLORS.card1 : COLORS.card2 }
+            ]}
             onPress={() => {
-                // Debug log
-                console.log('Course clicked:', item);
-                console.log('Course ID to pass:', getCourseId(item));
-                console.log('Course Name to pass:', getCourseDisplayName(item));
-
-                // Navigate WITHOUT course ID in the URL path
                 router.push({
-                    pathname: '/agency/selected/courses/details', // Just the path, no ID
+                    pathname: '/agency/selected/courses/details',
                     params: {
-                        courseId: getCourseId(item),      // Pass as parameter
-                        agencyId: id,                    // Agency ID
-                        courseName: getCourseDisplayName(item)  // Course name
+                        courseId: getCourseId(item),
+                        agencyId: id,
+                        courseName: getCourseDisplayName(item)
                     }
                 });
             }}
         >
             <Text style={styles.cardText}>{getCourseDisplayName(item)}</Text>
-            <Ionicons name="arrow-forward-circle-outline" size={20} color="rgba(255,255,255,0.7)" style={styles.icon} />
+            <Ionicons 
+                name="arrow-forward-circle-outline" 
+                size={24} 
+                color="rgba(255,255,255,0.8)" 
+                style={styles.icon} 
+            />
         </TouchableOpacity>
     );
 
     return (
         <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" />
+            <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
+            
+            {/* Foundational UI Header */}
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-                    <Ionicons name="chevron-back" size={24} color="#333" />
-                </TouchableOpacity>
-                <Text style={styles.title}>
-                    {agencyName ? `${agencyName} Courses` : 'Available Courses'}
-                </Text>
-                <View style={{ width: 40 }} />
+                <View style={styles.headerContent}>
+                    <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                        <Ionicons name="chevron-back" size={24} color={COLORS.white} />
+                    </TouchableOpacity>
+                    <Text style={styles.headerTitle}>{agencyName || 'Agency'}</Text>
+                    <View style={{ width: 40 }} />
+                </View>
+
+                {/* Search Bar built into Header */}
+                <View style={styles.searchWrapper}>
+                    <Ionicons name="search" size={18} color={COLORS.textSecondary} />
+                    <TextInput 
+                        style={styles.searchInput}
+                        placeholder="Search for courses..."
+                        placeholderTextColor="#A0AEC0"
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                        onSubmitEditing={() => loadCourses(searchQuery)}
+                        returnKeyType="search"
+                    />
+                    {searchQuery.length > 0 && (
+                        <TouchableOpacity onPress={() => { setSearchQuery(''); loadCourses(''); }}>
+                            <Ionicons name="close-circle" size={18} color={COLORS.textSecondary} />
+                        </TouchableOpacity>
+                    )}
+                </View>
             </View>
 
             {loading ? (
                 <View style={styles.center}>
-                    <ActivityIndicator size="large" color="#769FCD" />
-                    <Text style={{ marginTop: 10, color: '#666' }}>Loading courses...</Text>
+                    <ActivityIndicator size="large" color={COLORS.primary} />
                 </View>
             ) : (
                 <>
-                    <View style={styles.courseCount}>
-                        <Text style={styles.courseCountText}>
-                            {courses.length} {courses.length === 1 ? 'Course' : 'Courses'} Available
-                        </Text>
+                    <View style={styles.courseCountContainer}>
+                        <View style={styles.courseCountBadge}>
+                            <Text style={styles.courseCountText}>
+                                {isSearching ? 'Searching...' : `${courses.length} ${courses.length === 1 ? 'Course' : 'Courses'} Available`}
+                            </Text>
+                        </View>
                     </View>
+                    
                     <FlatList
                         data={courses}
                         numColumns={2}
@@ -154,11 +148,11 @@ export default function AgencyCourseList() {
                         renderItem={renderCourseItem}
                         columnWrapperStyle={styles.row}
                         contentContainerStyle={styles.listPadding}
+                        showsVerticalScrollIndicator={false}
                         ListEmptyComponent={
                             <View style={styles.emptyState}>
-                                <Ionicons name="book-outline" size={60} color="#CCC" />
-                                <Text style={styles.emptyText}>No courses available</Text>
-                                <Text style={styles.emptySubtext}>Check back later or contact the agency</Text>
+                                <Ionicons name="book-outline" size={60} color={COLORS.border} />
+                                <Text style={styles.emptyText}>No courses found</Text>
                             </View>
                         }
                     />
@@ -169,94 +163,74 @@ export default function AgencyCourseList() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#F8FAFD' },
-    center: { 
-        flex: 1, 
-        justifyContent: 'center', 
-        alignItems: 'center' 
-    },
+    container: { flex: 1, backgroundColor: COLORS.bg },
+    center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     header: {
+        backgroundColor: COLORS.primary,
+        paddingHorizontal: 20,
+        paddingTop: 15,
+        paddingBottom: 25,
+        borderBottomLeftRadius: 25,
+        borderBottomRightRadius: 25,
+        elevation: 4,
+    },
+    headerContent: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        paddingHorizontal: 20,
-        paddingVertical: 15,
         alignItems: 'center',
-        backgroundColor: '#F8FAFD',
-        borderBottomWidth: 1,
-        borderBottomColor: '#EEF2F7',
+        marginBottom: 15,
     },
-    backBtn: { 
-        padding: 5,
+    backButton: {
         width: 40,
         height: 40,
+        borderRadius: 20,
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
         justifyContent: 'center',
         alignItems: 'center',
     },
-    title: { 
-        fontSize: 18, 
-        fontWeight: 'bold', 
-        color: '#769FCD',
+    headerTitle: {
+        fontSize: 22,
+        fontWeight: '700',
+        color: COLORS.white,
         textAlign: 'center',
         flex: 1,
     },
-    courseCount: {
-        paddingHorizontal: 20,
-        paddingVertical: 10,
-        backgroundColor: '#F0F4F8',
-        marginTop: 10,
+    searchWrapper: {
+        flexDirection: 'row',
+        backgroundColor: COLORS.white,
+        borderRadius: 12,
+        paddingHorizontal: 12,
+        height: 45,
+        alignItems: 'center',
     },
-    courseCountText: {
+    searchInput: {
+        flex: 1,
+        marginLeft: 8,
         fontSize: 14,
-        color: '#718096',
-        fontWeight: '500',
+        color: COLORS.textPrimary,
     },
-    listPadding: { 
-        paddingHorizontal: 20,
-        paddingBottom: 40,
-        paddingTop: 10,
+    courseCountContainer: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10 },
+    courseCountBadge: {
+        backgroundColor: COLORS.white,
+        borderRadius: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        alignSelf: 'flex-start',
+        borderWidth: 1,
+        borderColor: COLORS.border,
     },
-    row: { 
-        justifyContent: 'space-between',
-        marginBottom: 12,
-    },
+    courseCountText: { fontSize: 14, color: COLORS.primary, fontWeight: '600' },
+    listPadding: { paddingHorizontal: 20, paddingBottom: 40, paddingTop: 10 },
+    row: { justifyContent: 'space-between', marginBottom: 15 },
     card: {
         width: '48%',
-        height: 120,
-        borderRadius: 16,
-        padding: 15,
+        height: 130,
+        borderRadius: 20,
+        padding: 18,
         justifyContent: 'space-between',
-        elevation: 4,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4
     },
-    cardText: { 
-        color: '#FFF', 
-        fontWeight: 'bold', 
-        fontSize: 14,
-        lineHeight: 18,
-    },
-    icon: { 
-        alignSelf: 'flex-end',
-        marginTop: 8,
-    },
-    emptyState: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingVertical: 60,
-    },
-    emptyText: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: '#718096',
-        marginTop: 20,
-        marginBottom: 8,
-    },
-    emptySubtext: {
-        fontSize: 14,
-        color: '#9AA7BC',
-        textAlign: 'center',
-    },
+    cardText: { color: COLORS.white, fontWeight: '700', fontSize: 15, lineHeight: 20 },
+    icon: { alignSelf: 'flex-end', marginTop: 10 },
+    emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 80 },
+    emptyText: { fontSize: 18, fontWeight: '600', color: COLORS.textSecondary, marginTop: 20 },
 });
