@@ -102,9 +102,9 @@ export default function UserProfile() {
                 },
                 body: JSON.stringify({
                     mimeType,
-                    size: asset.fileSize || 0,
-                    agencyId: agencyId, 
-                    studentId: studentId
+                    size: asset.fileSize || 0, 
+                    studentId: studentId,
+                    documentType: 'profile_picture'
                 })
             });
 
@@ -140,9 +140,9 @@ export default function UserProfile() {
                 },
                 body: JSON.stringify({
                     blobName,
-                    studentId: studentId,
-                    agencyId: agencyId, 
-                    mimeType
+                    studentId: studentId, 
+                    mimeType,
+                    documentType: 'profile_picture'
                 })
             });
 
