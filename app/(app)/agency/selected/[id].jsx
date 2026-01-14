@@ -221,8 +221,8 @@ export default function SelectedAgencyHome() {
                     onBtnPress={() => router.push({
                         pathname: `/agency/selected/courses/${id}`,
                         params: {
-                            courses: JSON.stringify(courses), 
-                            agencyName: agencyData?.organizationName 
+                            courses: JSON.stringify(courses),
+                            agencyName: agencyData?.organizationName
                         }
                     })}
                 />
@@ -240,13 +240,14 @@ export default function SelectedAgencyHome() {
                                 <Ionicons name="book-outline" size={20} color="rgba(255,255,255,0.9)" />
                             </View>
                             <Text style={styles.courseText} numberOfLines={2}>
-                                {item.title || item} {/* Show item.title for objects, item for strings */}
+                                {item.title || item}
                             </Text>
                         </View>
                     )}
                     ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
                 />
-                {/* EVENTS - HORIZONTAL SLIDER */}
+
+                {/* EVENTS */}
                 <SectionHeader
                     title="Upcoming Events"
                     onBtnPress={() => router.push(`/agency/selected/events/${id}`)}
@@ -264,7 +265,7 @@ export default function SelectedAgencyHome() {
                                 onPress={() => router.push({
                                     pathname: `/agency/selected/events/details`,
                                     params: {
-                                        id: item._id, 
+                                        id: item._id,
                                         title: item.title,
                                         image: item.image
                                     }
@@ -284,7 +285,6 @@ export default function SelectedAgencyHome() {
                                         </View>
                                     </View>
 
-                                    {/* Visual indicator button */}
                                     <View style={styles.eventAction}>
                                         <Text style={styles.eventActionText}>Details</Text>
                                         <Feather name="arrow-right" size={12} color={COLORS.primary} />
@@ -304,7 +304,7 @@ export default function SelectedAgencyHome() {
                     onBtnPress={() => router.push({
                         pathname: `/agency/selected/scholarships/${id}`,
                         params: {
-                            initialData: JSON.stringify(scholarships), // Pass the data here
+                            initialData: JSON.stringify(scholarships),
                             agencyName: agencyData?.organizationName
                         }
                     })}
@@ -329,7 +329,6 @@ export default function SelectedAgencyHome() {
                             <View style={styles.scholarshipHeader}>
                                 <MaterialIcons name="workspace-premium" size={18} color={COLORS.white} />
                             </View>
-                            {/* Updated to use item.title */}
                             <Text style={styles.scholarshipText} numberOfLines={2}>
                                 {item.title}
                             </Text>
@@ -338,47 +337,47 @@ export default function SelectedAgencyHome() {
                     ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
                 />
 
-               {/* UNIVERSITIES */}
-<SectionHeader
-    title="Partner Universities"
-    onBtnPress={() => router.push({ pathname: `/agency/selected/universities/${id}` })}
-/>
-<FlatList
-    horizontal
-    data={agencyData?.partnerUniversities || []}
-    keyExtractor={(item, index) => item._id || index.toString()}
-    showsHorizontalScrollIndicator={false}
-    contentContainerStyle={styles.listContent}
-    renderItem={({ item }) => (
-        <TouchableOpacity
-            style={styles.uniTile}
-            onPress={() => router.push({
-                pathname: `/agency/selected/universities/details`,
-                params: {
-                    id: item._id,
-                    name: item.name,
-                    logo: item.logo,
-                    website: item.websiteUrl
-                }
-            })}
-        >
-            {item.logo ? (
-                <Image
-                    source={{ uri: item.logo }}
-                    style={styles.uniImg}
-                    resizeMode="contain"
+                {/* UNIVERSITIES */}
+                <SectionHeader
+                    title="Partner Universities"
+                    onBtnPress={() => router.push({ pathname: `/agency/selected/universities/${id}` })}
                 />
-            ) : (
-                <View style={styles.uniPlaceholder}>
-                    <Text style={styles.uniPlaceholderText}>
-                        {item.name?.substring(0, 2).toUpperCase() || 'UN'}
-                    </Text>
-                </View>
-            )}
-        </TouchableOpacity>
-    )}
-    ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
-/>
+                <FlatList
+                    horizontal
+                    data={agencyData?.partnerUniversities || []}
+                    keyExtractor={(item, index) => item._id || index.toString()}
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.listContent}
+                    renderItem={({ item }) => (
+                        <TouchableOpacity
+                            style={styles.uniTile}
+                            onPress={() => router.push({
+                                pathname: `/agency/selected/universities/details`,
+                                params: {
+                                    id: item._id,
+                                    name: item.name,
+                                    logo: item.logo,
+                                    website: item.websiteUrl
+                                }
+                            })}
+                        >
+                            {item.logo ? (
+                                <Image
+                                    source={{ uri: item.logo }}
+                                    style={styles.uniImg}
+                                    resizeMode="contain"
+                                />
+                            ) : (
+                                <View style={styles.uniPlaceholder}>
+                                    <Text style={styles.uniPlaceholderText}>
+                                        {item.name?.substring(0, 2).toUpperCase() || 'UN'}
+                                    </Text>
+                                </View>
+                            )}
+                        </TouchableOpacity>
+                    )}
+                    ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
+                />
 
                 {/* MENTORS */}
                 <SectionHeader
@@ -402,34 +401,6 @@ export default function SelectedAgencyHome() {
 
                 <View style={{ height: 100 }} />
             </ScrollView>
-
-            {/* NAV BAR */}
-            <View style={styles.navBar}>
-                <TouchableOpacity style={styles.navItemActive}>
-                    <View style={styles.navIconActive}>
-                        <Ionicons name="home" size={22} color={COLORS.white} />
-                    </View>
-                    <Text style={styles.navLabelActive}>Home</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.navItem}>
-                    <Ionicons name="refresh-outline" size={22} color="#BFC7D1" />
-                    <Text style={styles.navLabel}>Updates</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.navItem}>
-                    <Ionicons name="mail-outline" size={22} color="#BFC7D1" />
-                    <Text style={styles.navLabel}>Messages</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={styles.navItem}
-                    onPress={() => router.push('/agency/selected/profile')}
-                >
-                    <Ionicons name="person-outline" size={22} color="#BFC7D1" />
-                    <Text style={styles.navLabel}>Profile</Text>
-                </TouchableOpacity>
-            </View>
         </SafeAreaView>
     );
 }
@@ -456,7 +427,6 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center'
     },
-    // HEADER STYLES
     header: {
         backgroundColor: COLORS.bg,
         paddingHorizontal: 20,
@@ -537,7 +507,6 @@ const styles = StyleSheet.create({
         fontSize: 15,
         color: COLORS.textPrimary,
     },
-    // STATS SECTION
     statsContainer: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -568,7 +537,6 @@ const styles = StyleSheet.create({
         color: COLORS.textSecondary,
         fontWeight: '500',
     },
-    // BODY
     body: {
         paddingHorizontal: 20,
         paddingBottom: 20,
@@ -576,7 +544,6 @@ const styles = StyleSheet.create({
     listContent: {
         paddingHorizontal: 2,
     },
-    // SECTION HEADER
     sectionHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -599,7 +566,6 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         marginRight: 4,
     },
-    // COURSE CARD
     courseCard: {
         width: 160,
         height: 120,
@@ -616,7 +582,6 @@ const styles = StyleSheet.create({
         fontSize: 15,
         lineHeight: 20,
     },
-    // EVENT CARD HORIZONTAL
     eventCardHorizontal: {
         width: 280,
         backgroundColor: COLORS.white,
@@ -669,7 +634,6 @@ const styles = StyleSheet.create({
         fontStyle: 'italic',
         marginVertical: 20,
     },
-    // SCHOLARSHIP CARD
     scholarshipCard: {
         width: 180,
         height: 120,
@@ -687,8 +651,6 @@ const styles = StyleSheet.create({
         fontSize: 15,
         lineHeight: 20,
     },
-    // UNIVERSITY TILE
-
     uniTile: {
         width: 140,
         height: 100,
@@ -704,7 +666,6 @@ const styles = StyleSheet.create({
         width: '100%',
         height: '100%',
     },
-    // MENTOR CARD
     mentorCard: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -749,47 +710,5 @@ const styles = StyleSheet.create({
         fontSize: 11,
         color: COLORS.primary,
         fontWeight: '600',
-    },
-    // NAV BAR
-    navBar: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: 75,
-        backgroundColor: COLORS.white,
-        flexDirection: 'row',
-        borderTopWidth: 1,
-        borderTopColor: COLORS.border,
-        paddingBottom: 20,
-    },
-    navItem: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    navItemActive: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    navIconActive: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: COLORS.primary,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 4,
-    },
-    navLabel: {
-        fontSize: 11,
-        color: '#BFC7D1',
-        fontWeight: '500',
-    },
-    navLabelActive: {
-        fontSize: 11,
-        color: COLORS.primary,
-        fontWeight: '700',
     },
 });

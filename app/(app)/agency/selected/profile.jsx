@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import {
-    View, Text, StyleSheet, ScrollView, Image, TouchableOpacity,
+    View, Text, StyleSheet, ScrollView, TouchableOpacity,
     ActivityIndicator, Alert, TextInput, Modal
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../../context/AuthContext';
-import { useRouter } from 'expo-router';
-
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { Image } from 'expo-image';
 
 const COLORS = {
     bg: '#F8FAFD',
@@ -41,6 +41,18 @@ const formatDate = (dateString) => {
 
 export default function UserProfile() {
     const router = useRouter();
+    const params = useLocalSearchParams();
+
+    // Extract agencyId - check both possible parameter names
+    const agencyId = params.agencyId || params.id;
+
+    console.log('=== PROFILE PAGE DEBUG ===');
+    console.log('All params:', params);
+    console.log('Params type:', typeof params);
+    console.log('Params keys:', Object.keys(params));
+    console.log('agencyId:', agencyId);
+    console.log('=== END DEBUG ===');
+
     const { userToken } = useAuth();
     const [loading, setLoading] = useState(true);
     const [userData, setUserData] = useState(null);
@@ -63,8 +75,6 @@ export default function UserProfile() {
 
             const json = await response.json();
 
-            console.log("DEBUG: Full Profile Response:", JSON.stringify(json.profile, null, 2));
-
             if (response.ok) {
                 setUserData(json.profile);
             }
@@ -77,12 +87,12 @@ export default function UserProfile() {
 
     const handleUpload = async (asset) => {
         // 1. Get the correct IDs from your userData object
-        const agencyId = userData?.registeredAgency; // Changed from agencyId
+        const registeredAgencyId = userData?.registeredAgency; // Renamed to avoid conflict
         const studentId = userData?._id;
-        console.log("agencyId", agencyId);
+        console.log("registeredAgencyId", registeredAgencyId);
 
         // 2. Safety Check: Stop if IDs are missing to avoid 400 errors
-        if (!agencyId || !studentId) {
+        if (!registeredAgencyId || !studentId) {
             Alert.alert("Error", "Profile data is still loading. Please try again in a second.");
             return;
         }
@@ -102,7 +112,7 @@ export default function UserProfile() {
                 },
                 body: JSON.stringify({
                     mimeType,
-                    size: asset.fileSize || 0, 
+                    size: asset.fileSize || 0,
                     studentId: studentId,
                     documentType: 'profile_picture'
                 })
@@ -140,7 +150,7 @@ export default function UserProfile() {
                 },
                 body: JSON.stringify({
                     blobName,
-                    studentId: studentId, 
+                    studentId: studentId,
                     mimeType,
                     documentType: 'profile_picture'
                 })
@@ -179,6 +189,7 @@ export default function UserProfile() {
             setLoading(false);
         }
     };
+
     const pickImage = async () => {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') {
@@ -190,7 +201,7 @@ export default function UserProfile() {
             mediaTypes: ['images'],
             allowsEditing: true,
             aspect: [1, 1],
-            quality: 0.8,
+            quality: 0.4,
         });
 
         if (!result.canceled && result.assets[0]) {
@@ -223,12 +234,10 @@ export default function UserProfile() {
     };
 
     // Get image URL with cache busting
-    const getImageUrl = () => {
-        if (userData?.profileURL) { // Changed to profileURL
-            return `${userData.profileURL}?t=${imageKey}`;
-        }
-        return null;
-    };
+   const getImageUrl = () => {
+    if (!userData?.profileURL) return null;
+    return userData.profileURL; 
+};
 
     const profileImageUri = getImageUrl();
 
@@ -247,14 +256,30 @@ export default function UserProfile() {
                 <View style={styles.headerContent}>
                     <TouchableOpacity
                         style={styles.backButton}
-                        onPress={() => router.back()}
+                        onPress={() => {
+                            console.log('Back button pressed, agencyId:', agencyId);
+                            if (agencyId) {
+                                router.push(`/agency/selected/${agencyId}`);
+                            } else {
+                                router.back();
+                            }
+                        }}
                     >
                         <Ionicons name="chevron-back" size={24} color={COLORS.white} />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>My Profile</Text>
                     <TouchableOpacity
                         style={styles.settingsButton}
-                        onPress={() => router.push('/agency/selected/profile-settings')}
+                        onPress={() => {
+                            if (agencyId) {
+                                router.push({
+                                    pathname: '/agency/selected/profile-settings',
+                                    params: { agencyId }
+                                });
+                            } else {
+                                router.push('/agency/selected/profile-settings');
+                            }
+                        }}
                     >
                         <Ionicons name="settings-outline" size={22} color={COLORS.white} />
                     </TouchableOpacity>
@@ -269,20 +294,14 @@ export default function UserProfile() {
                 <View style={styles.profileCard}>
                     <View style={styles.profileImageContainer}>
                         <Image
-                            key={imageKey}
-                            source={profileImageUri ? { uri: profileImageUri } : DEFAULT_IMAGE}
                             style={styles.profileImage}
-                            onLoadStart={() => console.log('Starting to load image from:', profileImageUri)}
-                            onLoad={() => console.log('Image loaded successfully!')}
-                            onError={(e) => {
-                                // This will log the actual platform error (iOS/Android)
-                                console.log('Detailed Image Error:', JSON.stringify(e.nativeEvent));
-
-                                // Check if it's a 403 (Permission) or 404 (Missing)
-                                if (profileImageUri.includes('blob.core.windows.net')) {
-                                    console.warn("Check Azure Container Access Level! It must be set to 'Blob' or 'Public'.");
-                                }
-                            }}
+                            source={profileImageUri} // Remove the manual {uri: ...} object if using expo-image
+                            placeholder={DEFAULT_IMAGE}
+                            contentFit="cover"
+                            transition={300} // Fades from placeholder to real image smoothly
+                            cachePolicy="disk" // This is key: it keeps the image on the phone
+                            onLoadStart={() => console.log('Loading started')}
+                            onLoad={() => console.log('Loading finished')}
                         />
                         <TouchableOpacity
                             style={styles.cameraButton}

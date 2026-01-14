@@ -368,7 +368,7 @@ export default function CourseDetail() {
                     ]}
                     disabled={courseData.status !== 'open'}
                     onPress={() => router.push({
-                        pathname: '/agency/selected/documentupload/passportUpload',
+                        pathname: '/agency/selected/documentupload/uploads',
                         params: {
                             courseId: courseId,
                             agencyId: agencyId
