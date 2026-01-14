@@ -30,7 +30,7 @@ const COLORS = {
 
 export default function AllEvents() {
     const router = useRouter();
-    const { id, agencyName } = useLocalSearchParams(); // Agency ID and name
+    const { id, agencyName } = useLocalSearchParams();
     const { userToken } = useAuth();
     const { width } = useWindowDimensions();
 
@@ -40,7 +40,7 @@ export default function AllEvents() {
     useEffect(() => {
         const fetchEvents = async () => {
             try {
-                const response = await fetch(`${BASE_URL}/agency/events/agency/${id}`, {
+                const response = await fetch(`${BASE_URL}/agency/events/student/${id}`, {
                     headers: { 'Authorization': `Bearer ${userToken}` }
                 });
 
@@ -60,56 +60,23 @@ export default function AllEvents() {
                 }
             } catch (error) {
                 console.log("API Error, using fallback data:", error);
-                // Fallback data with better images
                 setEvents([
-                    { 
-                        id: '1', 
+                    {
+                        id: '1',
                         _id: '1',
-                        title: 'Higher Education Fair 2024', 
+                        title: 'Higher Education Fair 2024',
                         image: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=400&h=250&fit=crop',
                         location: "Convention Center",
                         date: "2024-04-15"
                     },
-                    { 
-                        id: '2', 
+                    {
+                        id: '2',
                         _id: '2',
-                        title: 'Study Abroad Webinar', 
+                        title: 'Study Abroad Webinar',
                         image: 'https://images.unsplash.com/photo-1581094794329-c8112a89af12?w=400&h=250&fit=crop',
                         location: "Online",
                         date: "2024-03-20"
-                    },
-                    { 
-                        id: '3', 
-                        _id: '3',
-                        title: 'Nursing Career Workshop', 
-                        image: 'https://images.unsplash.com/photo-1551601651-2a8555f1a136?w=400&h=250&fit=crop',
-                        location: "Main Campus",
-                        date: "2024-04-05"
-                    },
-                    { 
-                        id: '4', 
-                        _id: '4',
-                        title: 'Visa & Immigration Seminar', 
-                        image: 'https://images.unsplash.com/photo-1551135049-8a33b2fb2f61?w=400&h=250&fit=crop',
-                        location: "Conference Hall",
-                        date: "2024-03-28"
-                    },
-                    { 
-                        id: '5', 
-                        _id: '5',
-                        title: 'Scholarship Application Day', 
-                        image: 'https://images.unsplash.com/photo-1523580494863-6f3031224c94?w=400&h=250&fit=crop',
-                        location: "Student Center",
-                        date: "2024-04-10"
-                    },
-                    { 
-                        id: '6', 
-                        _id: '6',
-                        title: 'University Open Day', 
-                        image: 'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=400&h=250&fit=crop',
-                        location: "Main Auditorium",
-                        date: "2024-04-22"
-                    },
+                    }
                 ]);
             } finally {
                 setLoading(false);
@@ -118,60 +85,67 @@ export default function AllEvents() {
         fetchEvents();
     }, [id, userToken]);
 
-    const formatDate = (dateString) => {
-        if (!dateString) return "Date TBA";
-        const date = new Date(dateString);
-        if (isNaN(date.getTime())) return dateString;
+    // Helper to safely format location (handles string or object)
+    const renderLocationText = (loc) => {
+        if (!loc) return "Location TBA";
+        if (typeof loc === 'object') {
+            return loc.venueName || loc.addressLine || "Location specified";
+        }
+        return loc;
+    };
+
+    const formatDate = (dateValue) => {
+        if (!dateValue) return "Date TBA";
+        // Handle if date is an object with a startDate property
+        const dateStr = typeof dateValue === 'object' ? dateValue.startDate : dateValue;
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return "TBA";
         return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
     };
 
-    const renderEventItem = ({ item, index }) => {
+    const renderEventItem = ({ item }) => {
         const eventId = item._id || item.id;
         const cardWidth = (width - 48) / 2;
+        const displayImage = item.bannerImageUrl || item.image || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=400';
         
+        // Ensure location is a string before passing to router
+        const locationString = renderLocationText(item.location);
+
         return (
             <TouchableOpacity
                 style={[styles.eventCard, { width: cardWidth }]}
-                activeOpacity={0.85}
+                activeOpacity={0.9}
                 onPress={() => {
                     router.push({
                         pathname: '/agency/selected/events/details',
-                        params: { 
+                        params: {
                             id: eventId,
-                            agencyId: id,
-                            eventTitle: item.title || "Event",
-                            eventImage: item.image || "",
-                            eventDate: item.date || "",
-                            eventLocation: item.location || ""
+                            eventTitle: item.title,
+                            eventImage: displayImage, 
+                            eventDate: typeof item.date === 'object' ? item.date.startDate : item.date,
+                            eventLocation: locationString // Pass as string to avoid param errors
                         }
                     });
                 }}
             >
-                <Image
-                    source={{ uri: item.image || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=400&h=250&fit=crop' }}
-                    style={styles.eventImage}
-                    resizeMode="cover"
-                />
-                
+                <View style={styles.imageContainer}>
+                    <Image
+                        source={{ uri: displayImage }}
+                        style={styles.eventImage}
+                    />
+                    <View style={styles.dateBadge}>
+                        <Text style={styles.dateBadgeText}>{formatDate(item.date).split(' ')[0]}</Text>
+                        <Text style={styles.dateBadgeMonth}>{formatDate(item.date).split(' ')[1]}</Text>
+                    </View>
+                </View>
+
                 <View style={styles.cardContent}>
-                    <Text style={styles.eventTitle} numberOfLines={2}>
-                        {item.title || "Event"}
-                    </Text>
-                    
-                    <View style={styles.infoRow}>
-                        <View style={styles.infoItem}>
-                            <Feather name="calendar" size={12} color={COLORS.textSecondary} />
-                            <Text style={styles.infoText} numberOfLines={1}>
-                                {formatDate(item.date)}
-                            </Text>
-                        </View>
-                        
-                        <View style={styles.infoItem}>
-                            <Feather name="map-pin" size={12} color={COLORS.textSecondary} />
-                            <Text style={styles.infoText} numberOfLines={1}>
-                                {item.location || "TBA"}
-                            </Text>
-                        </View>
+                    <Text style={styles.eventTitle} numberOfLines={2}>{item.title}</Text>
+                    <View style={styles.locationRow}>
+                        <Feather name="map-pin" size={12} color={COLORS.primary} />
+                        <Text style={styles.locationText} numberOfLines={1}>
+                            {locationString}
+                        </Text>
                     </View>
                 </View>
             </TouchableOpacity>
@@ -182,7 +156,6 @@ export default function AllEvents() {
         <SafeAreaView style={styles.safe}>
             <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
 
-            {/* Header with consistent blue design */}
             <View style={styles.header}>
                 <View style={styles.headerContent}>
                     <TouchableOpacity
@@ -191,14 +164,12 @@ export default function AllEvents() {
                     >
                         <Ionicons name="chevron-back" size={24} color={COLORS.white} />
                     </TouchableOpacity>
-                    <Text style={styles.headerTitle}>
+                    <Text style={styles.headerTitle} numberOfLines={1}>
                         {agencyName ? `${agencyName}` : 'Agency'}
                     </Text>
                     <View style={{ width: 40 }} />
                 </View>
-                <Text style={styles.headerSubtitle}>
-                    Events & Seminars
-                </Text>
+                <Text style={styles.headerSubtitle}>Events & Seminars</Text>
             </View>
 
             {loading ? (
@@ -212,9 +183,7 @@ export default function AllEvents() {
                         <Feather name="calendar" size={60} color={COLORS.border} />
                     </View>
                     <Text style={styles.emptyTitle}>No Events Available</Text>
-                    <Text style={styles.emptyText}>
-                        Check back later for upcoming events
-                    </Text>
+                    <Text style={styles.emptyText}>Check back later for upcoming events</Text>
                 </View>
             ) : (
                 <>
@@ -225,7 +194,7 @@ export default function AllEvents() {
                             </Text>
                         </View>
                     </View>
-                    
+
                     <FlatList
                         data={events}
                         numColumns={2}
@@ -242,11 +211,7 @@ export default function AllEvents() {
 }
 
 const styles = StyleSheet.create({
-    safe: { 
-        flex: 1, 
-        backgroundColor: COLORS.bg 
-    },
-    // Header with consistent blue design
+    safe: { flex: 1, backgroundColor: COLORS.bg },
     header: {
         backgroundColor: COLORS.primary,
         paddingHorizontal: 20,
@@ -254,11 +219,6 @@ const styles = StyleSheet.create({
         paddingBottom: 20,
         borderBottomLeftRadius: 25,
         borderBottomRightRadius: 25,
-        elevation: 4,
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
     },
     headerContent: {
         flexDirection: 'row',
@@ -275,7 +235,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     headerTitle: {
-        fontSize: 22,
+        fontSize: 20,
         fontWeight: '700',
         color: COLORS.white,
         textAlign: 'center',
@@ -287,11 +247,20 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         fontWeight: '500',
     },
-    eventsCountContainer: {
-        paddingHorizontal: 20,
-        paddingTop: 20,
-        paddingBottom: 10,
+    imageContainer: { position: 'relative' },
+    dateBadge: {
+        position: 'absolute',
+        top: 10,
+        left: 10,
+        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        padding: 5,
+        borderRadius: 8,
+        alignItems: 'center',
+        minWidth: 40,
     },
+    dateBadgeText: { fontSize: 14, fontWeight: '700', color: COLORS.primary },
+    dateBadgeMonth: { fontSize: 10, fontWeight: '600', color: COLORS.textSecondary, textTransform: 'uppercase' },
+    eventsCountContainer: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10 },
     eventsCountBadge: {
         backgroundColor: COLORS.white,
         borderRadius: 12,
@@ -300,102 +269,26 @@ const styles = StyleSheet.create({
         alignSelf: 'flex-start',
         borderWidth: 1,
         borderColor: COLORS.border,
-        elevation: 1,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
     },
-    eventsCountText: {
-        fontSize: 14,
-        color: COLORS.primary,
-        fontWeight: '600',
-    },
-    loadingContainer: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 12,
-    },
-    loadingText: {
-        fontSize: 16,
-        color: COLORS.textSecondary,
-    },
-    emptyContainer: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingHorizontal: 40,
-    },
-    emptyIcon: {
-        width: 100,
-        height: 100,
-        borderRadius: 50,
-        backgroundColor: 'rgba(118, 159, 205, 0.05)',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 20,
-    },
-    emptyTitle: {
-        fontSize: 20,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-        marginBottom: 8,
-        textAlign: 'center',
-    },
-    emptyText: {
-        fontSize: 14,
-        color: COLORS.textSecondary,
-        textAlign: 'center',
-        lineHeight: 20,
-    },
-    listContainer: { 
-        paddingHorizontal: 20,
-        paddingTop: 10,
-        paddingBottom: 40,
-    },
-    columnWrapper: { 
-        justifyContent: 'space-between',
-        marginBottom: 16,
-    },
+    eventsCountText: { fontSize: 14, color: COLORS.primary, fontWeight: '600' },
+    loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    loadingText: { marginTop: 10, color: COLORS.textSecondary },
+    emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
+    emptyIcon: { marginBottom: 20 },
+    emptyTitle: { fontSize: 18, fontWeight: '600', color: COLORS.textPrimary },
+    emptyText: { textAlign: 'center', color: COLORS.textSecondary },
+    listContainer: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 40 },
+    columnWrapper: { justifyContent: 'space-between', marginBottom: 16 },
     eventCard: {
         backgroundColor: COLORS.cardBg,
         borderRadius: 20,
         borderWidth: 1,
         borderColor: COLORS.border,
         overflow: 'hidden',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
-        elevation: 2,
     },
-    eventImage: {
-        width: '100%',
-        height: 130,
-    },
-    cardContent: {
-        padding: 16,
-    },
-    eventTitle: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-        lineHeight: 20,
-        marginBottom: 12,
-        letterSpacing: 0.2,
-    },
-    infoRow: {
-        gap: 8,
-    },
-    infoItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-    },
-    infoText: {
-        fontSize: 12,
-        color: COLORS.textSecondary,
-        flex: 1,
-    },
+    eventImage: { width: '100%', height: 120 },
+    cardContent: { padding: 12 },
+    eventTitle: { fontSize: 14, fontWeight: '600', color: COLORS.textPrimary, marginBottom: 8 },
+    locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    locationText: { fontSize: 12, color: COLORS.textSecondary, flex: 1 },
 });

@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { 
-    View, 
-    Text, 
-    StyleSheet, 
-    ScrollView, 
-    TouchableOpacity, 
-    Image, 
+import {
+    View,
+    Text,
+    StyleSheet,
+    ScrollView,
+    TouchableOpacity,
+    Image,
     ActivityIndicator,
-    StatusBar 
+    StatusBar
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
+
+const BASE_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1';
 
 const COLORS = {
     bg: '#F8FAFD',
@@ -23,8 +25,6 @@ const COLORS = {
     textSecondary: '#718096',
     border: '#EEF2F7',
     cardBg: '#FFFFFF',
-    danger: '#FF6B6B',
-    success: '#4CAF50',
 };
 
 export default function EventDetail() {
@@ -37,201 +37,187 @@ export default function EventDetail() {
     useEffect(() => {
         const fetchDetail = async () => {
             try {
-                const response = await fetch(`https://edu-agent-backend-nine.vercel.app/api/v1/agency/events/detail/${id}`, {
+                const response = await fetch(`${BASE_URL}/agency/events/profile/${id}`, {
                     headers: { 'Authorization': `Bearer ${userToken}` }
                 });
 
-                if (response.ok) {
-                    const json = await response.json();
+                const json = await response.json();
+                
+                if (response.ok && json.event) {
+                    const e = json.event;
                     setData({
-                        title: json.event?.title || eventTitle || "Event",
-                        image: eventImage || json.event?.image || null,
-                        date: json.event?.date || eventDate || "Date not specified",
-                        time: json.event?.time || "Time not specified",
-                        location: json.event?.location || eventLocation || "Location not specified",
-                        about: json.event?.about || "No description available",
-                        agenda: json.event?.agenda || ["Event agenda details will be updated soon"],
-                        registration: json.event?.registration || { fee: "Free", seats: "100", deadline: "TBA" }
+                        title: e.title,
+                        subtitle: e.subtitle,
+                        image: e.bannerImageUrl || eventImage,
+                        date: e.startAt,
+                        location: e.location?.venueName || e.location?.addressLine || eventLocation,
+                        address: e.location?.addressLine,
+                        about: e.about || e.description,
+                        whoShouldAttend: e.whoShouldAttend,
+                        agenda: e.agendaItems || []
                     });
                 } else {
-                    throw new Error("No data");
+                    throw new Error("Failed to load event data");
                 }
             } catch (error) {
-                // Fallback data
+                console.log("Fetch Error:", error.message);
+                // Use only the params we received
                 setData({
-                    title: eventTitle || "Study Abroad Webinar",
-                    image: eventImage || 'https://images.unsplash.com/photo-1581094794329-c8112a89af12?w=400&h=250&fit=crop',
-                    date: eventDate || "June 20, 2024",
-                    time: "11:00 AM - 12:30 PM",
-                    location: eventLocation || "Online via Zoom",
-                    about: "This webinar is designed to help students understand the complete process of applying to study abroad, with a special focus on admissions, visa requirements, scholarships, and documentation.",
-                    agenda: [
-                        "Admission Process Overview",
-                        "Visa Documentation Guidance",
-                        "Scholarships & Financial Aid",
-                        "Live Q&A Session"
-                    ],
-                    registration: {
-                        fee: "Free Entry",
-                        seats: "100",
-                        deadline: "June 18, 2024"
-                    }
+                    title: eventTitle,
+                    image: eventImage,
+                    date: eventDate,
+                    location: eventLocation,
+                    about: "Event details not available.",
+                    agenda: []
                 });
             } finally {
                 setLoading(false);
             }
         };
         fetchDetail();
-    }, [id, userToken, eventTitle, eventImage, eventDate, eventLocation]);
+    }, [id]);
 
     const formatDate = (dateString) => {
-        if (!dateString || dateString === "Date not specified") return "Date TBA";
+        if (!dateString) return "Date TBA";
         const date = new Date(dateString);
-        if (isNaN(date.getTime())) return dateString;
-        return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+        return date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     };
 
-    if (loading) {
-        return (
-            <View style={styles.center}>
-                <ActivityIndicator size="large" color={COLORS.primary} />
-            </View>
-        );
-    }
+    const formatTime = (dateString) => {
+        if (!dateString) return "Time TBA";
+        const date = new Date(dateString);
+        return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    };
 
-    if (!data) return null;
+    if (loading) return (
+        <View style={styles.center}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.loadingText}>Loading event details...</Text>
+        </View>
+    );
 
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
             <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
             
-            {/* Header with consistent blue design */}
+            {/* Header */}
             <View style={styles.header}>
-                <View style={styles.headerContent}>
-                    <TouchableOpacity
-                        style={styles.backButton}
-                        onPress={() => router.back()}
-                    >
-                        <Ionicons name="chevron-back" size={24} color={COLORS.white} />
-                    </TouchableOpacity>
-                    <Text style={styles.headerTitle}>Event Details</Text>
-                    <View style={{ width: 40 }} />
-                </View>
+                <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                    <Ionicons name="chevron-back" size={24} color={COLORS.white} />
+                </TouchableOpacity>
+                <Text style={styles.headerTitle} numberOfLines={1}>Event Details</Text>
+                <View style={{ width: 40 }} />
             </View>
 
             <ScrollView 
                 showsVerticalScrollIndicator={false} 
                 contentContainerStyle={styles.scrollContent}
             >
-                {/* Event Image Banner */}
-                <View style={styles.bannerContainer}>
-                    <Image 
-                        source={{ uri: data.image }} 
-                        style={styles.eventImage}
-                        resizeMode="cover"
-                    />
-                    <View style={styles.imageOverlay} />
-                </View>
-
-                {/* Main Content Card */}
+                {/* Event Image */}
+                <Image source={{ uri: data.image }} style={styles.eventImage} />
+                
+                {/* Main Content */}
                 <View style={styles.contentCard}>
-                    {/* Event Title */}
-                    <Text style={styles.eventTitle}>{data.title}</Text>
-                    
-                    {/* Event Details Row */}
-                    <View style={styles.detailsRow}>
-                        <View style={styles.detailItem}>
-                            <View style={[styles.detailIcon, { backgroundColor: COLORS.primaryLight }]}>
-                                <Feather name="calendar" size={16} color={COLORS.primary} />
+                    {/* Event Title Section */}
+                    <View style={styles.titleContainer}>
+                        <Text style={styles.eventTitle}>{data.title}</Text>
+                        {data.subtitle && <Text style={styles.subtitle}>{data.subtitle}</Text>}
+                    </View>
+
+                    {/* Event Info Cards */}
+                    <View style={styles.infoCardsContainer}>
+                        {/* Date Card */}
+                        <View style={styles.infoCard}>
+                            <View style={[styles.infoIcon, { backgroundColor: 'rgba(118, 159, 205, 0.15)' }]}>
+                                <Feather name="calendar" size={20} color={COLORS.primary} />
                             </View>
-                            <View style={styles.detailText}>
-                                <Text style={styles.detailLabel}>Date</Text>
-                                <Text style={styles.detailValue}>{formatDate(data.date)}</Text>
+                            <View style={styles.infoContent}>
+                                <Text style={styles.infoLabel}>DATE</Text>
+                                <Text style={styles.infoValue}>{formatDate(data.date)}</Text>
                             </View>
                         </View>
-                        
-                        <View style={styles.detailItem}>
-                            <View style={[styles.detailIcon, { backgroundColor: COLORS.primaryLight }]}>
-                                <Feather name="clock" size={16} color={COLORS.primary} />
+
+                        {/* Time Card */}
+                        <View style={styles.infoCard}>
+                            <View style={[styles.infoIcon, { backgroundColor: 'rgba(118, 159, 205, 0.15)' }]}>
+                                <Feather name="clock" size={20} color={COLORS.primary} />
                             </View>
-                            <View style={styles.detailText}>
-                                <Text style={styles.detailLabel}>Time</Text>
-                                <Text style={styles.detailValue}>{data.time}</Text>
+                            <View style={styles.infoContent}>
+                                <Text style={styles.infoLabel}>TIME</Text>
+                                <Text style={styles.infoValue}>{formatTime(data.date)}</Text>
+                            </View>
+                        </View>
+
+                        {/* Location Card */}
+                        <View style={styles.infoCard}>
+                            <View style={[styles.infoIcon, { backgroundColor: 'rgba(118, 159, 205, 0.15)' }]}>
+                                <Feather name="map-pin" size={20} color={COLORS.primary} />
+                            </View>
+                            <View style={styles.infoContent}>
+                                <Text style={styles.infoLabel}>VENUE</Text>
+                                <Text style={styles.infoValue} numberOfLines={1}>{data.location}</Text>
+                                {data.address && (
+                                    <Text style={styles.infoSubValue} numberOfLines={1}>{data.address}</Text>
+                                )}
                             </View>
                         </View>
                     </View>
 
-                    {/* Location */}
-                    <View style={styles.locationContainer}>
-                        <View style={[styles.locationIcon, { backgroundColor: COLORS.primaryLight }]}>
-                            <Feather name="map-pin" size={18} color={COLORS.primary} />
+                    {/* About Event Section */}
+                    {data.about && (
+                        <View style={styles.section}>
+                            <View style={styles.sectionHeader}>
+                                <View style={styles.sectionIcon}>
+                                    <Feather name="info" size={18} color={COLORS.primary} />
+                                </View>
+                                <Text style={styles.sectionTitle}>About This Event</Text>
+                            </View>
+                            <Text style={styles.paragraph}>{data.about}</Text>
                         </View>
-                        <View style={styles.locationTextContainer}>
-                            <Text style={styles.locationLabel}>Venue</Text>
-                            <Text style={styles.locationValue}>{data.location}</Text>
-                        </View>
-                    </View>
+                    )}
 
-                    {/* About Section */}
-                    <View style={styles.section}>
-                        <View style={styles.sectionHeader}>
-                            <Feather name="info" size={20} color={COLORS.primary} />
-                            <Text style={styles.sectionTitle}>About This Event</Text>
+                    {/* Who Should Attend Section */}
+                    {data.whoShouldAttend && (
+                        <View style={styles.section}>
+                            <View style={styles.sectionHeader}>
+                                <View style={styles.sectionIcon}>
+                                    <Feather name="users" size={18} color={COLORS.primary} />
+                                </View>
+                                <Text style={styles.sectionTitle}>Who Should Attend</Text>
+                            </View>
+                            <Text style={styles.paragraph}>{data.whoShouldAttend}</Text>
                         </View>
-                        <Text style={styles.paragraph}>{data.about}</Text>
-                    </View>
+                    )}
 
                     {/* Agenda Section */}
-                    <View style={styles.section}>
-                        <View style={styles.sectionHeader}>
-                            <Feather name="list" size={20} color={COLORS.primary} />
-                            <Text style={styles.sectionTitle}>Event Agenda</Text>
-                        </View>
-                        <View style={styles.agendaContainer}>
-                            {data.agenda.map((item, index) => (
-                                <View key={index} style={styles.agendaItem}>
-                                    <View style={styles.agendaNumber}>
-                                        <Text style={styles.agendaNumberText}>{index + 1}</Text>
-                                    </View>
-                                    <Text style={styles.agendaText}>{item}</Text>
+                    {data.agenda && data.agenda.length > 0 && (
+                        <View style={styles.section}>
+                            <View style={styles.sectionHeader}>
+                                <View style={styles.sectionIcon}>
+                                    <Feather name="list" size={18} color={COLORS.primary} />
                                 </View>
-                            ))}
-                        </View>
-                    </View>
-
-                    {/* Registration Details Card */}
-                    <View style={styles.registrationCard}>
-                        <View style={styles.registrationHeader}>
-                            <Feather name="clipboard" size={20} color={COLORS.white} />
-                            <Text style={styles.registrationTitle}>Registration Details</Text>
-                        </View>
-                        
-                        <View style={styles.registrationGrid}>
-                            <View style={styles.registrationItem}>
-                                <Text style={styles.registrationLabel}>Participation Fee</Text>
-                                <Text style={styles.registrationValue}>{data.registration.fee}</Text>
+                                <Text style={styles.sectionTitle}>Event Agenda</Text>
                             </View>
-                            
-                            <View style={styles.registrationItem}>
-                                <Text style={styles.registrationLabel}>Available Seats</Text>
-                                <Text style={styles.registrationValue}>{data.registration.seats}</Text>
-                            </View>
-                            
-                            <View style={styles.registrationItem}>
-                                <Text style={styles.registrationLabel}>Registration Deadline</Text>
-                                <Text style={styles.registrationValue}>{data.registration.deadline}</Text>
+                            <View style={styles.agendaContainer}>
+                                {data.agenda.map((item, index) => (
+                                    <View key={index} style={styles.agendaItem}>
+                                        <View style={styles.agendaBullet} />
+                                        <Text style={styles.agendaText}>{item}</Text>
+                                    </View>
+                                ))}
                             </View>
                         </View>
-                    </View>
+                    )}
                 </View>
                 
+                {/* Bottom Spacing for the button */}
                 <View style={{ height: 100 }} />
             </ScrollView>
 
             {/* Fixed Register Button */}
             <View style={styles.bottomBar}>
-                <TouchableOpacity style={styles.registerButton} activeOpacity={0.85}>
-                    <Text style={styles.registerButtonText}>Register Now</Text>
+                <TouchableOpacity style={styles.registerButton} activeOpacity={0.9}>
+                    <Text style={styles.registerText}>Register for Event</Text>
                     <Feather name="arrow-right" size={20} color={COLORS.white} />
                 </TouchableOpacity>
             </View>
@@ -240,159 +226,123 @@ export default function EventDetail() {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: COLORS.bg,
+    container: { 
+        flex: 1, 
+        backgroundColor: COLORS.bg 
     },
-    center: {
-        flex: 1,
-        justifyContent: 'center',
+    center: { 
+        flex: 1, 
+        justifyContent: 'center', 
         alignItems: 'center',
-        backgroundColor: COLORS.bg,
+        backgroundColor: COLORS.bg
     },
-    // Header with consistent blue design
+    loadingText: {
+        marginTop: 16,
+        fontSize: 14,
+        color: COLORS.textSecondary,
+    },
     header: {
         backgroundColor: COLORS.primary,
-        paddingHorizontal: 20,
-        paddingTop: 15,
-        paddingBottom: 20,
-        borderBottomLeftRadius: 25,
-        borderBottomRightRadius: 25,
-        elevation: 4,
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-    },
-    headerContent: {
         flexDirection: 'row',
+        alignItems: 'center',
         justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    backButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: 'rgba(255, 255, 255, 0.2)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    headerTitle: {
-        fontSize: 22,
-        fontWeight: '700',
-        color: COLORS.white,
-        textAlign: 'center',
-        flex: 1,
-    },
-    scrollContent: {
-        paddingBottom: 20,
-    },
-    // Banner Image
-    bannerContainer: {
-        height: 220,
-        position: 'relative',
-    },
-    eventImage: {
-        width: '100%',
-        height: '100%',
-    },
-    imageOverlay: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.2)',
-    },
-    // Main Content Card
-    contentCard: {
-        backgroundColor: COLORS.white,
-        borderTopLeftRadius: 30,
-        borderTopRightRadius: 30,
-        marginTop: -30,
-        paddingHorizontal: 24,
-        paddingTop: 30,
-        paddingBottom: 20,
-        elevation: 2,
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        borderBottomLeftRadius: 20,
+        borderBottomRightRadius: 20,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.05,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
         shadowRadius: 8,
+        elevation: 4,
     },
-    eventTitle: {
-        fontSize: 26,
-        fontWeight: '700',
-        color: COLORS.textPrimary,
-        marginBottom: 20,
-        lineHeight: 32,
+    headerTitle: { 
+        color: COLORS.white, 
+        fontSize: 18, 
+        fontWeight: '700', 
+        flex: 1, 
+        textAlign: 'center',
+        letterSpacing: 0.5,
     },
-    detailsRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 20,
+    backButton: { 
+        width: 40, 
+        height: 40, 
+        borderRadius: 20, 
+        backgroundColor: 'rgba(255,255,255,0.2)', 
+        justifyContent: 'center', 
+        alignItems: 'center' 
     },
-    detailItem: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: COLORS.bg,
-        borderRadius: 16,
-        padding: 16,
-        marginHorizontal: 4,
-        borderWidth: 1,
-        borderColor: COLORS.border,
+    eventImage: { 
+        width: '100%', 
+        height: 220,
     },
-    detailIcon: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 12,
+    contentCard: { 
+        backgroundColor: COLORS.white, 
+        borderTopLeftRadius: 24, 
+        borderTopRightRadius: 24, 
+        marginTop: -20, 
+        padding: 20,
+        paddingBottom: 30,
     },
-    detailText: {
-        flex: 1,
-    },
-    detailLabel: {
-        fontSize: 12,
-        color: COLORS.textSecondary,
-        marginBottom: 2,
-    },
-    detailValue: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-    },
-    locationContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: COLORS.bg,
-        borderRadius: 16,
-        padding: 16,
+    titleContainer: {
         marginBottom: 24,
-        borderWidth: 1,
-        borderColor: COLORS.border,
+        paddingBottom: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: COLORS.border,
     },
-    locationIcon: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
+    eventTitle: { 
+        fontSize: 24, 
+        fontWeight: '700', 
+        color: COLORS.textPrimary,
+        lineHeight: 30,
+        marginBottom: 8,
+    },
+    subtitle: { 
+        fontSize: 16, 
+        color: COLORS.primary, 
+        fontWeight: '500',
+        lineHeight: 22,
+    },
+    infoCardsContainer: {
+        marginBottom: 28,
+    },
+    infoCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: COLORS.primaryLight,
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 12,
+    },
+    infoIcon: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 12,
+        marginRight: 16,
     },
-    locationTextContainer: {
+    infoContent: {
         flex: 1,
     },
-    locationLabel: {
-        fontSize: 12,
+    infoLabel: {
+        fontSize: 11,
         color: COLORS.textSecondary,
-        marginBottom: 2,
+        marginBottom: 4,
+        fontWeight: '600',
+        letterSpacing: 0.5,
     },
-    locationValue: {
+    infoValue: {
         fontSize: 15,
         fontWeight: '600',
         color: COLORS.textPrimary,
+        lineHeight: 20,
+    },
+    infoSubValue: {
+        fontSize: 13,
+        color: COLORS.textSecondary,
+        marginTop: 2,
+        lineHeight: 18,
     },
     section: {
         marginBottom: 28,
@@ -402,11 +352,19 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginBottom: 16,
     },
+    sectionIcon: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        backgroundColor: COLORS.primaryLight,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
+    },
     sectionTitle: {
-        fontSize: 18,
-        fontWeight: '700',
+        fontSize: 17,
+        fontWeight: '600',
         color: COLORS.textPrimary,
-        marginLeft: 10,
     },
     paragraph: {
         fontSize: 15,
@@ -414,109 +372,62 @@ const styles = StyleSheet.create({
         lineHeight: 24,
     },
     agendaContainer: {
-        backgroundColor: COLORS.bg,
+        backgroundColor: COLORS.primaryLight,
         borderRadius: 16,
         padding: 20,
-        borderWidth: 1,
-        borderColor: COLORS.border,
     },
     agendaItem: {
         flexDirection: 'row',
         alignItems: 'flex-start',
-        marginBottom: 16,
+        marginBottom: 12,
     },
-    agendaNumber: {
-        width: 28,
-        height: 28,
-        borderRadius: 14,
-        backgroundColor: COLORS.primaryLight,
-        justifyContent: 'center',
-        alignItems: 'center',
+    agendaBullet: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: COLORS.primary,
+        marginTop: 9,
         marginRight: 12,
-        marginTop: 2,
-    },
-    agendaNumberText: {
-        fontSize: 12,
-        fontWeight: '700',
-        color: COLORS.primary,
     },
     agendaText: {
         flex: 1,
-        fontSize: 15,
+        fontSize: 14,
         color: COLORS.textPrimary,
         lineHeight: 22,
-    },
-    registrationCard: {
-        backgroundColor: COLORS.primary,
-        borderRadius: 20,
-        overflow: 'hidden',
-        elevation: 3,
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-    },
-    registrationHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 20,
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    },
-    registrationTitle: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: COLORS.white,
-        marginLeft: 10,
-    },
-    registrationGrid: {
-        padding: 20,
-    },
-    registrationItem: {
-        marginBottom: 16,
-    },
-    registrationLabel: {
-        fontSize: 13,
-        color: 'rgba(255, 255, 255, 0.8)',
-        marginBottom: 4,
-    },
-    registrationValue: {
-        fontSize: 16,
-        fontWeight: '700',
-        color: COLORS.white,
     },
     bottomBar: {
         position: 'absolute',
         bottom: 0,
-        left: 0,
-        right: 0,
+        width: '100%',
         backgroundColor: COLORS.white,
-        paddingHorizontal: 24,
-        paddingVertical: 20,
-        borderTopWidth: 1,
-        borderTopColor: COLORS.border,
-        elevation: 8,
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        paddingHorizontal: 20,
+        paddingVertical: 16,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: -4 },
         shadowOpacity: 0.1,
-        shadowRadius: 8,
+        shadowRadius: 12,
+        elevation: 8,
     },
     registerButton: {
         backgroundColor: COLORS.primary,
-        borderRadius: 16,
-        paddingVertical: 18,
+        padding: 16,
+        borderRadius: 12,
         flexDirection: 'row',
-        alignItems: 'center',
         justifyContent: 'center',
-        gap: 10,
-        elevation: 2,
+        alignItems: 'center',
         shadowColor: COLORS.primary,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
+        elevation: 4,
     },
-    registerButtonText: {
-        fontSize: 17,
-        fontWeight: '700',
+    registerText: {
         color: COLORS.white,
+        fontWeight: '600',
+        fontSize: 16,
+        marginRight: 8,
+        letterSpacing: 0.3,
     },
 });

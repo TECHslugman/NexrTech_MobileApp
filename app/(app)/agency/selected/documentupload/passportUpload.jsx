@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker'; // Added this
 import { useAuth } from '../../../../context/AuthContext';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 
@@ -24,7 +25,6 @@ const COLORS = {
 
 const BASE_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1/students';
 
-// The full 13-document checklist mapped with backend
 const DOCUMENT_STEPS = [
     { id: 'passport', label: 'Passport', sub: 'Applicant & dependents (12mo validity)', type: 'passport', required: true },
     { id: 'academics', label: 'Academic Documents', sub: 'Year 10, 12, Diploma, Degree Transcripts', type: 'academic_results', required: true },
@@ -68,22 +68,23 @@ export default function DynamicDocumentUpload() {
             console.error("Profile Load Error", e);
         }
     };
+
     const handleUpload = async (asset) => {
         const studentId = userData?._id;
         const activeAgencyId = agencyId || userData?.registeredAgency;
 
         if (!studentId || !activeAgencyId) {
-            Alert.alert("Initializing", "Please wait a moment for your session to load...");
+            Alert.alert("Initializing", "Please wait for your session to load...");
             fetchProfile();
             return;
         }
 
         try {
             setLoading(true);
-            const mimeType = asset.mimeType || 'image/jpeg';
+            const mimeType = asset.mimeType || asset.type || 'application/pdf';
             const fileSize = asset.fileSize || asset.size || 0;
+            const uri = asset.uri;
 
-            // 1. Initialize SAS 
             const sasRes = await fetch(`${BASE_URL}/uploads/sas`, {
                 method: 'POST',
                 headers: {
@@ -102,8 +103,7 @@ export default function DynamicDocumentUpload() {
             if (!sasRes.ok) throw new Error("Failed to get upload link.");
             const { sasUrl, blobName } = await sasRes.json();
 
-            // 2. PUT to Azure
-            const blobRes = await fetch(asset.uri);
+            const blobRes = await fetch(uri);
             const blob = await blobRes.blob();
             const azureRes = await fetch(sasUrl, {
                 method: 'PUT',
@@ -116,7 +116,6 @@ export default function DynamicDocumentUpload() {
 
             if (!azureRes.ok) throw new Error("Cloud storage upload failed.");
 
-            // 3. Confirm with Backend
             const confirmRes = await fetch(`${BASE_URL}/uploads/confirm`, {
                 method: 'POST',
                 headers: {
@@ -134,36 +133,49 @@ export default function DynamicDocumentUpload() {
                 })
             });
 
-            const result = await confirmRes.json();
-
             if (confirmRes.ok) {
-                setUploadedDocs(prev => ({ ...prev, [activeDoc.id]: asset.uri }));
-                Alert.alert("Success", `${activeDoc.label} secured.`);
-                console.log(confirmRes.status, result);
+                // We store both URI and type so the UI knows if it should show an image or a PDF icon
+                setUploadedDocs(prev => ({ 
+                    ...prev, 
+                    [activeDoc.id]: { uri: uri, type: mimeType } 
+                }));
+                Alert.alert("Success", `${activeDoc.label} uploaded.`);
             } else {
-                console.log("SERVER ERROR DETAILS:", result);
-                throw new Error(result.message || "Failed to link document.");
+                throw new Error("Failed to link document.");
             }
-
         } catch (err) {
             Alert.alert("Upload Error", err.message);
         } finally {
             setLoading(false);
         }
     };
+
     const pickImage = async (useCamera = false) => {
         const options = {
             mediaTypes: ['images'],
             allowsEditing: true,
             quality: 0.7,
         };
-
         const result = useCamera
             ? await ImagePicker.launchCameraAsync(options)
             : await ImagePicker.launchImageLibraryAsync(options);
 
         if (!result.canceled && result.assets[0]) {
             handleUpload(result.assets[0]);
+        }
+    };
+
+    const pickDocument = async () => {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: 'application/pdf',
+                copyToCacheDirectory: true,
+            });
+            if (!result.canceled && result.assets[0]) {
+                handleUpload(result.assets[0]);
+            }
+        } catch (err) {
+            Alert.alert("Error", "Could not access files.");
         }
     };
 
@@ -176,24 +188,18 @@ export default function DynamicDocumentUpload() {
         if (currentStep < DOCUMENT_STEPS.length - 1) {
             setCurrentStep(currentStep + 1);
         } else {
-            Alert.alert("All Set!", "All documents have been submitted.", [
-                { text: "Finish", onPress: () => router.replace('/(tabs)/applications') }
+            Alert.alert("Done", "All documents submitted successfully!", [
+                { text: "OK", onPress: () => router.back() } 
             ]);
         }
-    };
-
-    const prevStep = () => {
-        if (currentStep > 0) setCurrentStep(currentStep - 1);
-        else router.back();
     };
 
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar barStyle="dark-content" />
 
-            {/* Header / Progress Bar */}
             <View style={styles.header}>
-                <TouchableOpacity onPress={prevStep} style={styles.backButton}>
+                <TouchableOpacity onPress={() => (currentStep > 0 ? setCurrentStep(currentStep - 1) : router.back())} style={styles.backButton}>
                     <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
                 </TouchableOpacity>
                 <View style={styles.progressContainer}>
@@ -205,7 +211,6 @@ export default function DynamicDocumentUpload() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-                {/* Instruction Area */}
                 <View style={styles.instructionBox}>
                     <Text style={styles.docTitle}>{activeDoc.label}</Text>
                     <Text style={styles.docSub}>{activeDoc.sub}</Text>
@@ -216,17 +221,23 @@ export default function DynamicDocumentUpload() {
                     </View>
                 </View>
 
-                {/* Main Upload Area */}
                 <TouchableOpacity
                     style={[styles.uploadCard, uploadedDocs[activeDoc.id] && styles.successCard]}
-                    onPress={() => pickImage(false)}
+                    onPress={pickDocument}
                     disabled={loading}
                 >
                     {loading ? (
                         <ActivityIndicator size="large" color={COLORS.primary} />
                     ) : uploadedDocs[activeDoc.id] ? (
                         <View style={styles.previewBox}>
-                            <Image source={{ uri: uploadedDocs[activeDoc.id] }} style={styles.previewImage} />
+                            {uploadedDocs[activeDoc.id].type?.includes('pdf') ? (
+                                <View style={styles.pdfIconContainer}>
+                                    <MaterialCommunityIcons name="file-pdf-box" size={80} color="#EF4444" />
+                                    <Text style={{color: COLORS.gray}}>PDF Selected</Text>
+                                </View>
+                            ) : (
+                                <Image source={{ uri: uploadedDocs[activeDoc.id].uri }} style={styles.previewImage} />
+                            )}
                             <View style={styles.overlay}>
                                 <Ionicons name="checkmark-circle" size={60} color={COLORS.success} />
                             </View>
@@ -234,45 +245,35 @@ export default function DynamicDocumentUpload() {
                     ) : (
                         <View style={styles.placeholderBox}>
                             <MaterialCommunityIcons name="cloud-upload-outline" size={80} color={COLORS.primary} />
-                            <Text style={styles.uploadMainText}>Tap to Upload</Text>
-                            <Text style={styles.uploadSubText}>PNG, JPG, or PDF up to 5MB</Text>
+                            <Text style={styles.uploadMainText}>Tap to Browse Files</Text>
+                            <Text style={styles.uploadSubText}>Images or PDF (Max 5MB)</Text>
                         </View>
                     )}
                 </TouchableOpacity>
 
-                {/* Quick Action Buttons */}
                 <View style={styles.actionRow}>
                     <TouchableOpacity style={styles.actionBtn} onPress={() => pickImage(true)}>
                         <Feather name="camera" size={20} color={COLORS.primary} />
                         <Text style={styles.actionText}>Camera</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionBtn} onPress={() => pickImage(false)}>
-                        <Feather name="image" size={20} color={COLORS.primary} />
-                        <Text style={styles.actionText}>Gallery</Text>
+                    <TouchableOpacity style={styles.actionBtn} onPress={pickDocument}>
+                        <Feather name="file-text" size={20} color={COLORS.primary} />
+                        <Text style={styles.actionText}>PDF Files</Text>
                     </TouchableOpacity>
                 </View>
 
-                {/* Document Requirements Checklist */}
                 <View style={styles.infoCard}>
-                    <Text style={styles.infoTitle}>Upload Guide</Text>
+                    <Text style={styles.infoTitle}>Guidelines</Text>
                     <View style={styles.infoItem}>
                         <Feather name="check" size={14} color={COLORS.success} />
-                        <Text style={styles.infoText}>Ensure all text is clearly readable</Text>
-                    </View>
-                    <View style={styles.infoItem}>
-                        <Feather name="check" size={14} color={COLORS.success} />
-                        <Text style={styles.infoText}>Include all pages of the document</Text>
+                        <Text style={styles.infoText}>Documents must be clear and legible</Text>
                     </View>
                 </View>
             </ScrollView>
 
-            {/* Footer Navigation */}
             <View style={styles.footer}>
                 <TouchableOpacity
-                    style={[
-                        styles.nextButton,
-                        (!uploadedDocs[activeDoc.id] && activeDoc.required) && styles.disabledButton
-                    ]}
+                    style={[styles.nextButton, (!uploadedDocs[activeDoc.id] && activeDoc.required) && styles.disabledButton]}
                     onPress={nextStep}
                 >
                     <Text style={styles.nextButtonText}>
@@ -296,28 +297,21 @@ const styles = StyleSheet.create({
     scrollContent: { paddingHorizontal: 20, paddingBottom: 30 },
     instructionBox: { alignItems: 'center', marginVertical: 30 },
     docTitle: { fontSize: 24, fontWeight: '800', color: COLORS.textDark, textAlign: 'center' },
-    docSub: { fontSize: 14, color: COLORS.secondary, textAlign: 'center', marginTop: 8, paddingHorizontal: 15 },
+    docSub: { fontSize: 14, color: COLORS.secondary, textAlign: 'center', marginTop: 8 },
     badge: { marginTop: 12, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 6 },
     reqBadge: { backgroundColor: '#FEE2E2' },
     optBadge: { backgroundColor: '#F0FDF4' },
     badgeText: { fontSize: 10, fontWeight: '900' },
     uploadCard: {
-        height: 280,
-        backgroundColor: COLORS.white,
-        borderRadius: 24,
-        borderWidth: 2,
-        borderColor: COLORS.primary,
-        borderStyle: 'dashed',
-        justifyContent: 'center',
-        alignItems: 'center',
-        overflow: 'hidden',
-        elevation: 4
+        height: 280, backgroundColor: COLORS.white, borderRadius: 24, borderWidth: 2,
+        borderColor: COLORS.primary, borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', elevation: 4
     },
     successCard: { borderStyle: 'solid', borderColor: COLORS.success },
     placeholderBox: { alignItems: 'center' },
     uploadMainText: { fontSize: 18, fontWeight: '700', color: COLORS.primary, marginTop: 15 },
     uploadSubText: { fontSize: 12, color: COLORS.gray, marginTop: 5 },
     previewBox: { width: '100%', height: '100%' },
+    pdfIconContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     previewImage: { width: '100%', height: '100%', opacity: 0.5 },
     overlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
     actionRow: { flexDirection: 'row', justifyContent: 'center', gap: 15, marginTop: 20 },
@@ -328,7 +322,7 @@ const styles = StyleSheet.create({
     infoItem: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
     infoText: { fontSize: 13, color: COLORS.secondary },
     footer: { padding: 20, backgroundColor: COLORS.bg, borderTopWidth: 1, borderTopColor: COLORS.border },
-    nextButton: { backgroundColor: COLORS.primary, height: 60, borderRadius: 16, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10, elevation: 4 },
-    disabledButton: { backgroundColor: COLORS.gray, elevation: 0 },
-    nextButtonText: { color: COLORS.white, fontWeight: '700', fontSize: 16, letterSpacing: 1 }
+    nextButton: { backgroundColor: COLORS.primary, height: 60, borderRadius: 16, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 },
+    disabledButton: { backgroundColor: COLORS.gray },
+    nextButtonText: { color: COLORS.white, fontWeight: '700', fontSize: 16 }
 });

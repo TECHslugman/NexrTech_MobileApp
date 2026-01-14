@@ -45,6 +45,7 @@ export default function UniversityDetail() {
                 if (response.ok) {
                     const json = await response.json();
                     const uni = json.unversity || json.university || {};
+                    console.log(response.status, json);
 
                     setData({
                         name: uni?.name || uniName || "University",
@@ -111,7 +112,7 @@ export default function UniversityDetail() {
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
             <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
-            
+
             {/* Header with consistent blue design */}
             <View style={styles.header}>
                 <View style={styles.headerContent}>
@@ -152,7 +153,7 @@ export default function UniversityDetail() {
                 <View style={styles.contentCard}>
                     {/* University Name */}
                     <Text style={styles.universityName}>{data.name}</Text>
-                    
+
                     {/* Quick Info Grid */}
                     <View style={styles.infoGrid}>
                         <View style={styles.infoCard}>
@@ -164,7 +165,7 @@ export default function UniversityDetail() {
                                 <Text style={styles.infoValue}>{data.country}</Text>
                             </View>
                         </View>
-                        
+
                         <View style={styles.infoCard}>
                             <View style={[styles.infoIcon, { backgroundColor: COLORS.primaryLight }]}>
                                 <Feather name="award" size={18} color={COLORS.primary} />
@@ -262,13 +263,28 @@ export default function UniversityDetail() {
                         <Text style={styles.typeValue}>{data.type}</Text>
                     </View>
                 </View>
-                
+
                 <View style={{ height: 100 }} />
             </ScrollView>
 
-            {/* Fixed Apply Button */}
+            {/* Fixed Apply Button in UniversityDetail.jsx */}
             <View style={styles.bottomBar}>
-                <TouchableOpacity style={styles.applyButton} activeOpacity={0.85}>
+                <TouchableOpacity
+                    style={styles.applyButton}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                        if (data?.courses) {
+                            router.push({
+                                pathname: "agency/selected/courses/unicourse", 
+                                params: {
+                                    courses: JSON.stringify(data.courses),
+                                    uniName: data.name,
+                                    agencyId: id
+                                }
+                            });
+                        }
+                    }}
+                >
                     <Text style={styles.applyButtonText}>Apply Now</Text>
                     <Feather name="arrow-right" size={20} color={COLORS.white} />
                 </TouchableOpacity>

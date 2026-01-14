@@ -49,7 +49,7 @@ export default function SelectedAgencyHome() {
                     fetch(`${BASE_URL}/agency/profile/${id}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
                     fetch(`${BASE_URL}/agency/universities/agency/${id}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
                     fetch(`${BASE_URL}/agency/courses/agency/${id}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
-                    fetch(`${BASE_URL}/agency/events/agency/${id}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
+                    fetch(`${BASE_URL}/agency/events/student/${id}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
                     fetch(`${BASE_URL}/agency/scholarships/agency/${id}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
                     fetch(`${BASE_URL}/agency/mentors/agency/${id}`, { headers: { 'Authorization': `Bearer ${userToken}` } })
                 ]);
@@ -86,7 +86,21 @@ export default function SelectedAgencyHome() {
                 // 4. Parse Events
                 if (eventsRes.ok) {
                     const eJson = await eventsRes.json();
-                    setEvents(Array.isArray(eJson.events) ? eJson.events : []);
+                    const rawEvents = Array.isArray(eJson.events) ? eJson.events : [];
+
+                    // Map API fields to UI fields
+                    const formattedEvents = rawEvents.map(event => {
+                        const startDate = new Date(event.startAt);
+                        return {
+                            ...event,
+                            id: event._id,
+                            image: event.bannerImageUrl,
+                            date: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                            time: startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                        };
+                    });
+
+                    setEvents(formattedEvents);
                 }
 
                 // 5. Parse Scholarships
@@ -207,8 +221,8 @@ export default function SelectedAgencyHome() {
                     onBtnPress={() => router.push({
                         pathname: `/agency/selected/courses/${id}`,
                         params: {
-                            courses: JSON.stringify(courses), // Pass the courses array (objects with id and title)
-                            agencyName: agencyData?.organizationName // Pass agency name
+                            courses: JSON.stringify(courses), 
+                            agencyName: agencyData?.organizationName 
                         }
                     })}
                 />
@@ -232,7 +246,6 @@ export default function SelectedAgencyHome() {
                     )}
                     ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
                 />
-
                 {/* EVENTS - HORIZONTAL SLIDER */}
                 <SectionHeader
                     title="Upcoming Events"
@@ -242,11 +255,21 @@ export default function SelectedAgencyHome() {
                     <FlatList
                         horizontal
                         data={events}
-                        keyExtractor={(item) => `event-${item.id}`}
+                        keyExtractor={(item) => item._id || item.id}
                         showsHorizontalScrollIndicator={false}
                         contentContainerStyle={styles.listContent}
                         renderItem={({ item }) => (
-                            <TouchableOpacity style={styles.eventCardHorizontal}>
+                            <TouchableOpacity
+                                style={styles.eventCardHorizontal}
+                                onPress={() => router.push({
+                                    pathname: `/agency/selected/events/details`,
+                                    params: {
+                                        id: item._id, 
+                                        title: item.title,
+                                        image: item.image
+                                    }
+                                })}
+                            >
                                 <Image source={{ uri: item.image }} style={styles.eventImgHorizontal} resizeMode="cover" />
                                 <View style={styles.eventContentHorizontal}>
                                     <Text style={styles.eventTitleHorizontal} numberOfLines={2}>{item.title}</Text>
@@ -260,10 +283,12 @@ export default function SelectedAgencyHome() {
                                             <Text style={styles.eventDetailText}>{item.time}</Text>
                                         </View>
                                     </View>
-                                    <TouchableOpacity style={styles.eventAction}>
+
+                                    {/* Visual indicator button */}
+                                    <View style={styles.eventAction}>
                                         <Text style={styles.eventActionText}>Details</Text>
                                         <Feather name="arrow-right" size={12} color={COLORS.primary} />
-                                    </TouchableOpacity>
+                                    </View>
                                 </View>
                             </TouchableOpacity>
                         )}
@@ -313,39 +338,47 @@ export default function SelectedAgencyHome() {
                     ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
                 />
 
-                {/* UNIVERSITIES */}
-                <SectionHeader
-                    title="Partner Universities"
-                    onBtnPress={() => router.push({ pathname: `/agency/selected/universities/${id}` })}
+               {/* UNIVERSITIES */}
+<SectionHeader
+    title="Partner Universities"
+    onBtnPress={() => router.push({ pathname: `/agency/selected/universities/${id}` })}
+/>
+<FlatList
+    horizontal
+    data={agencyData?.partnerUniversities || []}
+    keyExtractor={(item, index) => item._id || index.toString()}
+    showsHorizontalScrollIndicator={false}
+    contentContainerStyle={styles.listContent}
+    renderItem={({ item }) => (
+        <TouchableOpacity
+            style={styles.uniTile}
+            onPress={() => router.push({
+                pathname: `/agency/selected/universities/details`,
+                params: {
+                    id: item._id,
+                    name: item.name,
+                    logo: item.logo,
+                    website: item.websiteUrl
+                }
+            })}
+        >
+            {item.logo ? (
+                <Image
+                    source={{ uri: item.logo }}
+                    style={styles.uniImg}
+                    resizeMode="contain"
                 />
-                <FlatList
-                    horizontal
-                    data={agencyData?.partnerUniversities || []}
-                    keyExtractor={(item, index) => item._id || index.toString()}
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.listContent}
-                    renderItem={({ item }) => (
-                        <TouchableOpacity
-                            style={styles.uniTile}
-                            onPress={() => item.websiteUrl && Linking.openURL(item.websiteUrl)}
-                        >
-                            {item.logo ? (
-                                <Image
-                                    source={{ uri: item.logo }}
-                                    style={styles.uniImg}
-                                    resizeMode="contain"
-                                />
-                            ) : (
-                                <View style={styles.uniPlaceholder}>
-                                    <Text style={styles.uniPlaceholderText}>
-                                        {item.name?.substring(0, 2).toUpperCase() || 'UN'}
-                                    </Text>
-                                </View>
-                            )}
-                        </TouchableOpacity>
-                    )}
-                    ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
-                />
+            ) : (
+                <View style={styles.uniPlaceholder}>
+                    <Text style={styles.uniPlaceholderText}>
+                        {item.name?.substring(0, 2).toUpperCase() || 'UN'}
+                    </Text>
+                </View>
+            )}
+        </TouchableOpacity>
+    )}
+    ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
+/>
 
                 {/* MENTORS */}
                 <SectionHeader
