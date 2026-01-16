@@ -20,9 +20,9 @@ export default function BottomNavBar() {
   useEffect(() => {
     console.log('BottomNavBar - Pathname:', pathname);
     console.log('BottomNavBar - Params:', params);
-    
+
     let foundAgencyId = null;
-    
+
     // Check for agencyId OR id in params
     if (params.agencyId) {
       foundAgencyId = params.agencyId;
@@ -31,20 +31,20 @@ export default function BottomNavBar() {
       foundAgencyId = params.id;
       console.log('Found id in params (using as agencyId):', foundAgencyId);
     }
-    
+
     // If not in params, try to extract from URL path
     if (!foundAgencyId) {
       const segments = pathname.split('/');
       console.log('URL Segments:', segments);
-      
+
       if (segments.includes('selected')) {
         const selectedIndex = segments.indexOf('selected');
-        
+
         if (selectedIndex + 1 < segments.length) {
           const potentialId = segments[selectedIndex + 1];
-          const routeNames = ['profile', 'updates', 'messages', 'events', 'courses', 
-                            'scholarships', 'universities', 'mentors', 'profile-settings'];
-          
+          const routeNames = ['profile', 'updates', 'messages', 'events', 'courses',
+            'scholarships', 'universities', 'mentors', 'profile-settings'];
+
           if (potentialId && !routeNames.includes(potentialId)) {
             foundAgencyId = potentialId;
             console.log('Extracted agencyId from URL:', foundAgencyId);
@@ -52,7 +52,7 @@ export default function BottomNavBar() {
         }
       }
     }
-    
+
     console.log('Final agencyId to use:', foundAgencyId);
     setAgencyId(foundAgencyId);
   }, [pathname, params]);
@@ -96,9 +96,9 @@ export default function BottomNavBar() {
   const isActive = (route) => {
     const segments = pathname.split('/');
     const currentRoute = segments[segments.length - 1];
-    
+
     console.log('isActive check:', { route, currentRoute, agencyId });
-    
+
     // For home route
     if (route === 'home') {
       // Check if we're on the agency ID page
@@ -107,30 +107,31 @@ export default function BottomNavBar() {
       }
       return false;
     }
-    
+
     // For other routes, check if current route matches
     return currentRoute === route;
   };
 
   const handleNavigation = (screen, itemName) => {
     console.log(`Attempting to navigate to ${itemName}:`, screen);
-    
+
     if (!screen) {
       console.warn(`Cannot navigate to ${itemName}: No screen defined`);
       return;
     }
-    
-    // For Updates and Profile, we might want to pass agencyId as param
-    if ((itemName === 'Updates' || itemName === 'Profile') && agencyId) {
+
+    const itemsWithAgencyId = ['Updates', 'Profile', 'Messages'];
+
+    if (itemsWithAgencyId.includes(itemName) && agencyId) {
       console.log(`Navigating to ${itemName} with agencyId:`, agencyId);
       router.push({
         pathname: screen,
-        params: { agencyId: agencyId }
+        params: {
+          agencyId: agencyId,
+        }
       });
       return;
     }
-    
-    // For other navigation
     router.push(screen);
   };
 
@@ -140,7 +141,7 @@ export default function BottomNavBar() {
         const active = isActive(item.route);
         const screen = item.getScreen();
         const canNavigate = screen !== null;
-        
+
         return (
           <TouchableOpacity
             key={item.name}
@@ -153,10 +154,10 @@ export default function BottomNavBar() {
                 <Ionicons name={item.icon} size={22} color={COLORS.white} />
               </View>
             ) : (
-              <Ionicons 
-                name={item.icon} 
-                size={22} 
-                color={!canNavigate ? '#CCCCCC' : COLORS.textInactive} 
+              <Ionicons
+                name={item.icon}
+                size={22}
+                color={!canNavigate ? '#CCCCCC' : COLORS.textInactive}
               />
             )}
             <Text

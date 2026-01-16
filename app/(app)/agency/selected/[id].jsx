@@ -28,8 +28,8 @@ const GAP = 12;
 
 export default function SelectedAgencyHome() {
     const router = useRouter();
-    const { id } = useLocalSearchParams();
-    const { userToken } = useAuth();
+    const { id, name, agencyLogo } = useLocalSearchParams();
+    const { userToken, setActiveAgency } = useAuth();
 
     const [loading, setLoading] = useState(true);
     const [agencyData, setAgencyData] = useState(null);
@@ -38,100 +38,185 @@ export default function SelectedAgencyHome() {
     const [scholarships, setScholarships] = useState([]);
     const [mentors, setMentors] = useState([]);
 
+
+
     useEffect(() => {
         const fetchAllData = async () => {
             if (!userToken || !id) return;
             setLoading(true);
 
             try {
-                // Use Promise.all to fetch profile and university data simultaneously for better performance
+                console.log("🔄 Fetching data for agency:", id);
+                console.log("🔑 User Token:", userToken ? "Present" : "Missing");
+                console.log("📡 BASE_URL:", BASE_URL);
+
+                // Test the token first
+                try {
+                    const testRes = await fetch(`${BASE_URL}/auth/verify`, {
+                        headers: { 'Authorization': `Bearer ${userToken}` }
+                    });
+                    console.log("✅ Token verification:", testRes.status);
+                } catch (error) {
+                    console.error("❌ Token verification failed:", error);
+                }
+                
                 const [agencyRes, uniRes, coursesRes, eventsRes, scholarRes, mentorRes] = await Promise.all([
-                    fetch(`${BASE_URL}/agency/profile/${id}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
-                    fetch(`${BASE_URL}/agency/universities/agency/${id}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
-                    fetch(`${BASE_URL}/agency/courses/agency/${id}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
-                    fetch(`${BASE_URL}/agency/events/student/${id}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
-                    fetch(`${BASE_URL}/agency/scholarships/agency/${id}`, { headers: { 'Authorization': `Bearer ${userToken}` } }),
-                    fetch(`${BASE_URL}/agency/mentors/agency/${id}`, { headers: { 'Authorization': `Bearer ${userToken}` } })
+                    fetch(`${BASE_URL}/agency/profile/${id}`, {
+                        headers: {
+                            'Authorization': `Bearer ${userToken}`,
+                            'Content-Type': 'application/json'
+                        }
+                    }),
+                    fetch(`${BASE_URL}/agency/universities/agency/${id}`, {
+                        headers: {
+                            'Authorization': `Bearer ${userToken}`,
+                            'Content-Type': 'application/json'
+                        }
+                    }),
+                    fetch(`${BASE_URL}/agency/courses/agency/${id}`, {
+                        headers: {
+                            'Authorization': `Bearer ${userToken}`,
+                            'Content-Type': 'application/json'
+                        }
+                    }),
+                    fetch(`${BASE_URL}/agency/events/student/${id}`, {
+                        headers: {
+                            'Authorization': `Bearer ${userToken}`,
+                            'Content-Type': 'application/json'
+                        }
+                    }),
+                    fetch(`${BASE_URL}/agency/scholarships/agency/${id}`, {
+                        headers: {
+                            'Authorization': `Bearer ${userToken}`,
+                            'Content-Type': 'application/json'
+                        }
+                    }),
+                    fetch(`${BASE_URL}/agency/mentors/agency/${id}`, {
+                        headers: {
+                            'Authorization': `Bearer ${userToken}`,
+                            'Content-Type': 'application/json'
+                        }
+                    })
                 ]);
 
-                // 1. Parse Agency Profile
-                if (agencyRes.ok) {
+                // Initialize main agency object
+                let completeAgencyData = {};
+
+                // 1. Handle Agency Profile Response
+                if (!agencyRes.ok) {
+                    console.error(`Agency API failed with status: ${agencyRes.status}`);
+                    const errorText = await agencyRes.text();
+                    console.error("Error response:", errorText);
+                } else {
                     const aJson = await agencyRes.json();
-                    setAgencyData(aJson.agency || aJson.profile);
+                    completeAgencyData = {
+                        ...aJson.agency || aJson.profile || aJson,
+                        partnerUniversities: [],
+                        courses: [],
+                        events: [],
+                        scholarships: [],
+                        mentors: []
+                    };
+
+                    // SET ACTIVE AGENCY HERE - This is the key fix
+                    setActiveAgency({
+                        id: id,
+                        name: completeAgencyData.organizationName || name || completeAgencyData.name || "Agency",
+                        logo: completeAgencyData.logo || agencyLogo
+                    });
                 }
 
-                // 2. Parse Partner Universities (The New API)
-                if (uniRes.ok) {
+                // 2. Handle Universities Response
+                if (!uniRes.ok) {
+                    console.error(`University API failed with status: ${uniRes.status}`);
+                } else {
                     const uJson = await uniRes.json();
-                    // Based on your Postman, the data is in university.partnerUniversities
-                    const uniList = uJson.university?.partnerUniversities || [];
-
-                    // Update the agencyData state to include these universities
-                    setAgencyData(prev => ({
-                        ...prev,
-                        partnerUniversities: uniList
-                    }));
+                    const uniList = uJson.university?.partnerUniversities || uJson.partnerUniversities || [];
+                    completeAgencyData.partnerUniversities = uniList;
                 }
 
-                // 3. Parse Courses
-                if (coursesRes.ok) {
+                // 3. Handle Courses Response
+                if (!coursesRes.ok) {
+                    console.error(`Course API failed with status: ${coursesRes.status}`);
+                } else {
                     const cJson = await coursesRes.json();
-                    const courseObjects = (cJson.courses || []).map(course => ({
+                    const courseObjects = (cJson.courses || cJson || []).map(course => ({
                         id: course._id || course.id || Math.random().toString(),
-                        title: course.title || "Course"
+                        title: course.title || course.name || "Course"
                     }));
                     setCourses(courseObjects);
+                    completeAgencyData.courses = courseObjects;
                 }
 
-                // 4. Parse Events
-                if (eventsRes.ok) {
+                // 4. Handle Events Response
+                if (!eventsRes.ok) {
+                    console.error(`Events API failed with status: ${eventsRes.status}`);
+                } else {
                     const eJson = await eventsRes.json();
-                    const rawEvents = Array.isArray(eJson.events) ? eJson.events : [];
+                    const rawEvents = Array.isArray(eJson.events) ? eJson.events : (Array.isArray(eJson) ? eJson : []);
 
-                    // Map API fields to UI fields
                     const formattedEvents = rawEvents.map(event => {
-                        const startDate = new Date(event.startAt);
+                        const startDate = new Date(event.startAt || event.date || event.createdAt);
                         return {
                             ...event,
-                            id: event._id,
-                            image: event.bannerImageUrl,
-                            date: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-                            time: startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                            id: event._id || event.id || Math.random().toString(),
+                            image: event.bannerImageUrl || event.image || event.thumbnail,
+                            date: startDate.toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric'
+                            }),
+                            time: startDate.toLocaleTimeString('en-US', {
+                                hour: '2-digit',
+                                minute: '2-digit'
+                            })
                         };
                     });
 
                     setEvents(formattedEvents);
+                    completeAgencyData.events = formattedEvents;
                 }
 
-                // 5. Parse Scholarships
-                if (scholarRes.ok) {
+                // 5. Handle Scholarships Response
+                if (!scholarRes.ok) {
+                    console.error(`Scholarship API failed with status: ${scholarRes.status}`);
+                } else {
                     const sJson = await scholarRes.json();
-
-                    const rawScholarships = sJson.scholarship || [];
+                    const rawScholarships = sJson.scholarship || sJson || [];
                     const scholarObjects = rawScholarships.map(item => ({
                         id: item._id || item.id || Math.random().toString(),
-                        title: item.title || "Scholarship Program",
-                        // You can also capture the amount or deadline if available in your API
+                        title: item.title || item.name || "Scholarship Program",
+                        amount: item.amount || item.funding,
+                        deadline: item.deadline || item.endDate
                     }));
 
                     setScholarships(scholarObjects);
+                    completeAgencyData.scholarships = scholarObjects;
                 }
 
-                // 6. Parse Mentors
-                if (mentorRes.ok) {
+                // 6. Handle Mentors Response
+                if (!mentorRes.ok) {
+                    console.error(`Mentor API failed with status: ${mentorRes.status}`);
+                } else {
                     const mJson = await mentorRes.json();
-                    setMentors(mJson.mentors || []);
+                    const mentorsList = mJson.mentors || mJson || [];
+                    setMentors(mentorsList);
+                    completeAgencyData.mentors = mentorsList;
                 }
+
+                // Finally, set the complete agency data
+                setAgencyData(completeAgencyData);
 
             } catch (error) {
                 console.error("Critical Fetch Error:", error);
+                Alert.alert("Error", "Failed to load agency data. Please try again.");
             } finally {
                 setLoading(false);
             }
         };
 
         fetchAllData();
-    }, [id, userToken]);
+    }, [id, userToken]); // Dependencies: refetch when id or token changes
 
 
 
@@ -152,9 +237,18 @@ export default function SelectedAgencyHome() {
                 <View style={styles.headerTop}>
                     <View style={styles.agencyInfo}>
                         <View style={styles.agencyBadge}>
-                            <Text style={styles.agencyInitial}>
-                                {(agencyData?.organizationName || 'A').charAt(0).toUpperCase()}
-                            </Text>
+                            {/* If agencyData.logo exists, show the Image, otherwise show the Initial */}
+                            {agencyData?.logo ? (
+                                <Image
+                                    source={{ uri: agencyData.logo }}
+                                    style={{ width: '100%', height: '100%', borderRadius: 12 }}
+                                    resizeMode="contain"
+                                />
+                            ) : (
+                                <Text style={styles.agencyInitial}>
+                                    {(agencyData?.organizationName || 'A').charAt(0).toUpperCase()}
+                                </Text>
+                            )}
                         </View>
                         <View>
                             <Text style={styles.agencyName}>{agencyData?.organizationName || "Agency"}</Text>

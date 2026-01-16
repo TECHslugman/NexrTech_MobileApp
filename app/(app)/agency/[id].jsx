@@ -126,7 +126,7 @@ export default function AgencyDetails() {
 
             router.push({
                 pathname: `/agency/selected/${id}`,
-                params: { name: agencyData?.name }
+                params: { name: agencyData?.name, agencyLogo:agencyData?.imageUri }
             });
 
         } catch (error) {

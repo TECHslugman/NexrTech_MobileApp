@@ -22,6 +22,7 @@ export default function AgencyLayout() {
     'universities/details',
     'mentors/details',
     'documentupload/uploads',
+    'chat'
   ];
   
   // Check if current route should hide nav bar
