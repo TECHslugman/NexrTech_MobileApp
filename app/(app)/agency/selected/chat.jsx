@@ -1,177 +1,137 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-    View, StyleSheet, SafeAreaView, ActivityIndicator,
-    Text, TouchableOpacity, StatusBar, Alert, Image,
-    Animated, Platform
+    View, StyleSheet, SafeAreaView,
+    Text, TouchableOpacity, StatusBar, Image,
+    Platform, KeyboardAvoidingView, Alert
 } from 'react-native';
-import { GiftedChat, Bubble, Send, InputToolbar } from 'react-native-gifted-chat';
+import { GiftedChat, Bubble, Send, InputToolbar, Time } from 'react-native-gifted-chat';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
+import { Ionicons, Feather } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import socketService from '../../../services/SocketService';
 
 const COLORS = {
-    primary: '#769FCD',
-    background: '#F0F2F5',
+    primary: '#0084FF',
+    background: '#FFFFFF',
     white: '#FFFFFF',
-    textPrimary: '#2D3748',
-    textSecondary: '#718096',
-    border: '#E2E8F0',
+    textPrimary: '#000000',
+    textSecondary: '#8E8E93',
+    border: '#E5E5EA',
     online: '#10B981',
-    sentMsg: '#769FCD',
-    receivedMsg: '#FFFFFF',
-    typingIndicator: '#E2E8F0',
-    subtleShadow: 'rgba(0, 0, 0, 0.08)',
+    sentMsg: '#0084FF',
+    receivedMsg: '#E4E6EB',
+    typingIndicator: '#E5E5EA',
+    accent: '#D8E5FF',
+    placeholder: '#8E8E93',
+    inputBg: '#F0F2F5',
+    inputText: '#000000',
 };
 
 export default function ChatScreen() {
-    const { agencyId, name, logo } = useLocalSearchParams();
+    const { recipientId, name, logo, recipientType } = useLocalSearchParams();
     const router = useRouter();
     const { userToken } = useAuth();
+
 
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isConnected, setIsConnected] = useState(false);
     const [isTyping, setIsTyping] = useState(false);
     const [showScrollButton, setShowScrollButton] = useState(false);
-    const animatedValue = useRef(new Animated.Value(0)).current;
     const chatRef = useRef(null);
     const typingTimeoutRef = useRef(null);
 
     useEffect(() => {
-        if (!userToken || !agencyId) {
-            Alert.alert("Error", "Missing user token or agency ID");
+        if (!userToken || !recipientId) {
+            setIsLoading(false);
             return;
         }
 
         const initializeSocket = () => {
             try {
-                // Connect to socket
+                // 1. Connect (Backend verifies token and joins user to their room)
                 socketService.connect(userToken);
-                socketService.joinRoom(agencyId);
-                
-                const handleConnect = () => {
-                    console.log("✅ Socket connected");
-                    setIsConnected(true);
-                    Animated.spring(animatedValue, {
-                        toValue: 1,
-                        useNativeDriver: true,
-                    }).start();
-                };
 
-                const handleDisconnect = () => {
-                    console.log("❌ Socket disconnected");
-                    setIsConnected(false);
-                };
+                // 2. Local State for connection status
+                // Note: Since we use specific methods now, we access the internal socket for basic events
+                socketService.socket?.on("connect", () => setIsConnected(true));
+                socketService.socket?.on("disconnect", () => setIsConnected(false));
 
-                const handleReceiveMessage = (data) => {
-                    console.log("📨 Received message:", data);
-                    const msg = data.message || data;
-                    
-                    // Prevent duplicate messages from self
+                // 3. Use our new helper for receiving messages
+                socketService.onNewMessage((msg) => {
+                    console.log("📨 Received message:", msg);
+
+                    // Ignore if it's our own message (though backend handles this, safety first)
                     if (msg.sender === userToken) return;
 
                     const incomingMsg = {
                         _id: msg._id || Math.random().toString(),
                         text: msg.content,
-                        createdAt: new Date(msg.createdAt || Date.now()),
+                        createdAt: new Date(msg.createdAt || new Date()),
                         user: {
                             _id: msg.sender,
-                            name: name || 'Agency',
-                            avatar: logo || null,
+                            name: msg.senderModel === 'Student' ? 'You' : (name || 'Support'),
+                            avatar: msg.senderModel !== 'Student' ? logo : null,
                         },
                     };
-                    
-                    setMessages(prev => GiftedChat.append(prev, [incomingMsg]));
-                };
 
-                const handleTyping = (data) => {
-                    if (data.room === agencyId && data.sender !== userToken) {
+                    setMessages(prev => GiftedChat.append(prev, [incomingMsg]));
+                });
+
+                // 4. Typing (Keep as generic for now as service doesn't have helper for this yet)
+                socketService.socket?.on("typing", (data) => {
+                    if (data.sender !== userToken) {
                         setIsTyping(true);
-                        // Clear typing indicator after 3 seconds
                         clearTimeout(typingTimeoutRef.current);
                         typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 3000);
                     }
-                };
+                });
 
-                // Set up event listeners
-                socketService.on("connect", handleConnect);
-                socketService.on("disconnect", handleDisconnect);
-                socketService.on("receive_message", handleReceiveMessage);
-                socketService.on("typing", handleTyping);
-
-                // Simulate connection success (remove this in production)
-                setTimeout(() => {
-                    setIsConnected(true);
-                    setIsLoading(false);
-                    Animated.spring(animatedValue, {
-                        toValue: 1,
-                        useNativeDriver: true,
-                    }).start();
-                }, 1000);
+                setTimeout(() => setIsLoading(false), 800);
 
             } catch (error) {
                 console.error("Socket initialization error:", error);
-                Alert.alert("Connection Error", "Failed to connect to chat");
                 setIsLoading(false);
             }
         };
 
         initializeSocket();
 
-        // Cleanup function
         return () => {
-            console.log("🧹 Cleaning up chat screen");
-            clearTimeout(typingTimeoutRef.current);
-            
-            // Remove event listeners
-            socketService.removeListener("connect");
-            socketService.removeListener("disconnect");
-            socketService.removeListener("receive_message");
-            socketService.removeListener("typing");
-            
+            // Cleanup using the internal socket instance
+            socketService.socket?.off("connect");
+            socketService.socket?.off("disconnect");
+            socketService.socket?.off("receive_message");
+            socketService.socket?.off("typing");
         };
-    }, [agencyId, userToken]);
-
+    }, [recipientId, userToken, name, logo]);
     const onSend = useCallback((newMessages = []) => {
         if (!isConnected) {
-            Alert.alert("Offline", "Message will send once reconnected.");
+            Alert.alert("Connection Lost", "Please wait while we reconnect...");
             return;
         }
 
         const message = newMessages[0];
         if (!message.text.trim()) return;
 
-        const payload = {
-            room: agencyId,
-            sender: userToken,
-            receiver: agencyId,
-            content: message.text,
-            senderModel: 'Student',
-            receiverModel: 'Agency'
-        };
-
-        console.log("📤 Sending Payload:", payload);
-        
         try {
-            socketService.emit("send_message", payload);
-            
-            // Add message to local state immediately for instant feedback
+            // Use the simplified helper: sendMessage(id, content, type)
+            socketService.sendMessage(recipientId, message.text, recipientType || "Agency");
+
+            // Update local UI
             setMessages(prev => GiftedChat.append(prev, newMessages));
-            
-            // Clear typing indicator
             setIsTyping(false);
-            
+
         } catch (error) {
             console.error("Error sending message:", error);
-            Alert.alert("Send Error", "Failed to send message");
         }
-    }, [agencyId, userToken, isConnected]);
+    }, [recipientId, userToken, isConnected, recipientType]);
 
     const handleTyping = () => {
         if (isConnected) {
-            socketService.emit("typing", {
-                room: agencyId,
+            // typing isn't in our "Easy Mode" yet, so we emit directly to the internal socket
+            socketService.socket?.emit("typing", {
+                receiver: recipientId,
                 sender: userToken,
                 isTyping: true
             });
@@ -188,66 +148,60 @@ export default function ChatScreen() {
                 wrapperStyle={{
                     right: {
                         backgroundColor: COLORS.sentMsg,
-                        borderRadius: 20,
-                        marginBottom: 6,
+                        borderRadius: 18,
                         paddingHorizontal: 12,
                         paddingVertical: 8,
+                        marginRight: 16,
+                        marginBottom: 2,
                         maxWidth: '80%',
-                        marginRight: 4,
-                        shadowColor: COLORS.primary,
-                        shadowOffset: { width: 0, height: 2 },
-                        shadowOpacity: 0.1,
-                        shadowRadius: 4,
-                        elevation: 2,
+                        minHeight: 36,
+                        justifyContent: 'center',
                     },
                     left: {
                         backgroundColor: COLORS.receivedMsg,
-                        borderRadius: 20,
-                        marginBottom: 6,
+                        borderRadius: 18,
                         paddingHorizontal: 12,
                         paddingVertical: 8,
+                        marginLeft: 16,
+                        marginBottom: 2,
                         maxWidth: '80%',
-                        marginLeft: 4,
-                        borderWidth: 1,
-                        borderColor: COLORS.border,
-                        shadowColor: '#000',
-                        shadowOffset: { width: 0, height: 1 },
-                        shadowOpacity: 0.05,
-                        shadowRadius: 2,
-                        elevation: 1,
+                        minHeight: 36,
+                        justifyContent: 'center',
                     },
                 }}
                 textStyle={{
                     right: {
-                        color: '#fff',
+                        color: COLORS.white,
                         fontSize: 15,
                         lineHeight: 20,
+                        fontWeight: '400',
                     },
                     left: {
                         color: COLORS.textPrimary,
                         fontSize: 15,
                         lineHeight: 20,
+                        fontWeight: '400',
                     },
                 }}
                 timeTextStyle={{
                     right: { color: 'rgba(255,255,255,0.7)' },
                     left: { color: COLORS.textSecondary },
                 }}
-                renderTime={(timeProps) => (
-                    <View style={[
-                        styles.timeContainer,
-                        timeProps.position === 'right' ? styles.timeRight : styles.timeLeft
-                    ]}>
-                        <Text style={[
-                            styles.timeText,
-                            timeProps.position === 'right' ? styles.timeTextRight : styles.timeTextLeft
-                        ]}>
-                            {new Date(timeProps.currentMessage.createdAt).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit'
-                            })}
-                        </Text>
-                    </View>
+                renderTime={(props) => (
+                    <Time {...props}
+                        timeTextStyle={{
+                            left: {
+                                fontSize: 11,
+                                color: COLORS.textSecondary,
+                                marginTop: 2,
+                            },
+                            right: {
+                                fontSize: 11,
+                                color: 'rgba(255,255,255,0.7)',
+                                marginTop: 2,
+                            },
+                        }}
+                    />
                 )}
             />
         </View>
@@ -266,7 +220,7 @@ export default function ChatScreen() {
                 <Ionicons
                     name="send"
                     size={20}
-                    color={(!props.text || props.text.trim().length === 0) ? '#A0AEC0' : COLORS.white}
+                    color={(!props.text || props.text.trim().length === 0) ? '#C5C7D0' : COLORS.white}
                 />
             </View>
         </Send>
@@ -291,7 +245,6 @@ export default function ChatScreen() {
                             <View style={[styles.typingDot, styles.typingDot2]} />
                             <View style={[styles.typingDot, styles.typingDot3]} />
                         </View>
-                        <Text style={styles.typingText}>typing...</Text>
                     </View>
                 </View>
             );
@@ -301,7 +254,7 @@ export default function ChatScreen() {
 
     const handleScroll = ({ nativeEvent }) => {
         const offset = nativeEvent.contentOffset.y;
-        setShowScrollButton(offset > 400);
+        setShowScrollButton(offset > 300);
     };
 
     const scrollToBottom = () => {
@@ -313,9 +266,11 @@ export default function ChatScreen() {
     const renderEmptyChat = () => (
         <View style={styles.emptyChatContainer}>
             <View style={styles.emptyIllustration}>
-                <Ionicons name="chatbubble-ellipses-outline" size={80} color={COLORS.primary} />
+                <View style={styles.emptyIconCircle}>
+                    <Ionicons name="chatbubble-outline" size={60} color={COLORS.primary} />
+                </View>
             </View>
-            <Text style={styles.emptyTitle}>Start a conversation</Text>
+            <Text style={styles.emptyTitle}>Start Conversation</Text>
             <Text style={styles.emptySubtitle}>
                 Send your first message to {name || 'the agency'}
             </Text>
@@ -323,143 +278,128 @@ export default function ChatScreen() {
     );
 
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={styles.container}>
             <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
 
-            {/* HEADER */}
-            <Animated.View style={[
-                styles.header,
-                {
-                    transform: [{
-                        translateY: animatedValue.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [-20, 0]
-                        })
-                    }],
-                    opacity: animatedValue
-                }
-            ]}>
-                <TouchableOpacity
-                    onPress={() => router.back()}
-                    style={styles.backButton}
-                    activeOpacity={0.7}
-                >
-                    <Feather name="chevron-left" size={24} color={COLORS.textPrimary} />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={styles.agencyInfo}
-                    activeOpacity={0.8}
-                    onPress={() => Alert.alert('Agency Info', `Chatting with ${name}`)}
-                >
-                    <View style={styles.avatarContainer}>
-                        {logo ? (
-                            <Image source={{ uri: logo }} style={styles.headerAvatar} />
-                        ) : (
-                            <View style={styles.placeholderAvatar}>
-                                <Text style={styles.avatarText}>
-                                    {(name || 'A').charAt(0).toUpperCase()}
-                                </Text>
-                            </View>
-                        )}
-                        <View style={[
-                            styles.statusIndicator,
-                            { backgroundColor: isConnected ? COLORS.online : '#CBD5E0' }
-                        ]} />
+            {/* Header */}
+            <SafeAreaView style={styles.headerSafeArea}>
+                <View style={styles.header}>
+                    <View style={styles.headerLeft}>
+                        <TouchableOpacity
+                            onPress={() => router.back()}
+                            style={styles.backButton}
+                            activeOpacity={0.7}
+                        >
+                            <Ionicons name="chevron-back" size={24} color={COLORS.textPrimary} />
+                        </TouchableOpacity>
                     </View>
 
-                    <View style={styles.headerContent}>
-                        <Text style={styles.headerName} numberOfLines={1}>
-                            {name || 'Agency Support'}
-                        </Text>
-                        <View style={styles.statusRow}>
+                    <TouchableOpacity
+                        style={styles.agencyInfo}
+                        activeOpacity={0.8}
+                    >
+                        <View style={styles.avatarContainer}>
+                            {logo ? (
+                                <Image source={{ uri: logo }} style={styles.headerAvatar} />
+                            ) : (
+                                <View style={styles.placeholderAvatar}>
+                                    <Text style={styles.avatarText}>
+                                        {(name || 'A').charAt(0).toUpperCase()}
+                                    </Text>
+                                </View>
+                            )}
                             <View style={[
-                                styles.statusDot,
-                                { backgroundColor: isConnected ? COLORS.online : '#CBD5E0' }
+                                styles.statusIndicator,
+                                { backgroundColor: isConnected ? COLORS.online : '#C5C7D0' }
                             ]} />
+                        </View>
+
+                        <View style={styles.headerContent}>
+                            <Text style={styles.headerName} numberOfLines={1}>
+                                {name || 'Agency Support'}
+                            </Text>
                             <Text style={styles.headerStatus}>
                                 {isConnected ? 'Active now' : 'Connecting...'}
                             </Text>
                         </View>
-                    </View>
-                </TouchableOpacity>
-
-                <View style={styles.headerActions}>
-                    <TouchableOpacity style={styles.actionButton} activeOpacity={0.7}>
-                        <Feather name="phone" size={20} color={COLORS.primary} />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionButton} activeOpacity={0.7}>
-                        <MaterialIcons name="more-vert" size={24} color={COLORS.textSecondary} />
-                    </TouchableOpacity>
-                </View>
-            </Animated.View>
 
-            {/* CHAT BODY */}
-            {isLoading ? (
-                <View style={styles.loadingContainer}>
-                    <View style={styles.loadingContent}>
-                        <ActivityIndicator size="large" color={COLORS.primary} />
-                        <Text style={styles.loadingText}>Loading conversation...</Text>
+                    <View style={styles.headerRight}>
+                        <TouchableOpacity style={styles.headerIcon} activeOpacity={0.7}>
+                            <Ionicons name="ellipsis-horizontal" size={24} color={COLORS.textPrimary} />
+                        </TouchableOpacity>
                     </View>
                 </View>
-            ) : (
-                <View style={styles.chatContainer}>
-                    <GiftedChat
-                        ref={chatRef}
-                        messages={messages}
-                        onSend={onSend}
-                        user={{ _id: userToken, name: 'You' }}
-                        renderBubble={renderBubble}
-                        renderSend={renderSend}
-                        renderInputToolbar={renderInputToolbar}
-                        renderFooter={renderFooter}
-                        placeholder="Type your message..."
-                        alwaysShowSend
-                        scrollToBottom
-                        scrollToBottomComponent={() => (
-                            <View style={styles.scrollBottom}>
-                                <Feather name="chevron-down" size={20} color={COLORS.white} />
+            </SafeAreaView>
+
+            {/* Chat Body */}
+            <KeyboardAvoidingView
+                style={styles.chatContainer}
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+            >
+                {isLoading ? (
+                    <View style={styles.loadingContainer}>
+                        <View style={styles.loadingContent}>
+                            <View style={styles.loadingSpinner}>
+                                <Ionicons name="chatbubbles-outline" size={44} color={COLORS.primary} />
                             </View>
-                        )}
-                        renderAvatar={null}
-                        infiniteScroll
-                        onInputTextChanged={handleTyping}
-                        timeTextStyle={{ fontSize: 12 }}
-                        listViewProps={{
-                            onScroll: handleScroll,
-                            scrollEventThrottle: 16,
-                        }}
-                        minInputToolbarHeight={56}
-                        textInputStyle={styles.textInput}
-                        textInputProps={{
-                            placeholderTextColor: '#A0AEC0',
-                            multiline: true,
-                            maxLength: 1000,
-                        }}
-                        renderEmpty={renderEmptyChat}
-                    />
-                </View>
-            )}
+                            <Text style={styles.loadingText}>Loading messages...</Text>
+                        </View>
+                    </View>
+                ) : (
+                    <View style={styles.chatWrapper}>
+                        <GiftedChat
+                            ref={chatRef}
+                            messages={messages}
+                            onSend={onSend}
+                            user={{ _id: userToken, name: 'You' }}
+                            renderBubble={renderBubble}
+                            renderSend={renderSend}
+                            renderInputToolbar={renderInputToolbar}
+                            renderFooter={renderFooter}
+                            placeholder="Message..."
+                            alwaysShowSend
+                            scrollToBottom
+                            scrollToBottomComponent={() => (
+                                <View style={styles.scrollBottomButton}>
+                                    <Ionicons name="chevron-down" size={18} color={COLORS.white} />
+                                </View>
+                            )}
+                            renderAvatar={null}
+                            onInputTextChanged={handleTyping}
+                            listViewProps={{
+                                onScroll: handleScroll,
+                                scrollEventThrottle: 16,
+                                style: styles.chatListView,
+                                contentContainerStyle: styles.chatListContent,
+                                showsVerticalScrollIndicator: false,
+                            }}
+                            minInputToolbarHeight={60}
+                            textInputStyle={styles.textInput}
+                            textInputProps={{
+                                placeholderTextColor: COLORS.placeholder,
+                                multiline: true,
+                                maxLength: 1000,
+                            }}
+                            renderEmpty={renderEmptyChat}
+                            keyboardShouldPersistTaps="handled"
+                        />
+                    </View>
+                )}
+            </KeyboardAvoidingView>
 
-            {/* SCROLL TO BOTTOM BUTTON */}
+            {/* Floating Scroll to Bottom Button */}
             {showScrollButton && messages.length > 0 && (
                 <TouchableOpacity
-                    style={styles.scrollToBottomButton}
+                    style={styles.floatingScrollButton}
                     onPress={scrollToBottom}
                     activeOpacity={0.8}
                 >
-                    <Feather name="arrow-down" size={20} color={COLORS.white} />
+                    <Ionicons name="chevron-down" size={20} color={COLORS.white} />
                 </TouchableOpacity>
             )}
-
-            {/* CONNECTION STATUS BANNER */}
-            {!isConnected && !isLoading && (
-                <View style={styles.connectionBanner}>
-                    <Feather name="wifi-off" size={16} color="#fff" />
-                    <Text style={styles.connectionText}>Connecting to chat...</Text>
-                </View>
-            )}
-        </SafeAreaView>
+        </View>
     );
 }
 
@@ -468,70 +408,68 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: COLORS.background,
     },
+
+    // Header Area
+    headerSafeArea: {
+        backgroundColor: COLORS.white,
+    },
     header: {
         flexDirection: 'row',
+        justifyContent: 'space-between',
         alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
         backgroundColor: COLORS.white,
         borderBottomWidth: 1,
         borderBottomColor: COLORS.border,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
-        elevation: 4,
-        zIndex: 10,
+    },
+    headerLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
     },
     backButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: COLORS.background,
-        marginRight: 12,
     },
     agencyInfo: {
         flexDirection: 'row',
         alignItems: 'center',
         flex: 1,
+        paddingHorizontal: 12,
     },
     avatarContainer: {
         position: 'relative',
-        marginRight: 12,
+        marginRight: 10,
     },
     headerAvatar: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: COLORS.background,
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+        backgroundColor: COLORS.accent,
     },
     placeholderAvatar: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
+        width: 38,
+        height: 38,
+        borderRadius: 19,
         backgroundColor: COLORS.primary,
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-        elevation: 3,
     },
     avatarText: {
-        color: '#fff',
-        fontWeight: '700',
-        fontSize: 18,
+        color: COLORS.white,
+        fontWeight: '600',
+        fontSize: 16,
     },
     statusIndicator: {
         position: 'absolute',
         bottom: 0,
         right: 0,
-        width: 14,
-        height: 14,
-        borderRadius: 7,
+        width: 12,
+        height: 12,
+        borderRadius: 6,
         borderWidth: 2,
         borderColor: COLORS.white,
     },
@@ -539,37 +477,28 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     headerName: {
-        fontSize: 17,
+        fontSize: 16,
         fontWeight: '700',
         color: COLORS.textPrimary,
         marginBottom: 2,
-    },
-    statusRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    statusDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        marginRight: 6,
     },
     headerStatus: {
         fontSize: 13,
         color: COLORS.textSecondary,
     },
-    headerActions: {
+    headerRight: {
         flexDirection: 'row',
         alignItems: 'center',
     },
-    actionButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+    headerIcon: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         justifyContent: 'center',
         alignItems: 'center',
-        marginLeft: 8,
     },
+
+    // Loading State
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
@@ -579,17 +508,41 @@ const styles = StyleSheet.create({
     loadingContent: {
         alignItems: 'center',
     },
+    loadingSpinner: {
+        width: 70,
+        height: 70,
+        borderRadius: 35,
+        backgroundColor: '#F8F9FA',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
     loadingText: {
-        marginTop: 16,
         fontSize: 15,
         color: COLORS.textSecondary,
     },
+
+    // Chat Container
     chatContainer: {
         flex: 1,
         backgroundColor: COLORS.background,
     },
+    chatWrapper: {
+        flex: 1,
+    },
+    chatListView: {
+        backgroundColor: COLORS.background,
+        paddingTop: 4,
+    },
+    chatListContent: {
+        paddingBottom: 10,
+        paddingTop: 4,
+    },
+
+    // Message Bubbles
     bubbleContainer: {
         flex: 1,
+        marginTop: 1,
     },
     bubbleRight: {
         alignItems: 'flex-end',
@@ -597,67 +550,41 @@ const styles = StyleSheet.create({
     bubbleLeft: {
         alignItems: 'flex-start',
     },
-    timeContainer: {
-        marginTop: 4,
-        marginBottom: 8,
-    },
-    timeRight: {
-        alignItems: 'flex-end',
-        marginRight: 12,
-    },
-    timeLeft: {
-        alignItems: 'flex-start',
-        marginLeft: 12,
-    },
-    timeText: {
-        fontSize: 11,
-        opacity: 0.7,
-    },
-    timeTextRight: {
-        color: 'rgba(255, 255, 255, 0.8)',
-    },
-    timeTextLeft: {
-        color: COLORS.textSecondary,
-    },
+
+    // Input Toolbar - Fixed text color and padding
     inputToolbar: {
-        marginHorizontal: 16,
-        marginBottom: Platform.OS === 'ios' ? 20 : 12,
-        marginTop: 8,
-        borderRadius: 25,
-        borderTopWidth: 0,
+        borderTopWidth: 1,
+        borderTopColor: COLORS.border,
         backgroundColor: COLORS.white,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
-        elevation: 4,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
         minHeight: 56,
-        paddingHorizontal: 4,
+        marginBottom: 0,
     },
     inputPrimary: {
         alignItems: 'center',
-        paddingVertical: 8,
+        minHeight: 40,
     },
     inputAccessory: {
-        height: 44,
+        height: 40,
     },
     textInput: {
         fontSize: 16,
-        lineHeight: 20,
-        color: COLORS.textPrimary,
+        color: COLORS.inputText, // Fixed: Now text is visible (black)
         paddingVertical: 8,
-        paddingHorizontal: 12,
-        maxHeight: 100,
-        minHeight: 20,
+        paddingHorizontal: 14,
+        backgroundColor: COLORS.inputBg,
+        borderRadius: 18,
         flex: 1,
+        marginRight: 8,
+        minHeight: 36,
+        maxHeight: 80,
     },
     sendContainer: {
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 8,
-        marginLeft: 4,
+        height: 40,
+        width: 40,
     },
     sendButton: {
         backgroundColor: COLORS.primary,
@@ -666,132 +593,108 @@ const styles = StyleSheet.create({
         borderRadius: 18,
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.3,
-        shadowRadius: 4,
-        elevation: 3,
     },
     sendButtonDisabled: {
-        backgroundColor: '#E2E8F0',
-        shadowOpacity: 0,
+        backgroundColor: COLORS.inputBg,
     },
+
+    // Typing Indicator
     typingContainer: {
         paddingHorizontal: 16,
-        paddingVertical: 8,
+        paddingVertical: 2,
+        marginBottom: 4,
     },
     typingBubble: {
         backgroundColor: COLORS.receivedMsg,
-        borderRadius: 20,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        maxWidth: '80%',
-        borderWidth: 1,
-        borderColor: COLORS.border,
-        flexDirection: 'row',
-        alignItems: 'center',
+        borderRadius: 16,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        maxWidth: 65,
+        alignSelf: 'flex-start',
     },
     typingDots: {
         flexDirection: 'row',
-        marginRight: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     typingDot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
+        width: 5,
+        height: 5,
+        borderRadius: 2.5,
+        marginHorizontal: 1.5,
+        backgroundColor: COLORS.textSecondary,
     },
     typingDot1: {
-        backgroundColor: '#C1C9D6',
+        opacity: 0.4,
     },
     typingDot2: {
-        backgroundColor: '#A8B4C8',
-        marginLeft: 4,
+        opacity: 0.7,
     },
     typingDot3: {
-        backgroundColor: '#8FA0BA',
-        marginLeft: 4,
+        opacity: 1,
     },
-    typingText: {
+
+    // Empty Chat State
+    emptyChatContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 24,
+        paddingTop: 40,
+    },
+    emptyIllustration: {
+        marginBottom: 20,
+    },
+    emptyIconCircle: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
+        backgroundColor: '#F8F9FA',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1.5,
+        borderColor: COLORS.border,
+    },
+    emptyTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: COLORS.textPrimary,
+        marginBottom: 6,
+        textAlign: 'center',
+    },
+    emptySubtitle: {
         fontSize: 14,
         color: COLORS.textSecondary,
-        fontStyle: 'italic',
+        textAlign: 'center',
+        lineHeight: 18,
+        maxWidth: 250,
     },
-    scrollToBottomButton: {
+
+    // Floating Scroll Button
+    floatingScrollButton: {
         position: 'absolute',
-        bottom: 90,
-        right: 20,
-        width: 44,
-        height: 44,
-        borderRadius: 22,
+        bottom: 76,
+        right: 12,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         backgroundColor: COLORS.primary,
         justifyContent: 'center',
         alignItems: 'center',
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
+        shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.2,
-        shadowRadius: 8,
-        elevation: 6,
+        shadowRadius: 4,
+        elevation: 4,
         zIndex: 100,
     },
-    scrollBottom: {
+    scrollBottomButton: {
         backgroundColor: COLORS.primary,
         width: 32,
         height: 32,
         borderRadius: 16,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 8,
-    },
-    connectionBanner: {
-        position: 'absolute',
-        top: 80,
-        left: 16,
-        right: 16,
-        backgroundColor: 'rgba(239, 68, 68, 0.9)',
-        borderRadius: 12,
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-        elevation: 4,
-    },
-    connectionText: {
-        color: '#fff',
-        fontSize: 14,
-        fontWeight: '600',
-        marginLeft: 8,
-    },
-    emptyChatContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingHorizontal: 40,
-    },
-    emptyIllustration: {
-        width: 120,
-        height: 120,
-        borderRadius: 60,
-        backgroundColor: 'rgba(118, 159, 205, 0.1)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 24,
-    },
-    emptyTitle: {
-        fontSize: 20,
-        fontWeight: '700',
-        color: COLORS.textPrimary,
-        marginBottom: 8,
-    },
-    emptySubtitle: {
-        fontSize: 15,
-        color: COLORS.textSecondary,
-        textAlign: 'center',
-        lineHeight: 22,
+        marginBottom: 6,
     },
 });

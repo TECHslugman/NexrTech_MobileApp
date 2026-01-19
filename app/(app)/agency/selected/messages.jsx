@@ -3,192 +3,257 @@ import {
     View, Text, StyleSheet, TouchableOpacity, StatusBar, Image, Animated, Alert
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, Feather } from '@expo/vector-icons';
+import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import socketService from '../../../services/SocketService';
 import { useAuth } from '../../../context/AuthContext';
 
 const COLORS = {
-    bg: '#F8FAFD',
-    primary: '#769FCD',
+    bg: '#FFFFFF',
+    primary: '#769FCD', // Messenger blue
     white: '#FFFFFF',
-    textPrimary: '#2D3748',
-    textSecondary: '#718096',
-    border: '#EEF2F7',
-    accent: '#B9D7EA',
+    textPrimary: '#1D1D1D',
+    textSecondary: '#8E8E93',
+    border: '#E5E5EA',
+    accent: '#D8E5FF',
+    active: '#769FCD',
+    inactive: '#8E8E93',
 };
-
+const MOCK_STAFF = [
+    { id: 'mentor_001', name: 'Dr. Smith (Mentor)', type: 'Mentor', logo: 'https://i.pravatar.cc/150?u=mentor1' },
+    { id: 'agent_002', name: 'Sarah Agent', type: 'Agent', logo: 'https://i.pravatar.cc/150?u=agent1' },
+];
 export default function MessagesScreen() {
     const router = useRouter();
     const { userToken, activeAgency } = useAuth();
     const params = useLocalSearchParams();
 
-    // SAFE EXTRACTION
     const agencyId = activeAgency?.id;
     const agencyName = activeAgency?.name;
     const agencyLogo = activeAgency?.logo;
 
-    console.log("Messages Screen Received:", { agencyId, agencyName, agencyLogo });
-
     const [chats, setChats] = useState([]);
     const [showSuggestion, setShowSuggestion] = useState(false);
+    const [fadeAnim] = useState(new Animated.Value(0));
 
-    // 2. Optimized Socket Connection
     useEffect(() => {
-        if (userToken) {
-            // Only connect if not already connected to avoid 'websocket error' loops
-            socketService.connect(userToken);
+        if (!userToken) return;
+        socketService.connect(userToken);
+        const handleIncoming = (message) => {
+            console.log("📩 New message received in inbox:", message);
+        };
 
-            // If we have an agencyId, join that specific room as well
-            if (agencyId) {
-                socketService.joinRoom(agencyId);
-            }
+        socketService.onNewMessage(handleIncoming);
+        return () => {
+            socketService.socket?.off("receive_message");
+        };
+    }, [userToken]);
+
+    useEffect(() => {
+        if (showSuggestion) {
+            Animated.timing(fadeAnim, {
+                toValue: 1,
+                duration: 300,
+                useNativeDriver: true,
+            }).start();
+        } else {
+            fadeAnim.setValue(0);
         }
-    }, [userToken, agencyId]);
+    }, [showSuggestion]);
 
-    const handleGoToChat = () => {
-        if (!agencyId) {
-            Alert.alert("No Agency Selected", "Please select an agency from the home screen first.");
+    const handleGoToChat = (recipient) => {
+
+
+        if (!recipient.id) {
+            Alert.alert("Error", "Recipient ID is missing.");
             return;
         }
-
+        console.log("🚀 Navigating to chat with data:", recipient);
         router.push({
             pathname: "/agency/selected/chat",
             params: {
-                agencyId: agencyId,
-                logo: agencyLogo || "",
-                name: agencyName || "Agency Support"
+                recipientId: recipient.id,
+                name: recipient.name,
+                logo: recipient.logo || "",
+                recipientType: recipient.type
             }
         });
+    };
+
+    const handleCloseSuggestion = () => {
+        Animated.timing(fadeAnim, {
+            toValue: 0,
+            duration: 200,
+            useNativeDriver: true,
+        }).start(() => setShowSuggestion(false));
     };
 
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
 
-            {/* Header - Redesigned */}
+            {/* Header - Messenger Style */}
             <View style={styles.header}>
-                <View style={styles.headerContent}>
-                    <Text style={styles.headerTitle}>Messages</Text>
-                    <Text style={styles.headerSubtitle}>
-                        {agencyName ? `Connected to ${agencyName}` : 'Select an agency'}
-                    </Text>
+                <Text style={styles.headerTitle}>Chats</Text>
+                <View style={styles.headerIcons}>
+                    <TouchableOpacity style={styles.headerIcon}>
+                        <Ionicons name="camera-outline" size={24} color={COLORS.textPrimary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.headerIcon}>
+                        <Feather name="edit" size={22} color={COLORS.textPrimary} />
+                    </TouchableOpacity>
                 </View>
-                <TouchableOpacity
-                    style={[styles.iconButton, showSuggestion && styles.iconButtonActive]}
-                    onPress={() => setShowSuggestion(!showSuggestion)}
-                    activeOpacity={0.7}
-                >
-                    <Feather 
-                        name={showSuggestion ? "x" : "edit-3"} 
-                        size={22} 
-                        color={showSuggestion ? COLORS.white : COLORS.primary} 
-                    />
-                </TouchableOpacity>
             </View>
 
-            {/* Floating Suggestion Card */}
+            {/* Suggestion Overlay */}
             {showSuggestion && (
-                <Animated.View style={styles.suggestionCard}>
-                    <View style={styles.suggestionHeader}>
-                        <View style={styles.suggestionIcon}>
-                            <Feather name="message-square" size={18} color={COLORS.primary} />
-                        </View>
-                        <Text style={styles.suggestionTitle}>Start Conversation</Text>
-                    </View>
-                    
-                    <TouchableOpacity 
-                        style={styles.agencyCard}
-                        onPress={handleGoToChat}
-                        activeOpacity={0.8}
+                <Animated.View
+                    style={[
+                        styles.suggestionOverlay,
+                        { opacity: fadeAnim }
+                    ]}
+                >
+                    <TouchableOpacity
+                        style={styles.overlayBackground}
+                        activeOpacity={1}
+                        onPress={handleCloseSuggestion}
+                    />
+
+                    <Animated.View
+                        style={[
+                            styles.suggestionSheet,
+                            {
+                                transform: [{
+                                    translateY: fadeAnim.interpolate({
+                                        inputRange: [0, 1],
+                                        outputRange: [300, 0]
+                                    })
+                                }]
+                            }
+                        ]}
                     >
-                        <View style={styles.agencyInfo}>
-                            <View style={styles.logoContainer}>
-                                {agencyLogo ? (
-                                    <Image
-                                        source={{ uri: agencyLogo }}
-                                        style={styles.logo}
-                                    />
-                                ) : (
-                                    <View style={styles.fallbackCircle}>
-                                        <Text style={styles.fallbackLetter}>
-                                            {(agencyName || 'A').charAt(0).toUpperCase()}
-                                        </Text>
+                        <View style={styles.sheetHeader}>
+                            <Text style={styles.sheetTitle}>New Message</Text>
+                            <TouchableOpacity
+                                onPress={handleCloseSuggestion}
+                                style={styles.closeButton}
+                            >
+                                <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+                            </TouchableOpacity>
+                        </View>
+
+                        <View style={styles.searchContainer}>
+                            <Feather name="search" size={20} color={COLORS.textSecondary} style={styles.searchIcon} />
+                            <Text style={styles.searchPlaceholder}>To: Type a name or group</Text>
+                        </View>
+
+                        <View style={styles.suggestedContainer}>
+                            <Text style={styles.suggestedTitle}>SUGGESTED</Text>
+
+                            <TouchableOpacity
+                                style={styles.agencyItem}
+                                onPress={() => {
+                                    if (!agencyId) {
+                                        Alert.alert("Error", "No active agency found.");
+                                        return;
+                                    }
+                                    handleGoToChat({
+                                        id: agencyId,
+                                        name: agencyName,
+                                        logo: agencyLogo,
+                                        type: 'Agency'
+                                    });
+                                }}
+                            >
+                                <View style={styles.agencyAvatar}>
+                                    {agencyLogo ? (
+                                        <Image
+                                            source={{ uri: agencyLogo }}
+                                            style={styles.agencyLogo}
+                                        />
+                                    ) : (
+                                        <View style={styles.fallbackAvatar}>
+                                            <Text style={styles.fallbackText}>
+                                                {(agencyName || 'A').charAt(0).toUpperCase()}
+                                            </Text>
+                                        </View>
+                                    )}
+                                </View>
+                                <View style={styles.agencyInfo}>
+                                    <Text style={styles.agencyName}>
+                                        {agencyName || "Selected Agency"}
+                                    </Text>
+                                    <Text style={styles.agencySupport}>Support Team</Text>
+                                </View>
+                                <View style={styles.checkIcon}>
+                                    <Ionicons name="chatbubble-outline" size={20} color={COLORS.primary} />
+                                </View>
+                            </TouchableOpacity>
+                            {/* 2. THE MENTOR/AGENT ROWS (The Provision) */}
+                            {MOCK_STAFF.map((staff) => (
+                                <TouchableOpacity
+                                    key={staff.id}
+                                    style={styles.agencyItem}
+                                    onPress={() => handleGoToChat({
+                                        id: staff.id,
+                                        name: staff.name,
+                                        logo: staff.logo,
+                                        type: staff.type
+                                    })}
+                                >
+                                    <View style={styles.agencyAvatar}>
+                                        <Image source={{ uri: staff.logo }} style={styles.agencyLogo} />
                                     </View>
-                                )}
-                                <View style={styles.onlineIndicator} />
-                            </View>
-                            <View style={styles.textContainer}>
-                                <Text style={styles.agencyNameText} numberOfLines={1}>
-                                    {agencyName || "Selected Agency"}
-                                </Text>
-                                <Text style={styles.agencyStatus}>Support Team • Online</Text>
-                                <Text style={styles.tapToChat}>
-                                    Tap to start conversation with support team
-                                </Text>
-                            </View>
+                                    <View style={styles.agencyInfo}>
+                                        <Text style={styles.agencyName}>{staff.name}</Text>
+                                        <Text style={styles.agencySupport}>{staff.type} Support</Text>
+                                    </View>
+                                    <View style={styles.checkIcon}>
+                                        <Ionicons name="chatbubble-outline" size={20} color={COLORS.primary} />
+                                    </View>
+                                </TouchableOpacity>
+                            ))}
                         </View>
-                        <View style={styles.chevronContainer}>
-                            <Ionicons name="chevron-forward" size={20} color={COLORS.primary} />
-                        </View>
-                    </TouchableOpacity>
+                    </Animated.View>
                 </Animated.View>
             )}
 
-            {/* Main Content Area */}
+            {/* Main Content */}
             <View style={styles.content}>
                 {chats.length === 0 ? (
-                    <View style={styles.emptyState}>
-                        <View style={styles.illustrationContainer}>
-                            <View style={styles.outerCircle}>
-                                <View style={styles.innerCircle}>
-                                    <Ionicons 
-                                        name="chatbubbles-outline" 
-                                        size={70} 
-                                        color={COLORS.primary} 
-                                    />
-                                </View>
+                    <View style={styles.emptyContainer}>
+                        <View style={styles.emptyIllustration}>
+                            <View style={styles.messengerIcon}>
+                                <Ionicons
+                                    name="chatbubble-ellipses-outline"
+                                    size={100}
+                                    color={COLORS.border}
+                                />
                             </View>
-                            <View style={styles.decorationDot1} />
-                            <View style={styles.decorationDot2} />
                         </View>
 
-                        <Text style={styles.emptyTitle}>No conversations yet</Text>
-                        <Text style={styles.emptySub}>
-                            Start a conversation with{' '}
-                            <Text style={styles.agencyHighlight}>
-                                {agencyName || "your selected agency"}
-                            </Text>
-                            {' '}to get support and answers to your questions.
+                        <Text style={styles.emptyTitle}>No messages yet</Text>
+                        <Text style={styles.emptySubtitle}>
+                            Tap the message button to start a new conversation
                         </Text>
 
-                        {!showSuggestion && (
-                            <TouchableOpacity
-                                style={styles.primaryButton}
-                                onPress={() => setShowSuggestion(true)}
-                                activeOpacity={0.8}
-                            >
-                                <Feather name="message-square" size={20} color={COLORS.white} />
-                                <Text style={styles.primaryButtonText}>Start New Conversation</Text>
-                            </TouchableOpacity>
-                        )}
-
-                        <View style={styles.tipContainer}>
-                            <Feather name="info" size={16} color={COLORS.textSecondary} />
-                            <Text style={styles.tipText}>
-                                You can also access chat from agency profile
-                            </Text>
-                        </View>
+                        {/* Floating Action Button */}
+                        <TouchableOpacity
+                            style={styles.floatingButton}
+                            onPress={() => setShowSuggestion(true)}
+                            activeOpacity={0.9}
+                        >
+                            <Feather name="edit-2" size={24} color={COLORS.white} />
+                        </TouchableOpacity>
                     </View>
                 ) : (
-                    <View style={styles.chatsContainer}>
-                        <View style={styles.sectionHeader}>
-                            <Text style={styles.sectionTitle}>Recent Conversations</Text>
-                            <Text style={styles.sectionCount}>{chats.length} total</Text>
+                    <View style={styles.chatsList}>
+                        <View style={styles.chatSectionHeader}>
+                            <Text style={styles.sectionTitle}>Recent Chats</Text>
                         </View>
-                        {/* Chat list would go here */}
-                        <View style={styles.placeholder}>
-                            <Feather name="message-square" size={50} color={COLORS.border} />
+                        {/* Chat items would go here */}
+                        <View style={styles.placeholderChats}>
+                            <Ionicons name="chatbubbles-outline" size={60} color={COLORS.border} />
                             <Text style={styles.placeholderText}>
                                 Your conversations will appear here
                             </Text>
@@ -201,335 +266,269 @@ export default function MessagesScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { 
-        flex: 1, 
-        backgroundColor: COLORS.bg 
+    container: {
+        flex: 1,
+        backgroundColor: COLORS.white
     },
-    
-    // Header Styles
+
+    // Header - Messenger Style
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingHorizontal: 24,
-        paddingTop: 12,
-        paddingBottom: 16,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
         backgroundColor: COLORS.white,
         borderBottomWidth: 1,
         borderBottomColor: COLORS.border,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
-        elevation: 3,
     },
-    headerContent: {
-        flex: 1,
-    },
-    headerTitle: { 
-        fontSize: 28, 
-        fontWeight: '800', 
+    headerTitle: {
+        fontSize: 28,
+        fontWeight: '700',
         color: COLORS.textPrimary,
         letterSpacing: -0.5,
     },
-    headerSubtitle: { 
-        fontSize: 14, 
-        color: COLORS.textSecondary,
-        marginTop: 4,
-    },
-    iconButton: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        backgroundColor: COLORS.bg,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1.5,
-        borderColor: COLORS.border,
-    },
-    iconButtonActive: {
-        backgroundColor: COLORS.primary,
-        borderColor: COLORS.primary,
-    },
-    
-    // Suggestion Card Styles
-    suggestionCard: {
-        backgroundColor: COLORS.white,
-        marginHorizontal: 20,
-        marginTop: 20,
-        borderRadius: 20,
-        padding: 20,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.08,
-        shadowRadius: 16,
-        elevation: 8,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-    },
-    suggestionHeader: {
+    headerIcons: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 16,
     },
-    suggestionIcon: {
+    headerIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginLeft: 8,
+        backgroundColor: COLORS.bg,
+    },
+
+    // Suggestion Overlay
+    suggestionOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 1000,
+    },
+    overlayBackground: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    },
+    suggestionSheet: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: COLORS.white,
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        paddingTop: 8,
+        maxHeight: '80%',
+    },
+    sheetHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: COLORS.border,
+    },
+    sheetTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+    },
+    closeButton: {
         width: 36,
         height: 36,
         borderRadius: 18,
-        backgroundColor: 'rgba(118, 159, 205, 0.1)',
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 12,
     },
-    suggestionTitle: {
-        fontSize: 16,
-        fontWeight: '700',
-        color: COLORS.textPrimary,
-    },
-    
-    // Agency Card Styles
-    agencyCard: {
+
+    // Search in Suggestion Sheet
+    searchContainer: {
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: COLORS.bg,
-        borderRadius: 16,
+        marginHorizontal: 16,
+        marginVertical: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+    },
+    searchIcon: {
+        marginRight: 12,
+    },
+    searchPlaceholder: {
+        fontSize: 16,
+        color: COLORS.textSecondary,
+        flex: 1,
+    },
+
+    // Suggested Agency Item
+    suggestedContainer: {
         padding: 16,
-        borderWidth: 1.5,
-        borderColor: 'rgba(118, 159, 205, 0.2)',
     },
-    agencyInfo: { 
-        flexDirection: 'row', 
-        alignItems: 'center', 
-        flex: 1 
+    suggestedTitle: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: COLORS.textSecondary,
+        marginBottom: 12,
+        letterSpacing: 0.5,
     },
-    logoContainer: {
+    agencyItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 8,
+        borderRadius: 12,
+        backgroundColor: COLORS.bg,
+    },
+    agencyAvatar: {
         width: 56,
         height: 56,
-        borderRadius: 28,
-        backgroundColor: COLORS.white,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 16,
-        borderWidth: 2,
-        borderColor: COLORS.white,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-        elevation: 3,
-    },
-    logo: {
-        width: 52,
-        height: 52,
-        borderRadius: 26,
-        resizeMode: 'cover',
-    },
-    fallbackCircle: {
-        width: '100%',
-        height: '100%',
         borderRadius: 28,
         backgroundColor: COLORS.accent,
         justifyContent: 'center',
         alignItems: 'center',
+        marginRight: 16,
+        overflow: 'hidden',
     },
-    fallbackLetter: {
-        color: COLORS.primary,
-        fontWeight: '800',
+    agencyLogo: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 28,
+    },
+    fallbackAvatar: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 28,
+        backgroundColor: COLORS.primary,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    fallbackText: {
+        color: COLORS.white,
         fontSize: 24,
+        fontWeight: '600',
     },
-    onlineIndicator: {
-        position: 'absolute',
-        bottom: 0,
-        right: 0,
-        width: 16,
-        height: 16,
-        borderRadius: 8,
-        backgroundColor: '#4CAF50',
-        borderWidth: 2,
-        borderColor: COLORS.white,
+    agencyInfo: {
+        flex: 1,
     },
-    textContainer: { 
-        flex: 1 
-    },
-    agencyNameText: { 
-        fontSize: 18, 
-        fontWeight: '700', 
+    agencyName: {
+        fontSize: 17,
+        fontWeight: '600',
         color: COLORS.textPrimary,
         marginBottom: 4,
     },
-    agencyStatus: {
-        fontSize: 13,
+    agencySupport: {
+        fontSize: 14,
         color: COLORS.textSecondary,
-        marginBottom: 6,
     },
-    tapToChat: { 
-        fontSize: 13, 
-        color: COLORS.primary, 
-        fontWeight: '600',
-        letterSpacing: 0.2,
+    checkIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0, 132, 255, 0.1)',
     },
-    chevronContainer: {
-        paddingLeft: 8,
-    },
-    
-    // Content Area
+
+    // Main Content
     content: {
         flex: 1,
-        paddingTop: 8,
+        backgroundColor: COLORS.bg,
     },
-    
-    // Empty State Styles
-    emptyState: {
+
+    // Empty State
+    emptyContainer: {
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        paddingHorizontal: 32,
-        paddingBottom: 60,
+        paddingHorizontal: 24,
     },
-    illustrationContainer: {
+    emptyIllustration: {
+        marginBottom: 32,
         position: 'relative',
-        marginBottom: 40,
     },
-    outerCircle: {
-        width: 180,
-        height: 180,
-        borderRadius: 90,
+    messengerIcon: {
+        width: 160,
+        height: 160,
+        borderRadius: 80,
         backgroundColor: COLORS.white,
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.1,
-        shadowRadius: 20,
-        elevation: 12,
+        borderWidth: 4,
+        borderColor: COLORS.border,
     },
-    innerCircle: {
-        width: 140,
-        height: 140,
-        borderRadius: 70,
-        backgroundColor: 'rgba(118, 159, 205, 0.08)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    decorationDot1: {
-        position: 'absolute',
-        top: 20,
-        right: 10,
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        backgroundColor: 'rgba(185, 215, 234, 0.6)',
-    },
-    decorationDot2: {
-        position: 'absolute',
-        bottom: 30,
-        left: 10,
-        width: 16,
-        height: 16,
-        borderRadius: 8,
-        backgroundColor: 'rgba(118, 159, 205, 0.4)',
-    },
-    emptyTitle: { 
-        fontSize: 24, 
-        fontWeight: '800', 
-        color: COLORS.textPrimary, 
-        marginBottom: 12,
+    emptyTitle: {
+        fontSize: 22,
+        fontWeight: '700',
+        color: COLORS.textPrimary,
+        marginBottom: 8,
         textAlign: 'center',
     },
-    emptySub: { 
-        fontSize: 16, 
-        color: COLORS.textSecondary, 
-        textAlign: 'center', 
-        lineHeight: 24, 
-        marginBottom: 40,
-        paddingHorizontal: 20,
-    },
-    agencyHighlight: { 
-        color: COLORS.primary, 
-        fontWeight: '700' 
-    },
-    
-    // Primary Button
-    primaryButton: {
-        backgroundColor: COLORS.primary,
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 18,
-        paddingHorizontal: 32,
-        borderRadius: 30,
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.2,
-        shadowRadius: 12,
-        elevation: 8,
-        marginBottom: 32,
-    },
-    primaryButtonText: { 
-        color: COLORS.white, 
-        fontSize: 17, 
-        fontWeight: '700', 
-        marginLeft: 12,
-        letterSpacing: 0.3,
-    },
-    
-    // Tip Container
-    tipContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(238, 242, 247, 0.8)',
-        paddingVertical: 12,
-        paddingHorizontal: 20,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: 'rgba(113, 128, 150, 0.1)',
-    },
-    tipText: {
-        fontSize: 14,
+    emptySubtitle: {
+        fontSize: 16,
         color: COLORS.textSecondary,
-        marginLeft: 10,
-        fontStyle: 'italic',
+        textAlign: 'center',
+        lineHeight: 22,
+        marginBottom: 48,
     },
-    
-    // Chats List Styles
-    chatsContainer: {
-        flex: 1,
-        padding: 20,
-    },
-    sectionHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
+
+    // Floating Action Button
+    floatingButton: {
+        position: 'absolute',
+        bottom: 32,
+        right: 24,
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: COLORS.primary,
+        justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 24,
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 4,
+        },
+        shadowOpacity: 0.3,
+        shadowRadius: 4.65,
+        elevation: 8,
+    },
+
+    // Chats List (when there are chats)
+    chatsList: {
+        flex: 1,
+    },
+    chatSectionHeader: {
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        backgroundColor: COLORS.white,
+        borderBottomWidth: 1,
+        borderBottomColor: COLORS.border,
     },
     sectionTitle: {
-        fontSize: 20,
+        fontSize: 22,
         fontWeight: '700',
         color: COLORS.textPrimary,
     },
-    sectionCount: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: COLORS.primary,
-        backgroundColor: 'rgba(118, 159, 205, 0.1)',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 12,
-    },
-    placeholder: {
+    placeholderChats: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: 'rgba(238, 242, 247, 0.5)',
-        borderRadius: 20,
-        borderWidth: 2,
-        borderColor: COLORS.border,
-        borderStyle: 'dashed',
-        padding: 40,
+        paddingHorizontal: 24,
     },
     placeholderText: {
         fontSize: 16,
         color: COLORS.textSecondary,
-        marginTop: 16,
         textAlign: 'center',
+        marginTop: 16,
+        lineHeight: 22,
     },
 });

@@ -9,6 +9,7 @@ const COLORS = {
   white: '#FFFFFF',
   border: '#EEF2F7',
   textInactive: '#BFC7D1',
+  disabled: '#CCCCCC'
 };
 
 export default function BottomNavBar() {
@@ -18,129 +19,89 @@ export default function BottomNavBar() {
   const [agencyId, setAgencyId] = useState(null);
 
   useEffect(() => {
-    console.log('BottomNavBar - Pathname:', pathname);
-    console.log('BottomNavBar - Params:', params);
+    let foundAgencyId = params.agencyId || params.id;
 
-    let foundAgencyId = null;
-
-    // Check for agencyId OR id in params
-    if (params.agencyId) {
-      foundAgencyId = params.agencyId;
-      console.log('Found agencyId in params:', foundAgencyId);
-    } else if (params.id) {
-      foundAgencyId = params.id;
-      console.log('Found id in params (using as agencyId):', foundAgencyId);
-    }
-
-    // If not in params, try to extract from URL path
+    // Fallback: extract from URL path if params are empty
     if (!foundAgencyId) {
       const segments = pathname.split('/');
-      console.log('URL Segments:', segments);
-
       if (segments.includes('selected')) {
         const selectedIndex = segments.indexOf('selected');
-
-        if (selectedIndex + 1 < segments.length) {
-          const potentialId = segments[selectedIndex + 1];
-          const routeNames = ['profile', 'updates', 'messages', 'events', 'courses',
-            'scholarships', 'universities', 'mentors', 'profile-settings'];
-
-          if (potentialId && !routeNames.includes(potentialId)) {
-            foundAgencyId = potentialId;
-            console.log('Extracted agencyId from URL:', foundAgencyId);
-          }
+        const potentialId = segments[selectedIndex + 1];
+        
+        // List of routes that are NOT IDs
+        const staticRoutes = ['profile', 'updates', 'messages', 'events', 'courses'];
+        if (potentialId && !staticRoutes.includes(potentialId)) {
+          foundAgencyId = potentialId;
         }
       }
     }
 
-    console.log('Final agencyId to use:', foundAgencyId);
-    setAgencyId(foundAgencyId);
+    if (foundAgencyId !== agencyId) {
+      setAgencyId(foundAgencyId);
+    }
   }, [pathname, params]);
 
-  // Define navigation items - ALL STATIC ROUTES
   const navItems = [
     {
       name: 'Home',
       route: 'home',
       icon: 'home',
-      getScreen: () => {
-        if (agencyId) {
-          // Dynamic route for home
-          return `/agency/selected/${agencyId}`;
-        }
-        console.warn('No agencyId found, cannot navigate to home');
-        return null;
-      }
+      getScreen: () => agencyId ? `/agency/selected/${agencyId}` : null,
     },
     {
       name: 'Updates',
       route: 'updates',
       icon: 'refresh-outline',
-      getScreen: () => '/agency/selected/updates', // STATIC ROUTE
+      getScreen: () => '/agency/selected/updates',
     },
     {
       name: 'Messages',
       route: 'messages',
       icon: 'mail-outline',
-      getScreen: () => '/agency/selected/messages', // STATIC ROUTE (if you create this)
+      getScreen: () => '/agency/selected/messages',
     },
     {
       name: 'Profile',
       route: 'profile',
       icon: 'person-outline',
-      getScreen: () => '/agency/selected/profile', // STATIC ROUTE
+      getScreen: () => '/agency/selected/profile',
     },
   ];
 
-  // Check if current route is active
-  const isActive = (route) => {
+  const checkActive = (route) => {
     const segments = pathname.split('/');
     const currentRoute = segments[segments.length - 1];
 
-    console.log('isActive check:', { route, currentRoute, agencyId });
-
-    // For home route
     if (route === 'home') {
-      // Check if we're on the agency ID page
-      if (agencyId && currentRoute === agencyId) {
-        return true;
-      }
-      return false;
+      return agencyId && currentRoute === agencyId;
     }
-
-    // For other routes, check if current route matches
     return currentRoute === route;
   };
 
   const handleNavigation = (screen, itemName) => {
-    console.log(`Attempting to navigate to ${itemName}:`, screen);
+    if (!screen) return;
 
-    if (!screen) {
-      console.warn(`Cannot navigate to ${itemName}: No screen defined`);
-      return;
-    }
+    // Only log navigation actions (useful for debugging clicks)
+    console.log(`🚀 Navigating to ${itemName}`);
 
-    const itemsWithAgencyId = ['Updates', 'Profile', 'Messages'];
+    const needsAgencyId = ['Updates', 'Profile', 'Messages'].includes(itemName);
 
-    if (itemsWithAgencyId.includes(itemName) && agencyId) {
-      console.log(`Navigating to ${itemName} with agencyId:`, agencyId);
+    if (needsAgencyId && agencyId) {
       router.push({
         pathname: screen,
-        params: {
-          agencyId: agencyId,
-        }
+        params: { agencyId }
       });
-      return;
+    } else {
+      router.push(screen);
     }
-    router.push(screen);
   };
 
   return (
     <View style={styles.navBar}>
       {navItems.map((item) => {
-        const active = isActive(item.route);
+        const active = checkActive(item.route);
         const screen = item.getScreen();
-        const canNavigate = screen !== null;
+        const canNavigate = !!screen;
 
         return (
           <TouchableOpacity
@@ -157,14 +118,14 @@ export default function BottomNavBar() {
               <Ionicons
                 name={item.icon}
                 size={22}
-                color={!canNavigate ? '#CCCCCC' : COLORS.textInactive}
+                color={canNavigate ? COLORS.textInactive : COLORS.disabled}
               />
             )}
             <Text
               style={[
                 styles.navLabel,
                 active && styles.navLabelActive,
-                !canNavigate && { color: '#CCCCCC' }
+                !canNavigate && { color: COLORS.disabled }
               ]}
             >
               {item.name}

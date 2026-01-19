@@ -46,112 +46,73 @@ export default function SelectedAgencyHome() {
             setLoading(true);
 
             try {
-                console.log("🔄 Fetching data for agency:", id);
-                console.log("🔑 User Token:", userToken ? "Present" : "Missing");
-                console.log("📡 BASE_URL:", BASE_URL);
+                // Summary Log instead of multiple lines
+                console.log(`📡 Fetching Agency Data [ID: ${id}]`);
 
-                // Test the token first
-                try {
-                    const testRes = await fetch(`${BASE_URL}/auth/verify`, {
-                        headers: { 'Authorization': `Bearer ${userToken}` }
-                    });
-                    console.log("✅ Token verification:", testRes.status);
-                } catch (error) {
-                    console.error("❌ Token verification failed:", error);
-                }
-                
-                const [agencyRes, uniRes, coursesRes, eventsRes, scholarRes, mentorRes] = await Promise.all([
-                    fetch(`${BASE_URL}/agency/profile/${id}`, {
-                        headers: {
-                            'Authorization': `Bearer ${userToken}`,
-                            'Content-Type': 'application/json'
-                        }
-                    }),
-                    fetch(`${BASE_URL}/agency/universities/agency/${id}`, {
-                        headers: {
-                            'Authorization': `Bearer ${userToken}`,
-                            'Content-Type': 'application/json'
-                        }
-                    }),
-                    fetch(`${BASE_URL}/agency/courses/agency/${id}`, {
-                        headers: {
-                            'Authorization': `Bearer ${userToken}`,
-                            'Content-Type': 'application/json'
-                        }
-                    }),
-                    fetch(`${BASE_URL}/agency/events/student/${id}`, {
-                        headers: {
-                            'Authorization': `Bearer ${userToken}`,
-                            'Content-Type': 'application/json'
-                        }
-                    }),
-                    fetch(`${BASE_URL}/agency/scholarships/agency/${id}`, {
-                        headers: {
-                            'Authorization': `Bearer ${userToken}`,
-                            'Content-Type': 'application/json'
-                        }
-                    }),
-                    fetch(`${BASE_URL}/agency/mentors/agency/${id}`, {
-                        headers: {
-                            'Authorization': `Bearer ${userToken}`,
-                            'Content-Type': 'application/json'
-                        }
-                    })
-                ]);
+                const endpoints = [
+                    `${BASE_URL}/agency/profile/${id}`,
+                    `${BASE_URL}/agency/universities/agency/${id}`,
+                    `${BASE_URL}/agency/courses/agency/${id}`,
+                    `${BASE_URL}/agency/events/student/${id}`,
+                    `${BASE_URL}/agency/scholarships/agency/${id}`,
+                    `${BASE_URL}/agency/mentors/agency/${id}`
+                ];
 
-                // Initialize main agency object
-                let completeAgencyData = {};
+                const headers = {
+                    'Authorization': `Bearer ${userToken}`,
+                    'Content-Type': 'application/json'
+                };
 
-                // 1. Handle Agency Profile Response
-                if (!agencyRes.ok) {
-                    console.error(`Agency API failed with status: ${agencyRes.status}`);
-                    const errorText = await agencyRes.text();
-                    console.error("Error response:", errorText);
-                } else {
+                const responses = await Promise.all(
+                    endpoints.map(url => fetch(url, { headers }))
+                );
+
+                const [agencyRes, uniRes, coursesRes, eventsRes, scholarRes, mentorRes] = responses;
+
+                let completeAgencyData = {
+                    partnerUniversities: [],
+                    courses: [],
+                    events: [],
+                    scholarships: [],
+                    mentors: []
+                };
+
+                // 1. Handle Agency Profile (Main Data)
+                if (agencyRes.ok) {
                     const aJson = await agencyRes.json();
-                    completeAgencyData = {
-                        ...aJson.agency || aJson.profile || aJson,
-                        partnerUniversities: [],
-                        courses: [],
-                        events: [],
-                        scholarships: [],
-                        mentors: []
-                    };
+                    const profile = aJson.agency || aJson.profile || aJson;
 
-                    // SET ACTIVE AGENCY HERE - This is the key fix
+                    completeAgencyData = { ...completeAgencyData, ...profile };
+
+                    // Set active agency for the global context (used by Chat)
                     setActiveAgency({
                         id: id,
-                        name: completeAgencyData.organizationName || name || completeAgencyData.name || "Agency",
-                        logo: completeAgencyData.logo || agencyLogo
+                        name: profile.organizationName || name || profile.name || "Agency",
+                        logo: profile.logo || agencyLogo
                     });
+                } else {
+                    console.warn(`⚠️ Profile Fetch Failed: ${agencyRes.status}`);
                 }
 
-                // 2. Handle Universities Response
-                if (!uniRes.ok) {
-                    console.error(`University API failed with status: ${uniRes.status}`);
-                } else {
+                // 2. Handle Universities
+                if (uniRes.ok) {
                     const uJson = await uniRes.json();
-                    const uniList = uJson.university?.partnerUniversities || uJson.partnerUniversities || [];
-                    completeAgencyData.partnerUniversities = uniList;
+                    completeAgencyData.partnerUniversities = uJson.university?.partnerUniversities || uJson.partnerUniversities || [];
                 }
 
-                // 3. Handle Courses Response
-                if (!coursesRes.ok) {
-                    console.error(`Course API failed with status: ${coursesRes.status}`);
-                } else {
+                // 3. Handle Courses
+                if (coursesRes.ok) {
                     const cJson = await coursesRes.json();
-                    const courseObjects = (cJson.courses || cJson || []).map(course => ({
-                        id: course._id || course.id || Math.random().toString(),
-                        title: course.title || course.name || "Course"
+                    const courseList = (cJson.courses || cJson || []).map(c => ({
+                        id: c._id || c.id || Math.random().toString(),
+                        title: c.title || c.name || "Course"
                     }));
-                    setCourses(courseObjects);
-                    completeAgencyData.courses = courseObjects;
+                    setCourses(courseList);
+                    completeAgencyData.courses = courseList;
                 }
 
-                // 4. Handle Events Response
-                if (!eventsRes.ok) {
-                    console.error(`Events API failed with status: ${eventsRes.status}`);
-                } else {
+                // 4. Handle Events
+                if (eventsRes.ok) {
                     const eJson = await eventsRes.json();
                     const rawEvents = Array.isArray(eJson.events) ? eJson.events : (Array.isArray(eJson) ? eJson : []);
 
@@ -159,64 +120,48 @@ export default function SelectedAgencyHome() {
                         const startDate = new Date(event.startAt || event.date || event.createdAt);
                         return {
                             ...event,
-                            id: event._id || event.id || Math.random().toString(),
-                            image: event.bannerImageUrl || event.image || event.thumbnail,
-                            date: startDate.toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                year: 'numeric'
-                            }),
-                            time: startDate.toLocaleTimeString('en-US', {
-                                hour: '2-digit',
-                                minute: '2-digit'
-                            })
+                            id: event._id || event.id,
+                            date: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                            time: startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
                         };
                     });
-
                     setEvents(formattedEvents);
                     completeAgencyData.events = formattedEvents;
                 }
 
-                // 5. Handle Scholarships Response
-                if (!scholarRes.ok) {
-                    console.error(`Scholarship API failed with status: ${scholarRes.status}`);
-                } else {
+                // 5. Handle Scholarships
+                if (scholarRes.ok) {
                     const sJson = await scholarRes.json();
-                    const rawScholarships = sJson.scholarship || sJson || [];
-                    const scholarObjects = rawScholarships.map(item => ({
-                        id: item._id || item.id || Math.random().toString(),
-                        title: item.title || item.name || "Scholarship Program",
-                        amount: item.amount || item.funding,
-                        deadline: item.deadline || item.endDate
+                    const rawScholar = sJson.scholarship || sJson || [];
+                    const formattedScholar = rawScholar.map(s => ({
+                        id: s._id || s.id,
+                        title: s.title || "Scholarship Program",
+                        amount: s.amount || s.funding
                     }));
-
-                    setScholarships(scholarObjects);
-                    completeAgencyData.scholarships = scholarObjects;
+                    setScholarships(formattedScholar);
+                    completeAgencyData.scholarships = formattedScholar;
                 }
 
-                // 6. Handle Mentors Response
-                if (!mentorRes.ok) {
-                    console.error(`Mentor API failed with status: ${mentorRes.status}`);
-                } else {
+                // 6. Handle Mentors
+                if (mentorRes.ok) {
                     const mJson = await mentorRes.json();
                     const mentorsList = mJson.mentors || mJson || [];
                     setMentors(mentorsList);
                     completeAgencyData.mentors = mentorsList;
                 }
 
-                // Finally, set the complete agency data
                 setAgencyData(completeAgencyData);
+                console.log("✅ All data synchronized");
 
             } catch (error) {
-                console.error("Critical Fetch Error:", error);
-                Alert.alert("Error", "Failed to load agency data. Please try again.");
+                console.error("❌ FetchAllData Error:", error);
             } finally {
                 setLoading(false);
             }
         };
 
         fetchAllData();
-    }, [id, userToken]); // Dependencies: refetch when id or token changes
+    }, [id, userToken]);
 
 
 
@@ -284,28 +229,28 @@ export default function SelectedAgencyHome() {
                             <MaterialIcons name="school" size={20} color={COLORS.primary} />
                         </View>
                         <Text style={styles.statNumber}>{courses.length || 0}</Text>
-                        <Text style={styles.statLabel}>Courses</Text>
+                        <Text style={styles.statLabel}>Course</Text>
                     </View>
                     <View style={styles.statCard}>
                         <View style={styles.statIconContainer}>
                             <MaterialIcons name="event" size={20} color={COLORS.primary} />
                         </View>
                         <Text style={styles.statNumber}>{events.length || 0}</Text>
-                        <Text style={styles.statLabel}>Events</Text>
+                        <Text style={styles.statLabel}>Event</Text>
                     </View>
                     <View style={styles.statCard}>
                         <View style={styles.statIconContainer}>
                             <MaterialIcons name="workspace-premium" size={20} color={COLORS.primary} />
                         </View>
                         <Text style={styles.statNumber}>{scholarships.length || 0}</Text>
-                        <Text style={styles.statLabel}>Scholarships</Text>
+                        <Text style={styles.statLabel}>Scholarship</Text>
                     </View>
                     <View style={styles.statCard}>
                         <View style={styles.statIconContainer}>
                             <Ionicons name="people" size={20} color={COLORS.primary} />
                         </View>
                         <Text style={styles.statNumber}>{mentors.length || 0}</Text>
-                        <Text style={styles.statLabel}>Mentors</Text>
+                        <Text style={styles.statLabel}>Mentor</Text>
                     </View>
                 </View>
 
