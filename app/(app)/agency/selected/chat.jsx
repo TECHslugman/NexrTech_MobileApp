@@ -1,274 +1,288 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-    View, StyleSheet, SafeAreaView,
-    Text, TouchableOpacity, StatusBar, Image,
-    Platform, KeyboardAvoidingView, Alert
+    View, StyleSheet, Text, TouchableOpacity, StatusBar, Image,
+    Platform, KeyboardAvoidingView, ActivityIndicator
 } from 'react-native';
-import { GiftedChat, Bubble, Send, InputToolbar, Time } from 'react-native-gifted-chat';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Ionicons, Feather } from '@expo/vector-icons';
+import { GiftedChat, Bubble } from 'react-native-gifted-chat';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import socketService from '../../../services/SocketService';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const COLORS = {
-    primary: '#0084FF',
-    background: '#FFFFFF',
-    white: '#FFFFFF',
-    textPrimary: '#000000',
-    textSecondary: '#8E8E93',
-    border: '#E5E5EA',
-    online: '#10B981',
-    sentMsg: '#0084FF',
-    receivedMsg: '#E4E6EB',
-    typingIndicator: '#E5E5EA',
-    accent: '#D8E5FF',
-    placeholder: '#8E8E93',
-    inputBg: '#F0F2F5',
-    inputText: '#000000',
-};
+const BASE_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1/students';
 
 export default function ChatScreen() {
-    const { recipientId, name, logo, recipientType } = useLocalSearchParams();
+    const { recipientId, name, logo, initialConversationId } = useLocalSearchParams();
     const router = useRouter();
-    const { userToken } = useAuth();
-
+    const { userToken, user } = useAuth();
+    const insets = useSafeAreaInsets();
 
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isConnected, setIsConnected] = useState(false);
-    const [isTyping, setIsTyping] = useState(false);
-    const [showScrollButton, setShowScrollButton] = useState(false);
-    const chatRef = useRef(null);
-    const typingTimeoutRef = useRef(null);
+    const [conversationId, setConversationId] = useState(initialConversationId || null);
+    const [hasLoadedHistory, setHasLoadedHistory] = useState(false);
 
-    useEffect(() => {
-        if (!userToken || !recipientId) {
+    // FIXED: Get actual user ID for message alignment
+    // You need to know your own user ID to determine message alignment
+    const currentUserId = String(user?.id || user?.userId || 'student'); // Adjust based on your auth context
+
+    const mountedRef = useRef(true);
+
+    // --- FIXED: Fetch chat history ---
+    const fetchChatHistory = useCallback(async (id) => {
+        if (!id) {
+            console.log("No conversation ID - new conversation");
             setIsLoading(false);
             return;
         }
 
-        const initializeSocket = () => {
-            try {
-                // 1. Connect (Backend verifies token and joins user to their room)
-                socketService.connect(userToken);
+        try {
+            console.log("Fetching history for:", id);
+            const response = await fetch(`${BASE_URL}/conversation/${id}/messages`, {
+                headers: {
+                    'Authorization': `Bearer ${userToken}`,
+                    'Content-Type': 'application/json',
+                }
+            });
 
-                // 2. Local State for connection status
-                // Note: Since we use specific methods now, we access the internal socket for basic events
-                socketService.socket?.on("connect", () => setIsConnected(true));
-                socketService.socket?.on("disconnect", () => setIsConnected(false));
+            if (!response.ok) throw new Error(`Status: ${response.status}`);
 
-                // 3. Use our new helper for receiving messages
-                socketService.onNewMessage((msg) => {
-                    console.log("📨 Received message:", msg);
+            const data = await response.json();
+            const rawMessages = data.messages || data.data || [];
 
-                    // Ignore if it's our own message (though backend handles this, safety first)
-                    if (msg.sender === userToken) return;
+            // FIXED: Format messages with correct alignment
+            const formattedMessages = rawMessages.map(msg => {
+                // Determine if message is from current user
+                // This is CRITICAL for message alignment
+                const isFromCurrentUser = msg.senderModel === 'Student' || 
+                                         msg.sender === currentUserId ||
+                                         (msg.sender && typeof msg.sender === 'object' && msg.sender.modelType === 'Student');
+                
+                return {
+                    _id: msg._id || Math.random().toString(36).substr(2, 9),
+                    text: msg.content || '',
+                    createdAt: msg.createdAt ? new Date(msg.createdAt) : new Date(),
+                    user: {
+                        _id: isFromCurrentUser ? currentUserId : recipientId,
+                        name: isFromCurrentUser ? 'You' : name,
+                        avatar: isFromCurrentUser ? null : logo,
+                    },
+                };
+            });
 
-                    const incomingMsg = {
-                        _id: msg._id || Math.random().toString(),
-                        text: msg.content,
-                        createdAt: new Date(msg.createdAt || new Date()),
-                        user: {
-                            _id: msg.sender,
-                            name: msg.senderModel === 'Student' ? 'You' : (name || 'Support'),
-                            avatar: msg.senderModel !== 'Student' ? logo : null,
-                        },
-                    };
-
-                    setMessages(prev => GiftedChat.append(prev, [incomingMsg]));
-                });
-
-                // 4. Typing (Keep as generic for now as service doesn't have helper for this yet)
-                socketService.socket?.on("typing", (data) => {
-                    if (data.sender !== userToken) {
-                        setIsTyping(true);
-                        clearTimeout(typingTimeoutRef.current);
-                        typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 3000);
-                    }
-                });
-
-                setTimeout(() => setIsLoading(false), 800);
-
-            } catch (error) {
-                console.error("Socket initialization error:", error);
+            // GiftedChat expects newest first
+            setMessages(formattedMessages.reverse());
+            setHasLoadedHistory(true);
+        } catch (error) {
+            console.error('History fetch error:', error);
+        } finally {
+            if (mountedRef.current) {
                 setIsLoading(false);
             }
-        };
+        }
+    }, [userToken, recipientId, name, logo, currentUserId]);
 
-        initializeSocket();
+    // --- Socket setup ---
+    useEffect(() => {
+        mountedRef.current = true;
+        
+        // Connect socket
+        const socket = socketService.connect(userToken);
+
+        if (socket) {
+            // Connection status
+            setIsConnected(socket.connected);
+            
+            const onConnect = () => {
+                console.log("Chat socket connected");
+                setIsConnected(true);
+            };
+            
+            const onDisconnect = () => {
+                console.log("Chat socket disconnected");
+                setIsConnected(false);
+            };
+
+            // FIXED: Listen for sent message confirmation
+            socketService.onSentMessage((data) => {
+                console.log("✅ Message sent confirmation:", data);
+                if (data.message?.conversationId && !conversationId) {
+                    console.log("Setting conversation ID:", data.message.conversationId);
+                    setConversationId(data.message.conversationId);
+                    
+                    // Update conversation list in background
+                    setTimeout(() => {
+                        socketService.getConversations();
+                    }, 1000);
+                }
+            });
+
+            // FIXED: Listen for incoming messages
+            socketService.onNewMessage((data) => {
+                console.log("📨 New message received:", data);
+                if (mountedRef.current && data) {
+                    // Check if this message belongs to current conversation
+                    const isForThisChat = data.conversationId === conversationId || 
+                                         data.receiver === currentUserId ||
+                                         data.sender === recipientId;
+                    
+                    if (!isForThisChat) {
+                        console.log("Message not for this chat, skipping");
+                        return;
+                    }
+                    
+                    // FIXED: Determine if message is from current user
+                    const isFromCurrentUser = data.senderModel === 'Student' || 
+                                             data.sender === currentUserId;
+                    
+                    setMessages(prev => {
+                        // Check for duplicates
+                        if (prev.some(m => m._id === data._id)) return prev;
+                        
+                        const newMessage = {
+                            _id: data._id || Math.random().toString(36).substr(2, 9),
+                            text: data.content || '',
+                            createdAt: data.createdAt ? new Date(data.createdAt) : new Date(),
+                            user: {
+                                _id: isFromCurrentUser ? currentUserId : recipientId,
+                                name: isFromCurrentUser ? 'You' : name,
+                                avatar: isFromCurrentUser ? null : logo,
+                            },
+                        };
+                        
+                        return GiftedChat.append(prev, [newMessage]);
+                    });
+                }
+            });
+
+            socket.on('connect', onConnect);
+            socket.on('disconnect', onDisconnect);
+        }
+
+        // Fetch history if we have conversation ID
+        if (conversationId && !hasLoadedHistory) {
+            fetchChatHistory(conversationId);
+        } else {
+            // If no conversation ID, we're starting fresh
+            setIsLoading(false);
+        }
 
         return () => {
-            // Cleanup using the internal socket instance
-            socketService.socket?.off("connect");
-            socketService.socket?.off("disconnect");
-            socketService.socket?.off("receive_message");
-            socketService.socket?.off("typing");
+            mountedRef.current = false;
+            // Clean up listeners
+            if (socket) {
+                socket.off('connect');
+                socket.off('disconnect');
+            }
         };
-    }, [recipientId, userToken, name, logo]);
+    }, [conversationId, currentUserId]);
+
+    // Refresh conversation list when leaving chat
+    useFocusEffect(
+        useCallback(() => {
+            return () => {
+                console.log("Leaving chat - refreshing conversation list");
+                setTimeout(() => {
+                    socketService.getConversations();
+                }, 500);
+            };
+        }, [])
+    );
+
+    // --- FIXED: Send message ---
     const onSend = useCallback((newMessages = []) => {
-        if (!isConnected) {
-            Alert.alert("Connection Lost", "Please wait while we reconnect...");
-            return;
-        }
-
+        if (!newMessages.length || !recipientId) return;
+        
         const message = newMessages[0];
-        if (!message.text.trim()) return;
-
-        try {
-            // Use the simplified helper: sendMessage(id, content, type)
-            socketService.sendMessage(recipientId, message.text, recipientType || "Agency");
-
-            // Update local UI
-            setMessages(prev => GiftedChat.append(prev, newMessages));
-            setIsTyping(false);
-
-        } catch (error) {
-            console.error("Error sending message:", error);
+        
+        // Add optimistic message - FIXED: Show on RIGHT side
+        const optimisticMessage = {
+            ...message,
+            _id: `temp_${Date.now()}`,
+            pending: true,
+            user: {
+                _id: currentUserId, // This is KEY for right alignment
+                name: 'You',
+            },
+        };
+        
+        setMessages(prev => GiftedChat.append(prev, [optimisticMessage]));
+        
+        // Send via socket
+        const success = socketService.sendMessage(
+            recipientId,
+            message.text.trim(),
+            "Agency"
+        );
+        
+        if (!success) {
+            console.error("Failed to send message");
+            // Optionally show error to user
         }
-    }, [recipientId, userToken, isConnected, recipientType]);
+    }, [recipientId, currentUserId]);
 
-    const handleTyping = () => {
-        if (isConnected) {
-            // typing isn't in our "Easy Mode" yet, so we emit directly to the internal socket
-            socketService.socket?.emit("typing", {
-                receiver: recipientId,
-                sender: userToken,
-                isTyping: true
-            });
-        }
-    };
-
+    // --- Render components ---
     const renderBubble = (props) => (
-        <View style={[
-            styles.bubbleContainer,
-            props.position === 'right' ? styles.bubbleRight : styles.bubbleLeft
-        ]}>
-            <Bubble
-                {...props}
-                wrapperStyle={{
-                    right: {
-                        backgroundColor: COLORS.sentMsg,
-                        borderRadius: 18,
-                        paddingHorizontal: 12,
-                        paddingVertical: 8,
-                        marginRight: 16,
-                        marginBottom: 2,
-                        maxWidth: '80%',
-                        minHeight: 36,
-                        justifyContent: 'center',
-                    },
-                    left: {
-                        backgroundColor: COLORS.receivedMsg,
-                        borderRadius: 18,
-                        paddingHorizontal: 12,
-                        paddingVertical: 8,
-                        marginLeft: 16,
-                        marginBottom: 2,
-                        maxWidth: '80%',
-                        minHeight: 36,
-                        justifyContent: 'center',
-                    },
-                }}
-                textStyle={{
-                    right: {
-                        color: COLORS.white,
-                        fontSize: 15,
-                        lineHeight: 20,
-                        fontWeight: '400',
-                    },
-                    left: {
-                        color: COLORS.textPrimary,
-                        fontSize: 15,
-                        lineHeight: 20,
-                        fontWeight: '400',
-                    },
-                }}
-                timeTextStyle={{
-                    right: { color: 'rgba(255,255,255,0.7)' },
-                    left: { color: COLORS.textSecondary },
-                }}
-                renderTime={(props) => (
-                    <Time {...props}
-                        timeTextStyle={{
-                            left: {
-                                fontSize: 11,
-                                color: COLORS.textSecondary,
-                                marginTop: 2,
-                            },
-                            right: {
-                                fontSize: 11,
-                                color: 'rgba(255,255,255,0.7)',
-                                marginTop: 2,
-                            },
-                        }}
-                    />
-                )}
-            />
-        </View>
-    );
-
-    const renderSend = (props) => (
-        <Send
+        <Bubble
             {...props}
-            containerStyle={styles.sendContainer}
-            disabled={!props.text || props.text.trim().length === 0}
-        >
-            <View style={[
-                styles.sendButton,
-                (!props.text || props.text.trim().length === 0) && styles.sendButtonDisabled
-            ]}>
-                <Ionicons
-                    name="send"
-                    size={20}
-                    color={(!props.text || props.text.trim().length === 0) ? '#C5C7D0' : COLORS.white}
-                />
-            </View>
-        </Send>
-    );
-
-    const renderInputToolbar = (props) => (
-        <InputToolbar
-            {...props}
-            containerStyle={styles.inputToolbar}
-            primaryStyle={styles.inputPrimary}
-            accessoryStyle={styles.inputAccessory}
+            wrapperStyle={{
+                left: {
+                    backgroundColor: '#E4E6EB',
+                    borderRadius: 18,
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    marginBottom: 4,
+                },
+                right: {
+                    backgroundColor: '#0084FF',
+                    borderRadius: 18,
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    marginBottom: 4,
+                }
+            }}
+            textStyle={{
+                left: { 
+                    color: '#000', 
+                    fontSize: 15,
+                    lineHeight: 20 
+                },
+                right: { 
+                    color: '#FFF', 
+                    fontSize: 15,
+                    lineHeight: 20 
+                }
+            }}
         />
     );
 
-    const renderFooter = () => {
-        if (isTyping) {
-            return (
-                <View style={styles.typingContainer}>
-                    <View style={styles.typingBubble}>
-                        <View style={styles.typingDots}>
-                            <View style={[styles.typingDot, styles.typingDot1]} />
-                            <View style={[styles.typingDot, styles.typingDot2]} />
-                            <View style={[styles.typingDot, styles.typingDot3]} />
-                        </View>
-                    </View>
-                </View>
-            );
-        }
-        return null;
-    };
+    // In Chat.jsx, add a debug button
+const sendTestMessage = () => {
+    console.log("Sending test message...");
+    console.log("Recipient ID:", recipientId);
+    console.log("Current User ID:", currentUserId);
+    console.log("User Token:", userToken);
+    
+    const success = socketService.sendMessage(
+        recipientId,
+        "Test message",
+        "Agency"
+    );
+    
+    console.log("Send success:", success);
+};
 
-    const handleScroll = ({ nativeEvent }) => {
-        const offset = nativeEvent.contentOffset.y;
-        setShowScrollButton(offset > 300);
-    };
-
-    const scrollToBottom = () => {
-        if (chatRef.current) {
-            chatRef.current.scrollToBottom();
-        }
-    };
+// Add to your render:
+<TouchableOpacity onPress={sendTestMessage} style={styles.debugButton}>
+    <Text>Debug Send</Text>
+</TouchableOpacity>
 
     const renderEmptyChat = () => (
-        <View style={styles.emptyChatContainer}>
-            <View style={styles.emptyIllustration}>
-                <View style={styles.emptyIconCircle}>
-                    <Ionicons name="chatbubble-outline" size={60} color={COLORS.primary} />
-                </View>
+        <View style={styles.emptyContainer}>
+            <View style={styles.emptyIcon}>
+                <Ionicons name="chatbubble-outline" size={60} color="#0084FF" />
             </View>
             <Text style={styles.emptyTitle}>Start Conversation</Text>
             <Text style={styles.emptySubtitle}>
@@ -278,423 +292,214 @@ export default function ChatScreen() {
     );
 
     return (
-        <View style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
-
+        <View style={[styles.container, { paddingTop: insets.top }]}>
+            <StatusBar barStyle="dark-content" />
+            
             {/* Header */}
-            <SafeAreaView style={styles.headerSafeArea}>
-                <View style={styles.header}>
-                    <View style={styles.headerLeft}>
-                        <TouchableOpacity
-                            onPress={() => router.back()}
-                            style={styles.backButton}
-                            activeOpacity={0.7}
-                        >
-                            <Ionicons name="chevron-back" size={24} color={COLORS.textPrimary} />
-                        </TouchableOpacity>
+            <View style={styles.header}>
+                <TouchableOpacity 
+                    onPress={() => router.back()} 
+                    style={styles.backButton}
+                >
+                    <Ionicons name="chevron-back" size={24} color="#000" />
+                </TouchableOpacity>
+                
+                <View style={styles.userInfo}>
+                    <View style={styles.avatarContainer}>
+                        {logo ? (
+                            <Image source={{ uri: logo }} style={styles.avatar} />
+                        ) : (
+                            <View style={styles.avatarFallback}>
+                                <Text style={styles.avatarText}>
+                                    {name?.[0]?.toUpperCase() || 'A'}
+                                </Text>
+                            </View>
+                        )}
+                        <View style={[
+                            styles.statusDot, 
+                            { backgroundColor: isConnected ? '#10B981' : '#FF3B30' }
+                        ]} />
                     </View>
-
-                    <TouchableOpacity
-                        style={styles.agencyInfo}
-                        activeOpacity={0.8}
-                    >
-                        <View style={styles.avatarContainer}>
-                            {logo ? (
-                                <Image source={{ uri: logo }} style={styles.headerAvatar} />
-                            ) : (
-                                <View style={styles.placeholderAvatar}>
-                                    <Text style={styles.avatarText}>
-                                        {(name || 'A').charAt(0).toUpperCase()}
-                                    </Text>
-                                </View>
-                            )}
-                            <View style={[
-                                styles.statusIndicator,
-                                { backgroundColor: isConnected ? COLORS.online : '#C5C7D0' }
-                            ]} />
-                        </View>
-
-                        <View style={styles.headerContent}>
-                            <Text style={styles.headerName} numberOfLines={1}>
-                                {name || 'Agency Support'}
-                            </Text>
-                            <Text style={styles.headerStatus}>
-                                {isConnected ? 'Active now' : 'Connecting...'}
-                            </Text>
-                        </View>
-                    </TouchableOpacity>
-
-                    <View style={styles.headerRight}>
-                        <TouchableOpacity style={styles.headerIcon} activeOpacity={0.7}>
-                            <Ionicons name="ellipsis-horizontal" size={24} color={COLORS.textPrimary} />
-                        </TouchableOpacity>
+                    
+                    <View style={styles.userDetails}>
+                        <Text style={styles.userName} numberOfLines={1}>
+                            {name || 'Agency'}
+                        </Text>
+                        <Text style={styles.userStatus}>
+                            {isConnected ? 'Online' : 'Connecting...'}
+                        </Text>
                     </View>
                 </View>
-            </SafeAreaView>
+            </View>
 
-            {/* Chat Body */}
+            {/* Chat */}
             <KeyboardAvoidingView
                 style={styles.chatContainer}
-                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                behavior={Platform.OS === "ios" ? "padding" : undefined}
                 keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
             >
                 {isLoading ? (
                     <View style={styles.loadingContainer}>
-                        <View style={styles.loadingContent}>
-                            <View style={styles.loadingSpinner}>
-                                <Ionicons name="chatbubbles-outline" size={44} color={COLORS.primary} />
-                            </View>
-                            <Text style={styles.loadingText}>Loading messages...</Text>
-                        </View>
+                        <ActivityIndicator size="large" color="#0084FF" />
                     </View>
                 ) : (
-                    <View style={styles.chatWrapper}>
-                        <GiftedChat
-                            ref={chatRef}
-                            messages={messages}
-                            onSend={onSend}
-                            user={{ _id: userToken, name: 'You' }}
-                            renderBubble={renderBubble}
-                            renderSend={renderSend}
-                            renderInputToolbar={renderInputToolbar}
-                            renderFooter={renderFooter}
-                            placeholder="Message..."
-                            alwaysShowSend
-                            scrollToBottom
-                            scrollToBottomComponent={() => (
-                                <View style={styles.scrollBottomButton}>
-                                    <Ionicons name="chevron-down" size={18} color={COLORS.white} />
-                                </View>
-                            )}
-                            renderAvatar={null}
-                            onInputTextChanged={handleTyping}
-                            listViewProps={{
-                                onScroll: handleScroll,
-                                scrollEventThrottle: 16,
-                                style: styles.chatListView,
-                                contentContainerStyle: styles.chatListContent,
-                                showsVerticalScrollIndicator: false,
-                            }}
-                            minInputToolbarHeight={60}
-                            textInputStyle={styles.textInput}
-                            textInputProps={{
-                                placeholderTextColor: COLORS.placeholder,
-                                multiline: true,
-                                maxLength: 1000,
-                            }}
-                            renderEmpty={renderEmptyChat}
-                            keyboardShouldPersistTaps="handled"
-                        />
-                    </View>
+                    <GiftedChat
+                        messages={messages}
+                        onSend={onSend}
+                        user={{
+                            _id: currentUserId, // CRITICAL: This must be YOUR user ID
+                            name: 'You'
+                        }}
+                        renderBubble={renderBubble}
+                        renderEmpty={renderEmptyChat}
+                        placeholder="Type a message..."
+                        alwaysShowSend
+                        scrollToBottom
+                        renderAvatar={null}
+                        renderUsernameOnMessage={false}
+                        minInputToolbarHeight={60}
+                        textInputProps={{
+                            style: {
+                                backgroundColor: '#F0F2F5',
+                                borderRadius: 20,
+                                paddingHorizontal: 16,
+                                paddingVertical: 10,
+                                fontSize: 16,
+                                marginRight: 10,
+                                flex: 1,
+                            }
+                        }}
+                        renderSend={(props) => (
+                            <TouchableOpacity
+                                style={styles.sendButton}
+                                onPress={() => {
+                                    if (props.text && props.onSend) {
+                                        props.onSend({ text: props.text.trim() }, true);
+                                    }
+                                }}
+                            >
+                                <Ionicons 
+                                    name="send" 
+                                    size={24} 
+                                    color={props.text?.trim() ? "#0084FF" : "#C4C4C4"} 
+                                />
+                            </TouchableOpacity>
+                        )}
+                    />
                 )}
             </KeyboardAvoidingView>
-
-            {/* Floating Scroll to Bottom Button */}
-            {showScrollButton && messages.length > 0 && (
-                <TouchableOpacity
-                    style={styles.floatingScrollButton}
-                    onPress={scrollToBottom}
-                    activeOpacity={0.8}
-                >
-                    <Ionicons name="chevron-down" size={20} color={COLORS.white} />
-                </TouchableOpacity>
-            )}
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: COLORS.background,
-    },
-
-    // Header Area
-    headerSafeArea: {
-        backgroundColor: COLORS.white,
+    container: { 
+        flex: 1, 
+        backgroundColor: '#FFF' 
     },
     header: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        backgroundColor: COLORS.white,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
         borderBottomWidth: 1,
-        borderBottomColor: COLORS.border,
-    },
-    headerLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
+        borderBottomColor: '#E5E5EA',
+        backgroundColor: '#FFF',
     },
     backButton: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        justifyContent: 'center',
-        alignItems: 'center',
+        marginRight: 12,
+        padding: 4,
     },
-    agencyInfo: {
+    userInfo: {
+        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
-        flex: 1,
-        paddingHorizontal: 12,
     },
     avatarContainer: {
         position: 'relative',
-        marginRight: 10,
+        marginRight: 12,
     },
-    headerAvatar: {
-        width: 38,
-        height: 38,
-        borderRadius: 19,
-        backgroundColor: COLORS.accent,
+    avatar: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
     },
-    placeholderAvatar: {
-        width: 38,
-        height: 38,
-        borderRadius: 19,
-        backgroundColor: COLORS.primary,
+    avatarFallback: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#D8E5FF',
         justifyContent: 'center',
         alignItems: 'center',
     },
     avatarText: {
-        color: COLORS.white,
-        fontWeight: '600',
-        fontSize: 16,
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#769FCD',
     },
-    statusIndicator: {
+    statusDot: {
         position: 'absolute',
         bottom: 0,
         right: 0,
-        width: 12,
-        height: 12,
-        borderRadius: 6,
+        width: 10,
+        height: 10,
+        borderRadius: 5,
         borderWidth: 2,
-        borderColor: COLORS.white,
+        borderColor: '#FFF',
     },
-    headerContent: {
+    userDetails: {
         flex: 1,
     },
-    headerName: {
+    userName: {
         fontSize: 16,
-        fontWeight: '700',
-        color: COLORS.textPrimary,
-        marginBottom: 2,
+        fontWeight: '600',
+        color: '#000',
     },
-    headerStatus: {
-        fontSize: 13,
-        color: COLORS.textSecondary,
+    userStatus: {
+        fontSize: 12,
+        color: '#666',
+        marginTop: 2,
     },
-    headerRight: {
-        flexDirection: 'row',
-        alignItems: 'center',
+    chatContainer: { 
+        flex: 1 
     },
-    headerIcon: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-
-    // Loading State
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: COLORS.background,
     },
-    loadingContent: {
-        alignItems: 'center',
-    },
-    loadingSpinner: {
-        width: 70,
-        height: 70,
-        borderRadius: 35,
-        backgroundColor: '#F8F9FA',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-    loadingText: {
-        fontSize: 15,
-        color: COLORS.textSecondary,
-    },
-
-    // Chat Container
-    chatContainer: {
-        flex: 1,
-        backgroundColor: COLORS.background,
-    },
-    chatWrapper: {
-        flex: 1,
-    },
-    chatListView: {
-        backgroundColor: COLORS.background,
-        paddingTop: 4,
-    },
-    chatListContent: {
-        paddingBottom: 10,
-        paddingTop: 4,
-    },
-
-    // Message Bubbles
-    bubbleContainer: {
-        flex: 1,
-        marginTop: 1,
-    },
-    bubbleRight: {
-        alignItems: 'flex-end',
-    },
-    bubbleLeft: {
-        alignItems: 'flex-start',
-    },
-
-    // Input Toolbar - Fixed text color and padding
-    inputToolbar: {
-        borderTopWidth: 1,
-        borderTopColor: COLORS.border,
-        backgroundColor: COLORS.white,
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        minHeight: 56,
-        marginBottom: 0,
-    },
-    inputPrimary: {
-        alignItems: 'center',
-        minHeight: 40,
-    },
-    inputAccessory: {
-        height: 40,
-    },
-    textInput: {
-        fontSize: 16,
-        color: COLORS.inputText, // Fixed: Now text is visible (black)
-        paddingVertical: 8,
-        paddingHorizontal: 14,
-        backgroundColor: COLORS.inputBg,
-        borderRadius: 18,
-        flex: 1,
-        marginRight: 8,
-        minHeight: 36,
-        maxHeight: 80,
-    },
-    sendContainer: {
-        justifyContent: 'center',
-        alignItems: 'center',
-        height: 40,
-        width: 40,
-    },
-    sendButton: {
-        backgroundColor: COLORS.primary,
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    sendButtonDisabled: {
-        backgroundColor: COLORS.inputBg,
-    },
-
-    // Typing Indicator
-    typingContainer: {
-        paddingHorizontal: 16,
-        paddingVertical: 2,
-        marginBottom: 4,
-    },
-    typingBubble: {
-        backgroundColor: COLORS.receivedMsg,
-        borderRadius: 16,
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        maxWidth: 65,
-        alignSelf: 'flex-start',
-    },
-    typingDots: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    typingDot: {
-        width: 5,
-        height: 5,
-        borderRadius: 2.5,
-        marginHorizontal: 1.5,
-        backgroundColor: COLORS.textSecondary,
-    },
-    typingDot1: {
-        opacity: 0.4,
-    },
-    typingDot2: {
-        opacity: 0.7,
-    },
-    typingDot3: {
-        opacity: 1,
-    },
-
-    // Empty Chat State
-    emptyChatContainer: {
+    emptyContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        paddingHorizontal: 24,
-        paddingTop: 40,
+        transform: [{ scaleY: -1 }],
     },
-    emptyIllustration: {
-        marginBottom: 20,
-    },
-    emptyIconCircle: {
-        width: 100,
-        height: 100,
-        borderRadius: 50,
-        backgroundColor: '#F8F9FA',
+    emptyIcon: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: '#E8F4FF',
         justifyContent: 'center',
         alignItems: 'center',
-        borderWidth: 1.5,
-        borderColor: COLORS.border,
+        marginBottom: 16,
     },
     emptyTitle: {
         fontSize: 18,
-        fontWeight: '700',
-        color: COLORS.textPrimary,
-        marginBottom: 6,
-        textAlign: 'center',
+        fontWeight: '600',
+        color: '#000',
+        marginBottom: 8,
     },
     emptySubtitle: {
         fontSize: 14,
-        color: COLORS.textSecondary,
+        color: '#666',
         textAlign: 'center',
-        lineHeight: 18,
-        maxWidth: 250,
+        paddingHorizontal: 40,
     },
-
-    // Floating Scroll Button
-    floatingScrollButton: {
-        position: 'absolute',
-        bottom: 76,
-        right: 12,
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        backgroundColor: COLORS.primary,
+    sendButton: {
+        height: 44,
+        width: 44,
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-        elevation: 4,
-        zIndex: 100,
-    },
-    scrollBottomButton: {
-        backgroundColor: COLORS.primary,
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 6,
+        marginRight: 8,
     },
 });
