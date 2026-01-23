@@ -1,38 +1,167 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
-    View,
-    Text,
-    StyleSheet,
-    ScrollView,
-    TouchableOpacity,
-    Image,
-    ActivityIndicator,
-    StatusBar
+    View, Text, StyleSheet, ScrollView, TouchableOpacity,
+    Image, ActivityIndicator, Alert, Modal
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, Feather } from '@expo/vector-icons';
+import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
 
 const BASE_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1';
+const SEAT_IMAGE_URL = 'https://cdn-icons-png.flaticon.com/512/1723/1723651.png';
 
 const COLORS = {
     bg: '#F8FAFD',
     primary: '#769FCD',
-    primaryLight: 'rgba(118, 159, 205, 0.1)',
     white: '#FFFFFF',
     textPrimary: '#2D3748',
     textSecondary: '#718096',
     border: '#EEF2F7',
-    cardBg: '#FFFFFF',
+    booked: '#E53E3E', // Red for already booked
+    available: '#718096', 
+    selected: '#38A169', // Green for your current selection
+};
+
+// MODAL 2: SEAT INFO POPUP
+const SeatInfoModal = ({ visible, onClose, seatId, onConfirm, registering }) => {
+    const { userToken } = useAuth();
+    const [loading, setLoading] = useState(true);
+    const [seatData, setSeatData] = useState(null);
+
+    useEffect(() => {
+        if (visible && seatId) fetchSeatDetail();
+    }, [visible, seatId]);
+
+    const fetchSeatDetail = async () => {
+        setLoading(true);
+        try {
+            const response = await fetch(`${BASE_URL}/agency/events/profile/${seatId}/seats/info`, {
+                headers: { 'Authorization': `Bearer ${userToken}` }
+            });
+            const json = await response.json();
+            if (response.ok) {
+                setSeatData(json.seat); //
+            }
+        } catch (error) {
+            Alert.alert("Error", "Could not fetch seat info");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <Modal visible={visible} transparent animationType="fade">
+            <View style={styles.infoModalOverlay}>
+                <View style={styles.infoModalContent}>
+                    {loading ? <ActivityIndicator size="large" color={COLORS.primary} /> : (
+                        <>
+                            <Text style={styles.infoTitle}>Seat Details</Text>
+                            <View style={styles.infoDetailBox}>
+                                <Text style={styles.infoRow}>Position: <Text style={styles.boldText}>{seatData?.row}{seatData?.columns}</Text></Text>
+                                <Text style={styles.infoRow}>Type: <Text style={styles.boldText}>{seatData?.ticketTypes?.name}</Text></Text>
+                                <Text style={styles.infoRow}>Price: <Text style={[styles.boldText, {color: COLORS.primary}]}>Nu {seatData?.ticketTypes?.price}</Text></Text>
+                                
+                                {seatData?.ticketTypes?.description?.map((item, index) => (
+                                    <Text key={index} style={styles.seatDescSubtitle}>• {item}</Text>
+                                ))}
+                            </View>
+                            <View style={styles.infoBtnRow}>
+                                <TouchableOpacity style={styles.cancelSubBtn} onPress={onClose}><Text style={{color: COLORS.primary}}>Back</Text></TouchableOpacity>
+                                <TouchableOpacity style={styles.confirmSubBtn} onPress={() => onConfirm(seatId)} disabled={registering}>
+                                    {registering ? <ActivityIndicator color="#FFF" /> : <Text style={{color: '#FFF', fontWeight:'bold'}}>Confirm Seat</Text>}
+                                </TouchableOpacity>
+                            </View>
+                        </>
+                    )}
+                </View>
+            </View>
+        </Modal>
+    );
+};
+
+// MODAL 1: SEATING GRID
+const SeatingChartModal = ({ visible, onClose, seats, onConfirm, registering }) => {
+    const [tempSelectedId, setTempSelectedId] = useState(null);
+    const [isInfoVisible, setIsInfoVisible] = useState(false);
+
+    const { processedRows, maxCols } = useMemo(() => {
+        const rowsMap = {};
+        let maxC = 0;
+        (seats || []).forEach(seat => {
+            if (!rowsMap[seat.row]) rowsMap[seat.row] = {};
+            const colIdx = parseInt(seat.columns);
+            rowsMap[seat.row][colIdx] = seat;
+            if (colIdx > maxC) maxC = colIdx;
+        });
+        return { processedRows: rowsMap, maxCols: maxC };
+    }, [seats]);
+
+    const sortedRowKeys = Object.keys(processedRows).sort();
+
+    const handleSeatClick = (id) => {
+        setTempSelectedId(id);
+        setIsInfoVisible(true);
+    };
+
+    return (
+        <Modal visible={visible} animationType="slide" transparent={true} statusBarTranslucent>
+            <View style={styles.modalOverlay}>
+                <View style={styles.modalContent}>
+                    <View style={styles.modalHeader}>
+                        <TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color={COLORS.textPrimary} /></TouchableOpacity>
+                        <Text style={styles.modalTitle}>Select Your Seat</Text>
+                        <View style={{ width: 24 }} />
+                    </View>
+                    <ScrollView contentContainerStyle={styles.scrollContainer}>
+                        <View style={styles.stageContainer}><View style={styles.stageLine} /><Text style={styles.stageText}>STAGE / SCREEN</Text></View>
+                        {sortedRowKeys.map(rowKey => (
+                            <View key={rowKey} style={styles.rowWrapper}>
+                                <Text style={styles.rowLabel}>{rowKey}</Text>
+                                <View style={styles.seatsRow}>
+                                    {Array.from({ length: maxCols }, (_, i) => i + 1).map(colNum => {
+                                        const seat = processedRows[rowKey][colNum];
+                                        if (!seat) return <View key={`empty-${colNum}`} style={styles.seatPlaceholder} />;
+                                        
+                                        const isBooked = seat.isBooked;
+                                        const isSelected = tempSelectedId === seat._id;
+                                        
+                                        let seatColor = COLORS.available;
+                                        if (isBooked) seatColor = COLORS.booked; // Others' seats are RED
+                                        if (isSelected) seatColor = COLORS.selected; // Your selection is GREEN
+
+                                        return (
+                                            <TouchableOpacity key={seat._id} disabled={isBooked} onPress={() => handleSeatClick(seat._id)} style={styles.seatBtn}>
+                                                <Image source={{ uri: SEAT_IMAGE_URL }} style={[styles.seatIcon, { tintColor: seatColor }]} />
+                                                <Text style={[styles.seatNum, { color: seatColor }]}>{seat.columns}</Text>
+                                            </TouchableOpacity>
+                                        );
+                                    })}
+                                </View>
+                            </View>
+                        ))}
+                    </ScrollView>
+                </View>
+            </View>
+            <SeatInfoModal 
+                visible={isInfoVisible} 
+                seatId={tempSelectedId} 
+                onClose={() => { setIsInfoVisible(false); setTempSelectedId(null); }} 
+                onConfirm={(id) => onConfirm(id)} 
+                registering={registering} 
+            />
+        </Modal>
+    );
 };
 
 export default function EventDetail() {
     const router = useRouter();
-    const { id, eventTitle, eventImage, eventDate, eventLocation } = useLocalSearchParams();
+    const { id, eventImage } = useLocalSearchParams();
     const { userToken } = useAuth();
     const [loading, setLoading] = useState(true);
+    const [registering, setRegistering] = useState(false);
     const [data, setData] = useState(null);
+    const [isModalVisible, setIsModalVisible] = useState(false);
 
     useEffect(() => {
         const fetchDetail = async () => {
@@ -40,394 +169,168 @@ export default function EventDetail() {
                 const response = await fetch(`${BASE_URL}/agency/events/profile/${id}`, {
                     headers: { 'Authorization': `Bearer ${userToken}` }
                 });
-
                 const json = await response.json();
-                
                 if (response.ok && json.event) {
                     const e = json.event;
                     setData({
-                        title: e.title,
-                        subtitle: e.subtitle,
+                        id: e._id, title: e.title, subtitle: e.subtitle,
                         image: e.bannerImageUrl || eventImage,
-                        date: e.startAt,
-                        location: e.location?.venueName || e.location?.addressLine || eventLocation,
-                        address: e.location?.addressLine,
-                        about: e.about || e.description,
+                        startAt: e.startAt, endAt: e.endAt,
+                        venueName: e.location?.venueName,
+                        addressLine: e.location?.addressLine,
+                        description: e.description, about: e.about,
                         whoShouldAttend: e.whoShouldAttend,
-                        agenda: e.agendaItems || []
+                        agenda: e.agendaItems || [],
+                        mode: e.meetings?.[0]?.mode || 'offline',
+                        seats: e.seats || []
                     });
-                } else {
-                    throw new Error("Failed to load event data");
                 }
-            } catch (error) {
-                console.log("Fetch Error:", error.message);
-                // Use only the params we received
-                setData({
-                    title: eventTitle,
-                    image: eventImage,
-                    date: eventDate,
-                    location: eventLocation,
-                    about: "Event details not available.",
-                    agenda: []
-                });
-            } finally {
-                setLoading(false);
-            }
+            } catch (error) { console.log(error); } finally { setLoading(false); }
         };
         fetchDetail();
     }, [id]);
 
-    const formatDate = (dateString) => {
-        if (!dateString) return "Date TBA";
-        const date = new Date(dateString);
-        return date.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    const formatDateTime = (dateString) => {
+        if (!dateString) return { date: "TBA", time: "", day: "" };
+        const d = new Date(dateString);
+        return {
+            date: d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+            time: d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+            day: d.toLocaleDateString('en-GB', { weekday: 'long' })
+        };
     };
 
-    const formatTime = (dateString) => {
-        if (!dateString) return "Time TBA";
-        const date = new Date(dateString);
-        return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    const handleConfirmRegistration = async (seatId) => {
+        setRegistering(true);
+        try {
+            const res = await fetch(`${BASE_URL}/students/events/registration/${data.id}`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${userToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ seatId: seatId })
+            });
+            if (res.ok) {
+                Alert.alert("Success", "Registration request sent successfully.");
+                setIsModalVisible(false);
+            }
+        } catch (e) { Alert.alert("Error", "Registration failed"); } finally { setRegistering(false); }
     };
 
-    if (loading) return (
-        <View style={styles.center}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingText}>Loading event details...</Text>
-        </View>
-    );
+    if (loading || !data) return <View style={styles.center}><ActivityIndicator size="large" color={COLORS.primary} /></View>;
+    const startInfo = formatDateTime(data.startAt);
+    const endInfo = formatDateTime(data.endAt);
 
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
-            <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
-            
-            {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-                    <Ionicons name="chevron-back" size={24} color={COLORS.white} />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle} numberOfLines={1}>Event Details</Text>
-                <View style={{ width: 40 }} />
+                <TouchableOpacity onPress={() => router.back()}><Ionicons name="chevron-back" size={24} color="#FFF" /></TouchableOpacity>
+                <Text style={styles.headerTitle}>Event Details</Text>
+                <View style={{ width: 24 }} />
             </View>
 
-            <ScrollView 
-                showsVerticalScrollIndicator={false} 
-                contentContainerStyle={styles.scrollContent}
-            >
-                {/* Event Image */}
+            <ScrollView showsVerticalScrollIndicator={false}>
                 <Image source={{ uri: data.image }} style={styles.eventImage} />
-                
-                {/* Main Content */}
                 <View style={styles.contentCard}>
-                    {/* Event Title Section */}
-                    <View style={styles.titleContainer}>
-                        <Text style={styles.eventTitle}>{data.title}</Text>
-                        {data.subtitle && <Text style={styles.subtitle}>{data.subtitle}</Text>}
-                    </View>
+                    <View style={styles.modeBadge}><Text style={styles.modeText}>{data.mode.toUpperCase()}</Text></View>
+                    <Text style={styles.eventTitle}>{data.title}</Text>
+                    {data.subtitle && <Text style={styles.subtitle}>{data.subtitle}</Text>}
 
-                    {/* Event Info Cards */}
                     <View style={styles.infoCardsContainer}>
-                        {/* Date Card */}
                         <View style={styles.infoCard}>
-                            <View style={[styles.infoIcon, { backgroundColor: 'rgba(118, 159, 205, 0.15)' }]}>
-                                <Feather name="calendar" size={20} color={COLORS.primary} />
-                            </View>
-                            <View style={styles.infoContent}>
-                                <Text style={styles.infoLabel}>DATE</Text>
-                                <Text style={styles.infoValue}>{formatDate(data.date)}</Text>
-                            </View>
+                            <View style={[styles.infoIcon, { backgroundColor: '#EBF4FF' }]}><Feather name="calendar" size={18} color={COLORS.primary} /></View>
+                            <View><Text style={styles.infoLabel}>STARTS ON</Text><Text style={styles.infoValue}>{startInfo.day}, {startInfo.date}</Text><Text style={styles.infoSub}>{startInfo.time}</Text></View>
                         </View>
-
-                        {/* Time Card */}
                         <View style={styles.infoCard}>
-                            <View style={[styles.infoIcon, { backgroundColor: 'rgba(118, 159, 205, 0.15)' }]}>
-                                <Feather name="clock" size={20} color={COLORS.primary} />
-                            </View>
-                            <View style={styles.infoContent}>
-                                <Text style={styles.infoLabel}>TIME</Text>
-                                <Text style={styles.infoValue}>{formatTime(data.date)}</Text>
-                            </View>
+                            <View style={[styles.infoIcon, { backgroundColor: '#FFF5F5' }]}><MaterialCommunityIcons name="clock-end" size={18} color="#E53E3E" /></View>
+                            <View><Text style={styles.infoLabel}>ENDS ON</Text><Text style={styles.infoValue}>{endInfo.day}, {endInfo.date}</Text><Text style={styles.infoSub}>{endInfo.time}</Text></View>
                         </View>
-
-                        {/* Location Card */}
                         <View style={styles.infoCard}>
-                            <View style={[styles.infoIcon, { backgroundColor: 'rgba(118, 159, 205, 0.15)' }]}>
-                                <Feather name="map-pin" size={20} color={COLORS.primary} />
-                            </View>
-                            <View style={styles.infoContent}>
-                                <Text style={styles.infoLabel}>VENUE</Text>
-                                <Text style={styles.infoValue} numberOfLines={1}>{data.location}</Text>
-                                {data.address && (
-                                    <Text style={styles.infoSubValue} numberOfLines={1}>{data.address}</Text>
-                                )}
-                            </View>
+                            <View style={[styles.infoIcon, { backgroundColor: '#F0FFF4' }]}><Feather name="map-pin" size={18} color="#48BB78" /></View>
+                            <View><Text style={styles.infoLabel}>LOCATION</Text><Text style={styles.infoValue}>{data.venueName}</Text><Text style={styles.infoSub}>{data.addressLine}</Text></View>
                         </View>
                     </View>
 
-                    {/* About Event Section */}
-                    {data.about && (
+                    {data.description && <View style={styles.section}><Text style={styles.sectionTitle}>Description</Text><Text style={styles.paragraph}>{data.description}</Text></View>}
+                    {data.about && <View style={styles.section}><Text style={styles.sectionTitle}>About Event</Text><Text style={styles.paragraph}>{data.about}</Text></View>}
+                    {data.whoShouldAttend && <View style={styles.section}><Text style={styles.sectionTitle}>Who Should Attend</Text><Text style={styles.paragraph}>{data.whoShouldAttend}</Text></View>}
+                    
+                    {data.agenda?.length > 0 && (
                         <View style={styles.section}>
-                            <View style={styles.sectionHeader}>
-                                <View style={styles.sectionIcon}>
-                                    <Feather name="info" size={18} color={COLORS.primary} />
+                            <Text style={styles.sectionTitle}>Agenda</Text>
+                            {data.agenda.map((item, idx) => (
+                                <View key={idx} style={styles.agendaRow}>
+                                    <View style={styles.agendaDot} />
+                                    <Text style={styles.paragraph}>{item}</Text>
                                 </View>
-                                <Text style={styles.sectionTitle}>About This Event</Text>
-                            </View>
-                            <Text style={styles.paragraph}>{data.about}</Text>
-                        </View>
-                    )}
-
-                    {/* Who Should Attend Section */}
-                    {data.whoShouldAttend && (
-                        <View style={styles.section}>
-                            <View style={styles.sectionHeader}>
-                                <View style={styles.sectionIcon}>
-                                    <Feather name="users" size={18} color={COLORS.primary} />
-                                </View>
-                                <Text style={styles.sectionTitle}>Who Should Attend</Text>
-                            </View>
-                            <Text style={styles.paragraph}>{data.whoShouldAttend}</Text>
-                        </View>
-                    )}
-
-                    {/* Agenda Section */}
-                    {data.agenda && data.agenda.length > 0 && (
-                        <View style={styles.section}>
-                            <View style={styles.sectionHeader}>
-                                <View style={styles.sectionIcon}>
-                                    <Feather name="list" size={18} color={COLORS.primary} />
-                                </View>
-                                <Text style={styles.sectionTitle}>Event Agenda</Text>
-                            </View>
-                            <View style={styles.agendaContainer}>
-                                {data.agenda.map((item, index) => (
-                                    <View key={index} style={styles.agendaItem}>
-                                        <View style={styles.agendaBullet} />
-                                        <Text style={styles.agendaText}>{item}</Text>
-                                    </View>
-                                ))}
-                            </View>
+                            ))}
                         </View>
                     )}
                 </View>
-                
-                {/* Bottom Spacing for the button */}
                 <View style={{ height: 100 }} />
             </ScrollView>
 
-            {/* Fixed Register Button */}
-            <View style={styles.bottomBar}>
-                <TouchableOpacity style={styles.registerButton} activeOpacity={0.9}>
-                    <Text style={styles.registerText}>Register for Event</Text>
-                    <Feather name="arrow-right" size={20} color={COLORS.white} />
-                </TouchableOpacity>
+            <SeatingChartModal 
+                visible={isModalVisible} 
+                onClose={() => setIsModalVisible(false)} 
+                seats={data.seats} 
+                onConfirm={handleConfirmRegistration} 
+                registering={registering} 
+            />
+            
+            <View style={styles.stickyFooter}>
+                <TouchableOpacity style={styles.mainBtn} onPress={() => setIsModalVisible(true)}><Text style={styles.mainBtnText}>Register Now</Text></TouchableOpacity>
             </View>
         </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { 
-        flex: 1, 
-        backgroundColor: COLORS.bg 
-    },
-    center: { 
-        flex: 1, 
-        justifyContent: 'center', 
-        alignItems: 'center',
-        backgroundColor: COLORS.bg
-    },
-    loadingText: {
-        marginTop: 16,
-        fontSize: 14,
-        color: COLORS.textSecondary,
-    },
-    header: {
-        backgroundColor: COLORS.primary,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingVertical: 14,
-        borderBottomLeftRadius: 20,
-        borderBottomRightRadius: 20,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-        elevation: 4,
-    },
-    headerTitle: { 
-        color: COLORS.white, 
-        fontSize: 18, 
-        fontWeight: '700', 
-        flex: 1, 
-        textAlign: 'center',
-        letterSpacing: 0.5,
-    },
-    backButton: { 
-        width: 40, 
-        height: 40, 
-        borderRadius: 20, 
-        backgroundColor: 'rgba(255,255,255,0.2)', 
-        justifyContent: 'center', 
-        alignItems: 'center' 
-    },
-    eventImage: { 
-        width: '100%', 
-        height: 220,
-    },
-    contentCard: { 
-        backgroundColor: COLORS.white, 
-        borderTopLeftRadius: 24, 
-        borderTopRightRadius: 24, 
-        marginTop: -20, 
-        padding: 20,
-        paddingBottom: 30,
-    },
-    titleContainer: {
-        marginBottom: 24,
-        paddingBottom: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: COLORS.border,
-    },
-    eventTitle: { 
-        fontSize: 24, 
-        fontWeight: '700', 
-        color: COLORS.textPrimary,
-        lineHeight: 30,
-        marginBottom: 8,
-    },
-    subtitle: { 
-        fontSize: 16, 
-        color: COLORS.primary, 
-        fontWeight: '500',
-        lineHeight: 22,
-    },
-    infoCardsContainer: {
-        marginBottom: 28,
-    },
-    infoCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: COLORS.primaryLight,
-        borderRadius: 16,
-        padding: 16,
-        marginBottom: 12,
-    },
-    infoIcon: {
-        width: 44,
-        height: 44,
-        borderRadius: 12,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 16,
-    },
-    infoContent: {
-        flex: 1,
-    },
-    infoLabel: {
-        fontSize: 11,
-        color: COLORS.textSecondary,
-        marginBottom: 4,
-        fontWeight: '600',
-        letterSpacing: 0.5,
-    },
-    infoValue: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-        lineHeight: 20,
-    },
-    infoSubValue: {
-        fontSize: 13,
-        color: COLORS.textSecondary,
-        marginTop: 2,
-        lineHeight: 18,
-    },
-    section: {
-        marginBottom: 28,
-    },
-    sectionHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 16,
-    },
-    sectionIcon: {
-        width: 36,
-        height: 36,
-        borderRadius: 10,
-        backgroundColor: COLORS.primaryLight,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 12,
-    },
-    sectionTitle: {
-        fontSize: 17,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-    },
-    paragraph: {
-        fontSize: 15,
-        color: COLORS.textSecondary,
-        lineHeight: 24,
-    },
-    agendaContainer: {
-        backgroundColor: COLORS.primaryLight,
-        borderRadius: 16,
-        padding: 20,
-    },
-    agendaItem: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        marginBottom: 12,
-    },
-    agendaBullet: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-        backgroundColor: COLORS.primary,
-        marginTop: 9,
-        marginRight: 12,
-    },
-    agendaText: {
-        flex: 1,
-        fontSize: 14,
-        color: COLORS.textPrimary,
-        lineHeight: 22,
-    },
-    bottomBar: {
-        position: 'absolute',
-        bottom: 0,
-        width: '100%',
-        backgroundColor: COLORS.white,
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
-        paddingHorizontal: 20,
-        paddingVertical: 16,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 12,
-        elevation: 8,
-    },
-    registerButton: {
-        backgroundColor: COLORS.primary,
-        padding: 16,
-        borderRadius: 12,
-        flexDirection: 'row',
-        justifyContent: 'center',
-        alignItems: 'center',
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 4,
-    },
-    registerText: {
-        color: COLORS.white,
-        fontWeight: '600',
-        fontSize: 16,
-        marginRight: 8,
-        letterSpacing: 0.3,
-    },
+    container: { flex: 1, backgroundColor: COLORS.bg },
+    center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    header: { height: 60, backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 },
+    headerTitle: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
+    eventImage: { width: '100%', height: 250 },
+    contentCard: { marginTop: -25, backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 },
+    modeBadge: { backgroundColor: COLORS.primary, alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, marginBottom: 8 },
+    modeText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
+    eventTitle: { fontSize: 22, fontWeight: 'bold', color: COLORS.textPrimary },
+    subtitle: { fontSize: 14, color: COLORS.textSecondary, marginBottom: 15 },
+    infoCardsContainer: { gap: 12, marginBottom: 24 },
+    infoCard: { flexDirection: 'row', padding: 12, backgroundColor: COLORS.bg, borderRadius: 12, alignItems: 'center' },
+    infoIcon: { width: 36, height: 36, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+    infoLabel: { fontSize: 10, color: COLORS.textSecondary, fontWeight: 'bold' },
+    infoValue: { fontSize: 14, fontWeight: '600', color: COLORS.textPrimary },
+    infoSub: { fontSize: 12, color: COLORS.textSecondary },
+    section: { marginBottom: 20 },
+    sectionTitle: { fontSize: 16, fontWeight: 'bold', color: COLORS.textPrimary, marginBottom: 8 },
+    paragraph: { fontSize: 14, color: COLORS.textSecondary, lineHeight: 20 },
+    agendaRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
+    agendaDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.primary, marginRight: 10 },
+    stickyFooter: { position: 'absolute', bottom: 0, width: '100%', padding: 20, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: COLORS.border },
+    mainBtn: { backgroundColor: COLORS.primary, height: 50, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+    mainBtnText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+    modalContent: { backgroundColor: '#FFF', height: '80%', borderTopLeftRadius: 30, borderTopRightRadius: 30 },
+    modalHeader: { flexDirection: 'row', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#F0F0F0', justifyContent:'space-between' },
+    modalTitle: { fontSize: 18, fontWeight: 'bold' },
+    scrollContainer: { padding: 20 },
+    stageContainer: { alignItems: 'center', marginBottom: 40 },
+    stageLine: { width: '80%', height: 4, backgroundColor: '#E2E8F0', borderRadius: 2 },
+    stageText: { fontSize: 10, color: '#A0AEC0', marginTop: 10, letterSpacing: 2 },
+    rowWrapper: { flexDirection: 'row', alignItems: 'center', marginBottom: 25 },
+    rowLabel: { width: 30, fontSize: 14, fontWeight: 'bold', color: COLORS.textSecondary },
+    seatsRow: { flex: 1, flexDirection: 'row', justifyContent: 'center', gap: 15 },
+    seatBtn: { alignItems: 'center' },
+    seatIcon: { width: 32, height: 32 },
+    seatNum: { fontSize: 10, fontWeight: 'bold', marginTop: 4 },
+    seatPlaceholder: { width: 32, height: 32 },
+    infoModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
+    infoModalContent: { width: '85%', backgroundColor: '#FFF', borderRadius: 20, padding: 25 },
+    infoTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
+    infoDetailBox: { backgroundColor: COLORS.bg, padding: 15, borderRadius: 12, marginBottom: 20 },
+    infoRow: { fontSize: 16, marginBottom: 8, color: COLORS.textPrimary },
+    boldText: { fontWeight: 'bold' },
+    seatDescSubtitle: { fontSize: 13, color: COLORS.textSecondary, fontStyle: 'italic', marginBottom: 2 },
+    infoBtnRow: { flexDirection: 'row', gap: 10 },
+    cancelSubBtn: { flex: 1, height: 45, borderRadius: 10, borderWidth: 1, borderColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' },
+    confirmSubBtn: { flex: 1, height: 45, borderRadius: 10, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' }
 });

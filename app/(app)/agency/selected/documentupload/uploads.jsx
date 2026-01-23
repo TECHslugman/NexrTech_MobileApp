@@ -38,7 +38,7 @@ const DOCUMENT_STEPS = [
     { id: 'study_leave', label: 'Study Leave Letter', sub: 'Job security/Return offer letter', type: 'study_leave', required: false },
     { id: 'spouse_qual', label: 'Spouse Qualification', sub: 'Highest Qualification of Spouse', type: 'spouse_docs', required: false },
     { id: 'visa_history', label: 'Visa History', sub: 'Previous grants or refusals', type: 'visa_history', required: false },
-    { id: 'photo', label: 'Passport Photo', sub: 'Recent passport-size photo', type: 'passport_photo', required: true },
+    { id: 'financial', label: 'Financial Documents', sub: 'Bank statements, Sponsorship letters', type: 'bank_statement', required: true },
 ];
 
 export default function DynamicDocumentUpload() {

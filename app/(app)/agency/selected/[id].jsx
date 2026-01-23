@@ -23,6 +23,8 @@ const COLORS = {
     textSecondary: '#718096',
     accent: '#E2E8F0',
     lightBlue: '#E8F1FF',
+    online: '#48BB78', // Green for online
+    seated: '#ED8936', // Orange for seated
 };
 const GAP = 12;
 
@@ -38,15 +40,12 @@ export default function SelectedAgencyHome() {
     const [scholarships, setScholarships] = useState([]);
     const [mentors, setMentors] = useState([]);
 
-
-
     useEffect(() => {
         const fetchAllData = async () => {
             if (!userToken || !id) return;
             setLoading(true);
 
             try {
-                // Summary Log instead of multiple lines
                 console.log(`📡 Fetching Agency Data [ID: ${id}]`);
 
                 const endpoints = [
@@ -77,30 +76,25 @@ export default function SelectedAgencyHome() {
                     mentors: []
                 };
 
-                // 1. Handle Agency Profile (Main Data)
+                // 1. Agency Profile
                 if (agencyRes.ok) {
                     const aJson = await agencyRes.json();
                     const profile = aJson.agency || aJson.profile || aJson;
-
                     completeAgencyData = { ...completeAgencyData, ...profile };
-
-                    // Set active agency for the global context (used by Chat)
                     setActiveAgency({
                         id: id,
                         name: profile.organizationName || name || profile.name || "Agency",
                         logo: profile.logo || agencyLogo
                     });
-                } else {
-                    console.warn(`⚠️ Profile Fetch Failed: ${agencyRes.status}`);
                 }
 
-                // 2. Handle Universities
+                // 2. Universities
                 if (uniRes.ok) {
                     const uJson = await uniRes.json();
                     completeAgencyData.partnerUniversities = uJson.university?.partnerUniversities || uJson.partnerUniversities || [];
                 }
 
-                // 3. Handle Courses
+                // 3. Courses
                 if (coursesRes.ok) {
                     const cJson = await coursesRes.json();
                     const courseList = (cJson.courses || cJson || []).map(c => ({
@@ -111,16 +105,24 @@ export default function SelectedAgencyHome() {
                     completeAgencyData.courses = courseList;
                 }
 
-                // 4. Handle Events
+                // 4. Events (Updated to handle 'mode')
                 if (eventsRes.ok) {
                     const eJson = await eventsRes.json();
                     const rawEvents = Array.isArray(eJson.events) ? eJson.events : (Array.isArray(eJson) ? eJson : []);
 
                     const formattedEvents = rawEvents.map(event => {
                         const startDate = new Date(event.startAt || event.date || event.createdAt);
+                        
+                        // Extracting 'mode' from meetings array as per your Postman structure
+                        const eventMode = event.meetings && event.meetings.length > 0 
+                            ? event.meetings[0].mode 
+                            : 'venue';
+
                         return {
                             ...event,
                             id: event._id || event.id,
+                            mode: eventMode, 
+                            bannerImage: event.bannerImageUrl || event.image,
                             date: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
                             time: startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
                         };
@@ -129,7 +131,7 @@ export default function SelectedAgencyHome() {
                     completeAgencyData.events = formattedEvents;
                 }
 
-                // 5. Handle Scholarships
+                // 5. Scholarships
                 if (scholarRes.ok) {
                     const sJson = await scholarRes.json();
                     const rawScholar = sJson.scholarship || sJson || [];
@@ -142,7 +144,7 @@ export default function SelectedAgencyHome() {
                     completeAgencyData.scholarships = formattedScholar;
                 }
 
-                // 6. Handle Mentors
+                // 6. Mentors
                 if (mentorRes.ok) {
                     const mJson = await mentorRes.json();
                     const mentorsList = mJson.mentors || mJson || [];
@@ -151,8 +153,6 @@ export default function SelectedAgencyHome() {
                 }
 
                 setAgencyData(completeAgencyData);
-                console.log("✅ All data synchronized");
-
             } catch (error) {
                 console.error("❌ FetchAllData Error:", error);
             } finally {
@@ -162,8 +162,6 @@ export default function SelectedAgencyHome() {
 
         fetchAllData();
     }, [id, userToken]);
-
-
 
     if (loading) {
         return (
@@ -177,12 +175,10 @@ export default function SelectedAgencyHome() {
         <SafeAreaView style={styles.safe} edges={['top']}>
             <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
 
-            {/* HEADER */}
             <View style={styles.header}>
                 <View style={styles.headerTop}>
                     <View style={styles.agencyInfo}>
                         <View style={styles.agencyBadge}>
-                            {/* If agencyData.logo exists, show the Image, otherwise show the Initial */}
                             {agencyData?.logo ? (
                                 <Image
                                     source={{ uri: agencyData.logo }}
@@ -200,13 +196,11 @@ export default function SelectedAgencyHome() {
                             <Text style={styles.agencyTagline}>Education Services</Text>
                         </View>
                     </View>
-
                     <TouchableOpacity style={styles.notificationBtn}>
                         <Feather name="bell" size={22} color={COLORS.primary} />
                         <View style={styles.notificationDot} />
                     </TouchableOpacity>
                 </View>
-
                 <View style={styles.searchContainer}>
                     <Feather name="search" size={20} color="#B0BCCB" style={styles.searchIcon} />
                     <TextInput
@@ -217,54 +211,28 @@ export default function SelectedAgencyHome() {
                 </View>
             </View>
 
-            <ScrollView
-                contentContainerStyle={styles.body}
-                showsVerticalScrollIndicator={false}
-                overScrollMode="never"
-            >
+            <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false} overScrollMode="never">
+                
                 {/* QUICK STATS */}
                 <View style={styles.statsContainer}>
-                    <View style={styles.statCard}>
-                        <View style={styles.statIconContainer}>
-                            <MaterialIcons name="school" size={20} color={COLORS.primary} />
+                    {[
+                        { icon: "school", label: "Course", count: courses.length },
+                        { icon: "event", label: "Event", count: events.length },
+                        { icon: "workspace-premium", label: "Scholarship", count: scholarships.length },
+                        { icon: "people", label: "Mentor", count: mentors.length }
+                    ].map((stat, idx) => (
+                        <View key={idx} style={styles.statCard}>
+                            <View style={styles.statIconContainer}>
+                                <MaterialIcons name={stat.icon} size={20} color={COLORS.primary} />
+                            </View>
+                            <Text style={styles.statNumber}>{stat.count || 0}</Text>
+                            <Text style={stat.label}>{stat.label}</Text>
                         </View>
-                        <Text style={styles.statNumber}>{courses.length || 0}</Text>
-                        <Text style={styles.statLabel}>Course</Text>
-                    </View>
-                    <View style={styles.statCard}>
-                        <View style={styles.statIconContainer}>
-                            <MaterialIcons name="event" size={20} color={COLORS.primary} />
-                        </View>
-                        <Text style={styles.statNumber}>{events.length || 0}</Text>
-                        <Text style={styles.statLabel}>Event</Text>
-                    </View>
-                    <View style={styles.statCard}>
-                        <View style={styles.statIconContainer}>
-                            <MaterialIcons name="workspace-premium" size={20} color={COLORS.primary} />
-                        </View>
-                        <Text style={styles.statNumber}>{scholarships.length || 0}</Text>
-                        <Text style={styles.statLabel}>Scholarship</Text>
-                    </View>
-                    <View style={styles.statCard}>
-                        <View style={styles.statIconContainer}>
-                            <Ionicons name="people" size={20} color={COLORS.primary} />
-                        </View>
-                        <Text style={styles.statNumber}>{mentors.length || 0}</Text>
-                        <Text style={styles.statLabel}>Mentor</Text>
-                    </View>
+                    ))}
                 </View>
 
                 {/* COURSES */}
-                <SectionHeader
-                    title="Featured Courses"
-                    onBtnPress={() => router.push({
-                        pathname: `/agency/selected/courses/${id}`,
-                        params: {
-                            courses: JSON.stringify(courses),
-                            agencyName: agencyData?.organizationName
-                        }
-                    })}
-                />
+                <SectionHeader title="Featured Courses" onBtnPress={() => router.push({ pathname: `/agency/selected/courses/${id}`, params: { courses: JSON.stringify(courses), agencyName: agencyData?.organizationName } })} />
                 <FlatList
                     horizontal
                     data={courses}
@@ -272,25 +240,16 @@ export default function SelectedAgencyHome() {
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.listContent}
                     renderItem={({ item, index }) => (
-                        <View style={[styles.courseCard, {
-                            backgroundColor: index % 2 === 0 ? '#FF6B6B' : '#949BFF',
-                        }]}>
-                            <View style={styles.courseIcon}>
-                                <Ionicons name="book-outline" size={20} color="rgba(255,255,255,0.9)" />
-                            </View>
-                            <Text style={styles.courseText} numberOfLines={2}>
-                                {item.title || item}
-                            </Text>
+                        <View style={[styles.courseCard, { backgroundColor: index % 2 === 0 ? '#FF6B6B' : '#949BFF' }]}>
+                            <View style={styles.courseIcon}><Ionicons name="book-outline" size={20} color="rgba(255,255,255,0.9)" /></View>
+                            <Text style={styles.courseText} numberOfLines={2}>{item.title || item}</Text>
                         </View>
                     )}
                     ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
                 />
 
-                {/* EVENTS */}
-                <SectionHeader
-                    title="Upcoming Events"
-                    onBtnPress={() => router.push(`/agency/selected/events/${id}`)}
-                />
+                {/* EVENTS (New Mode Badge Added) */}
+                <SectionHeader title="Upcoming Events" onBtnPress={() => router.push(`/agency/selected/events/${id}`)} />
                 {events.length > 0 ? (
                     <FlatList
                         horizontal
@@ -303,16 +262,19 @@ export default function SelectedAgencyHome() {
                                 style={styles.eventCardHorizontal}
                                 onPress={() => router.push({
                                     pathname: `/agency/selected/events/details`,
-                                    params: {
-                                        id: item._id,
-                                        title: item.title,
-                                        image: item.image
-                                    }
+                                    params: { id: item._id, title: item.title, image: item.bannerImageUrl, date: item.date, time: item.time}
                                 })}
                             >
-                                <Image source={{ uri: item.image }} style={styles.eventImgHorizontal} resizeMode="cover" />
+                                <View style={styles.imageWrapper}>
+                                    <Image source={{ uri: item.bannerImageUrl  }} style={styles.eventImgHorizontal} resizeMode="cover" />
+                                    {/* Mode Badge Overlay */}
+                                    <View style={[styles.modeBadge, { backgroundColor: item.mode === 'online' ? COLORS.online : COLORS.primary }]}>
+                                        <Text style={styles.modeBadgeText}>{item.mode}</Text>
+                                    </View>
+                                </View>
+                                
                                 <View style={styles.eventContentHorizontal}>
-                                    <Text style={styles.eventTitleHorizontal} numberOfLines={2}>{item.title}</Text>
+                                    <Text style={styles.eventTitleHorizontal} numberOfLines={1}>{item.title}</Text>
                                     <View style={styles.eventDetails}>
                                         <View style={styles.eventDetailRow}>
                                             <Feather name="calendar" size={12} color={COLORS.textSecondary} />
@@ -323,7 +285,6 @@ export default function SelectedAgencyHome() {
                                             <Text style={styles.eventDetailText}>{item.time}</Text>
                                         </View>
                                     </View>
-
                                     <View style={styles.eventAction}>
                                         <Text style={styles.eventActionText}>Details</Text>
                                         <Feather name="arrow-right" size={12} color={COLORS.primary} />
@@ -338,16 +299,7 @@ export default function SelectedAgencyHome() {
                 )}
 
                 {/* SCHOLARSHIPS */}
-                <SectionHeader
-                    title="Available Scholarships"
-                    onBtnPress={() => router.push({
-                        pathname: `/agency/selected/scholarships/${id}`,
-                        params: {
-                            initialData: JSON.stringify(scholarships),
-                            agencyName: agencyData?.organizationName
-                        }
-                    })}
-                />
+                <SectionHeader title="Available Scholarships" onBtnPress={() => router.push({ pathname: `/agency/selected/scholarships/${id}`, params: { initialData: JSON.stringify(scholarships), agencyName: agencyData?.organizationName } })} />
                 <FlatList
                     horizontal
                     data={scholarships}
@@ -355,32 +307,16 @@ export default function SelectedAgencyHome() {
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.listContent}
                     renderItem={({ item }) => (
-                        <TouchableOpacity
-                            style={styles.scholarshipCard}
-                            onPress={() => router.push({
-                                pathname: `/agency/selected/scholarships/details`,
-                                params: {
-                                    id: item.id,
-                                    title: item.title
-                                }
-                            })}
-                        >
-                            <View style={styles.scholarshipHeader}>
-                                <MaterialIcons name="workspace-premium" size={18} color={COLORS.white} />
-                            </View>
-                            <Text style={styles.scholarshipText} numberOfLines={2}>
-                                {item.title}
-                            </Text>
+                        <TouchableOpacity style={styles.scholarshipCard} onPress={() => router.push({ pathname: `/agency/selected/scholarships/details`, params: { id: item.id, title: item.title } })}>
+                            <View style={styles.scholarshipHeader}><MaterialIcons name="workspace-premium" size={18} color={COLORS.white} /></View>
+                            <Text style={styles.scholarshipText} numberOfLines={2}>{item.title}</Text>
                         </TouchableOpacity>
                     )}
                     ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
                 />
 
                 {/* UNIVERSITIES */}
-                <SectionHeader
-                    title="Partner Universities"
-                    onBtnPress={() => router.push({ pathname: `/agency/selected/universities/${id}` })}
-                />
+                <SectionHeader title="Partner Universities" onBtnPress={() => router.push({ pathname: `/agency/selected/universities/${id}` })} />
                 <FlatList
                     horizontal
                     data={agencyData?.partnerUniversities || []}
@@ -388,52 +324,22 @@ export default function SelectedAgencyHome() {
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.listContent}
                     renderItem={({ item }) => (
-                        <TouchableOpacity
-                            style={styles.uniTile}
-                            onPress={() => router.push({
-                                pathname: `/agency/selected/universities/details`,
-                                params: {
-                                    id: item._id,
-                                    name: item.name,
-                                    logo: item.logo,
-                                    website: item.websiteUrl
-                                }
-                            })}
-                        >
-                            {item.logo ? (
-                                <Image
-                                    source={{ uri: item.logo }}
-                                    style={styles.uniImg}
-                                    resizeMode="contain"
-                                />
-                            ) : (
-                                <View style={styles.uniPlaceholder}>
-                                    <Text style={styles.uniPlaceholderText}>
-                                        {item.name?.substring(0, 2).toUpperCase() || 'UN'}
-                                    </Text>
-                                </View>
-                            )}
+                        <TouchableOpacity style={styles.uniTile} onPress={() => router.push({ pathname: `/agency/selected/universities/details`, params: { id: item._id, name: item.name, logo: item.logo, website: item.websiteUrl } })}>
+                            {item.logo ? <Image source={{ uri: item.logo }} style={styles.uniImg} resizeMode="contain" /> : <View style={styles.uniPlaceholder}><Text style={styles.uniPlaceholderText}>{item.name?.substring(0, 2).toUpperCase() || 'UN'}</Text></View>}
                         </TouchableOpacity>
                     )}
                     ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
                 />
 
                 {/* MENTORS */}
-                <SectionHeader
-                    title="Expert Mentors"
-                    onBtnPress={() => router.push(`/agency/selected/mentors/${id}`)}
-                />
+                <SectionHeader title="Expert Mentors" onBtnPress={() => router.push(`/agency/selected/mentors/${id}`)} />
                 {mentors.map((mentor) => (
                     <View key={mentor.id} style={styles.mentorCard}>
                         <Image source={{ uri: mentor.avatar }} style={styles.mentorAvatar} />
                         <View style={styles.mentorInfo}>
                             <Text style={styles.mentorName}>{mentor.name}</Text>
                             <Text style={styles.mentorSub}>{mentor.bio}</Text>
-                            <View style={styles.mentorTags}>
-                                <View style={styles.mentorTag}>
-                                    <Text style={styles.mentorTagText}>Higher Education</Text>
-                                </View>
-                            </View>
+                            <View style={styles.mentorTags}><View style={styles.mentorTag}><Text style={styles.mentorTagText}>Higher Education</Text></View></View>
                         </View>
                     </View>
                 ))}
@@ -672,6 +578,30 @@ const styles = StyleSheet.create({
         color: COLORS.textSecondary,
         fontStyle: 'italic',
         marginVertical: 20,
+    },
+
+    modeBadge: {
+        position: 'absolute',
+        top: 8,
+        left: 8,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
+        zIndex: 1,
+    },
+    modeBadgeText: {
+        color: '#FFFFFF',
+        fontSize: 10,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+    },
+    eventCardHorizontal: {
+        width: 220, // Slightly adjusted width to accommodate labels
+        backgroundColor: COLORS.cardBg,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        overflow: 'hidden',
     },
     scholarshipCard: {
         width: 180,

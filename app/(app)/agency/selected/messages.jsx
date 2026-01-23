@@ -423,6 +423,8 @@ const styles = StyleSheet.create({
         right: 20,
         bottom: 20,
         width: 56,
+
+        
         height: 56,
         borderRadius: 28,
         backgroundColor: '#769FCD',
