@@ -5,11 +5,14 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
 
+const DEFAULT_IMAGE = 'https://i.pravatar.cc/300';
+const BASE_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1';
+
 export default function MentorDetails() {
-    const { mentorId, name: initialName } = useLocalSearchParams();
+    const { id, agencyId } = useLocalSearchParams(); 
     const router = useRouter();
     const { userToken } = useAuth();
 
@@ -18,14 +21,15 @@ export default function MentorDetails() {
     const [connecting, setConnecting] = useState(false);
 
     useEffect(() => {
-        fetchMentorDetails();
-    }, [mentorId]);
+        if (id && agencyId) {
+            fetchMentorDetails();
+        }
+    }, [id, agencyId]);
 
     const fetchMentorDetails = async () => {
         try {
             setLoading(true);
-            // API endpoint for fetching mentor details
-            const res = await fetch(`https://edu-agent-backend-nine.vercel.app/api/v1/mentors/${mentorId}`, {
+            const res = await fetch(`${BASE_URL}/students/mentors/${agencyId}`, {
                 headers: { 
                     'Authorization': `Bearer ${userToken}`,
                     'Content-Type': 'application/json'
@@ -34,41 +38,19 @@ export default function MentorDetails() {
 
             if (res.ok) {
                 const json = await res.json();
-                setMentor(json.data || json.mentor);
+                const foundMentor = json.mentors.find(m => m._id === id);
+                
+                if (foundMentor) {
+                    setMentor(foundMentor);
+                } else {
+                    Alert.alert("Error", "Mentor details not found.");
+                }
             } else {
-                // Fallback Data
-                setMentor({
-                    id: mentorId,
-                    name: initialName || 'Karma Dema',
-                    image: 'https://i.pravatar.cc/300?u=karma',
-                    title: 'Education Consultant & Mentor',
-                    about: `${initialName || 'Karma Dema'} is a dedicated education consultant with over 2 years of experience guiding students through the complex process of studying abroad. She specializes in helping students navigate university applications, visa procedures, and scholarship opportunities.`,
-                    experience: '2+ years of mentoring students for higher education abroad',
-                    expertise: ['University Applications', 'Visa Guidance', 'Scholarship Assistance', 'Career Counseling'],
-                    education: [
-                        "Master's in International Education – University of Canberra",
-                        "Certified Education Counselor (ICEF Trained)",
-                        "Bachelor's in Education – Royal University of Bhutan"
-                    ],
-                    availability: [
-                        "Monday to Friday (10 AM – 5 PM)",
-                        "Saturday (11 AM – 3 PM)",
-                        "Online Meetings (Zoom/Google Meet)",
-                        "In-person Appointments (By Booking)"
-                    ],
-                    contact: {
-                        email: 'karma.dema@example.com',
-                        phone: '+975-17-123456',
-                        zoom: 'https://zoom.us/j/karmadema'
-                    },
-                    successRate: '92%',
-                    studentsHelped: '42+',
-                    languages: ['English', 'Dzongkha', 'Hindi']
-                });
+                Alert.alert("Error", "Failed to fetch mentor details.");
             }
         } catch (e) {
-            console.error("Error fetching mentor:", e);
-            Alert.alert("Error", "Could not load mentor details. Please check your connection.");
+            console.error("Fetch Error:", e);
+            Alert.alert("Connection Error", "Please check your network.");
         } finally {
             setLoading(false);
         }
@@ -77,8 +59,7 @@ export default function MentorDetails() {
     const handleConnect = async () => {
         setConnecting(true);
         try {
-            // API call to request connection
-            const res = await fetch(`https://edu-agent-backend-nine.vercel.app/api/v1/mentors/${mentorId}/connect`, {
+            const res = await fetch(`${BASE_URL}/students/mentors/connect/${id}`, {
                 method: 'POST',
                 headers: { 
                     'Authorization': `Bearer ${userToken}`,
@@ -87,40 +68,21 @@ export default function MentorDetails() {
             });
 
             if (res.ok) {
-                Alert.alert(
-                    "Connection Request Sent",
-                    `${mentor?.name} has been notified. You'll receive a confirmation shortly.`,
-                    [{ text: "OK" }]
-                );
+                Alert.alert("Success", "Connection request sent!");
             } else {
-                // Fallback action
-                Alert.alert(
-                    "Request Sent",
-                    `Your connection request to ${mentor?.name} has been recorded.`,
-                    [{ text: "OK" }]
-                );
+                Alert.alert("Notice", "Your request is being processed.");
             }
         } catch (error) {
-            Alert.alert("Error", "Failed to send connection request. Please try again.");
+            Alert.alert("Error", "Failed to send request.");
         } finally {
             setConnecting(false);
         }
     };
 
-    const handleEmail = () => {
-        Linking.openURL(`mailto:${mentor?.contact?.email}`);
-    };
-
-    const handleCall = () => {
-        Linking.openURL(`tel:${mentor?.contact?.phone}`);
-    };
-
     if (loading) {
         return (
             <SafeAreaView style={styles.loadingContainer}>
-                <StatusBar barStyle="dark-content" />
                 <ActivityIndicator size="large" color="#769FCD" />
-                <Text style={styles.loadingText}>Loading mentor details...</Text>
             </SafeAreaView>
         );
     }
@@ -129,7 +91,6 @@ export default function MentorDetails() {
         <SafeAreaView style={styles.container}>
             <StatusBar barStyle="dark-content" backgroundColor="#F8FAFD" />
             
-            {/* Header with Gradient */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
                     <Ionicons name="chevron-back" size={28} color="#FFF" />
@@ -140,137 +101,107 @@ export default function MentorDetails() {
                 </TouchableOpacity>
             </View>
 
-            <ScrollView 
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.scrollContent}
-            >
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+                
                 {/* Profile Section */}
                 <View style={styles.profileSection}>
                     <View style={styles.avatarContainer}>
-                        <Image source={{ uri: mentor?.image }} style={styles.profileImage} />
-                        <View style={styles.onlineIndicator} />
+                        <Image 
+                            source={{ uri: mentor?.profilepic || DEFAULT_IMAGE }} 
+                            style={styles.profileImage} 
+                        />
                     </View>
                     
                     <Text style={styles.profileName}>{mentor?.name}</Text>
-                    <Text style={styles.profileTitle}>{mentor?.title || 'Education Mentor'}</Text>
+                    <Text style={styles.profileTitle}>Certified Education Mentor</Text>
                     
-                    {/* Quick Stats */}
                     <View style={styles.statsContainer}>
                         <View style={styles.statItem}>
-                            <Text style={styles.statValue}>{mentor?.successRate || '92%'}</Text>
-                            <Text style={styles.statLabel}>Success Rate</Text>
+                            <Text style={styles.statValue}>{mentor?.status || 'Active'}</Text>
+                            <Text style={styles.statLabel}>Status</Text>
                         </View>
                         <View style={styles.statDivider} />
                         <View style={styles.statItem}>
-                            <Text style={styles.statValue}>{mentor?.studentsHelped || '42+'}</Text>
-                            <Text style={styles.statLabel}>Students Helped</Text>
+                            <Text style={styles.statValue}>{mentor?.experiences?.length || 0}</Text>
+                            <Text style={styles.statLabel}>Experiences</Text>
                         </View>
                         <View style={styles.statDivider} />
                         <View style={styles.statItem}>
-                            <Text style={styles.statValue}>{mentor?.languages?.length || '3'}</Text>
-                            <Text style={styles.statLabel}>Languages</Text>
+                            <Text style={styles.statValue}>{mentor?.isVerified ? 'Yes' : 'No'}</Text>
+                            <Text style={styles.statLabel}>Verified</Text>
                         </View>
                     </View>
                 </View>
 
                 {/* Action Buttons */}
                 <View style={styles.actionButtons}>
-                    <TouchableOpacity style={styles.actionBtn} onPress={handleCall}>
+                    <TouchableOpacity style={styles.actionBtn} onPress={() => Linking.openURL(`tel:${mentor?.phone}`)}>
                         <Ionicons name="call" size={22} color="#769FCD" />
                         <Text style={styles.actionBtnText}>Call</Text>
                     </TouchableOpacity>
                     
-                    <TouchableOpacity style={styles.actionBtn} onPress={handleEmail}>
+                    <TouchableOpacity style={styles.actionBtn} onPress={() => Linking.openURL(`mailto:${mentor?.email}`)}>
                         <MaterialIcons name="email" size={22} color="#769FCD" />
                         <Text style={styles.actionBtnText}>Email</Text>
                     </TouchableOpacity>
-                    
-                    <TouchableOpacity style={styles.actionBtn}>
-                        <Ionicons name="calendar" size={22} color="#769FCD" />
-                        <Text style={styles.actionBtnText}>Schedule</Text>
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity style={styles.actionBtn}>
-                        <FontAwesome5 name="whatsapp" size={22} color="#769FCD" />
-                        <Text style={styles.actionBtnText}>Message</Text>
-                    </TouchableOpacity>
-                </View>
-
-                {/* About Section */}
-                <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <Ionicons name="person" size={20} color="#769FCD" />
-                        <Text style={styles.sectionTitle}>About</Text>
-                    </View>
-                    <View style={styles.sectionContent}>
-                        <Text style={styles.aboutText}>{mentor?.about}</Text>
-                    </View>
                 </View>
 
                 {/* Experience Section */}
-                <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <Ionicons name="briefcase" size={20} color="#769FCD" />
-                        <Text style={styles.sectionTitle}>Experience</Text>
-                    </View>
-                    <View style={styles.sectionContent}>
-                        <View style={styles.experienceItem}>
-                            <Ionicons name="checkmark-circle" size={18} color="#10B981" style={styles.experienceIcon} />
-                            <Text style={styles.experienceText}>{mentor?.experience}</Text>
+                {mentor?.experiences && mentor.experiences.length > 0 && (
+                    <View style={styles.section}>
+                        <View style={styles.sectionHeader}>
+                            <Ionicons name="briefcase" size={20} color="#769FCD" />
+                            <Text style={styles.sectionTitle}>Experience</Text>
+                        </View>
+                        <View style={styles.sectionContent}>
+                            {mentor.experiences.map((exp, index) => (
+                                <View key={index} style={styles.experienceItem}>
+                                    <Ionicons name="checkmark-circle" size={18} color="#10B981" style={styles.experienceIcon} />
+                                    <Text style={styles.experienceText}>{exp}</Text>
+                                </View>
+                            ))}
                         </View>
                     </View>
-                </View>
-
-                {/* Expertise Section */}
-                <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <Ionicons name="star" size={20} color="#769FCD" />
-                        <Text style={styles.sectionTitle}>Areas of Expertise</Text>
-                    </View>
-                    <View style={styles.tagsContainer}>
-                        {mentor?.expertise?.map((skill, index) => (
-                            <View key={index} style={styles.tag}>
-                                <Text style={styles.tagText}>{skill}</Text>
-                            </View>
-                        ))}
-                    </View>
-                </View>
+                )}
 
                 {/* Education Section */}
-                <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <Ionicons name="school" size={20} color="#769FCD" />
-                        <Text style={styles.sectionTitle}>Education</Text>
+                {mentor?.education && mentor.education.length > 0 && (
+                    <View style={styles.section}>
+                        <View style={styles.sectionHeader}>
+                            <Ionicons name="school" size={20} color="#769FCD" />
+                            <Text style={styles.sectionTitle}>Education</Text>
+                        </View>
+                        <View style={styles.sectionContent}>
+                            {mentor.education.map((item, index) => (
+                                <View key={index} style={styles.educationItem}>
+                                    <Ionicons name="ellipse" size={8} color="#769FCD" style={styles.bulletIcon} />
+                                    <Text style={styles.educationText}>{item}</Text>
+                                </View>
+                            ))}
+                        </View>
                     </View>
-                    <View style={styles.sectionContent}>
-                        {mentor?.education?.map((item, index) => (
-                            <View key={index} style={styles.educationItem}>
-                                <Ionicons name="ellipse" size={8} color="#769FCD" style={styles.bulletIcon} />
-                                <Text style={styles.educationText}>{item}</Text>
-                            </View>
-                        ))}
-                    </View>
-                </View>
+                )}
 
                 {/* Availability Section */}
-                <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <Ionicons name="time" size={20} color="#769FCD" />
-                        <Text style={styles.sectionTitle}>Availability</Text>
+                {mentor?.availability && mentor.availability.length > 0 && (
+                    <View style={styles.section}>
+                        <View style={styles.sectionHeader}>
+                            <Ionicons name="time" size={20} color="#769FCD" />
+                            <Text style={styles.sectionTitle}>Availability</Text>
+                        </View>
+                        <View style={styles.sectionContent}>
+                            {mentor.availability.map((item, index) => (
+                                <View key={index} style={styles.availabilityItem}>
+                                    <Ionicons name="time-outline" size={16} color="#769FCD" style={styles.availabilityIcon} />
+                                    <Text style={styles.availabilityText}>{item}</Text>
+                                </View>
+                            ))}
+                        </View>
                     </View>
-                    <View style={styles.sectionContent}>
-                        {mentor?.availability?.map((item, index) => (
-                            <View key={index} style={styles.availabilityItem}>
-                                <Ionicons name="checkmark" size={16} color="#10B981" style={styles.availabilityIcon} />
-                                <Text style={styles.availabilityText}>{item}</Text>
-                            </View>
-                        ))}
-                    </View>
-                </View>
+                )}
 
-                {/* Connect Button */}
                 <TouchableOpacity 
-                    style={styles.connectBtn}
+                    style={[styles.connectBtn, connecting && { opacity: 0.7 }]}
                     onPress={handleConnect}
                     disabled={connecting}
                 >
@@ -283,6 +214,8 @@ export default function MentorDetails() {
                         </>
                     )}
                 </TouchableOpacity>
+
+                <View style={{ height: 40 }} />
             </ScrollView>
         </SafeAreaView>
     );

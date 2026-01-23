@@ -27,6 +27,7 @@ const COLORS = {
     seated: '#ED8936', // Orange for seated
 };
 const GAP = 12;
+const CARD_BORDER_RADIUS = 16;
 
 export default function SelectedAgencyHome() {
     const router = useRouter();
@@ -54,7 +55,7 @@ export default function SelectedAgencyHome() {
                     `${BASE_URL}/agency/courses/agency/${id}`,
                     `${BASE_URL}/agency/events/student/${id}`,
                     `${BASE_URL}/agency/scholarships/agency/${id}`,
-                    `${BASE_URL}/agency/mentors/agency/${id}`
+                    `${BASE_URL}/students/mentors/${id}`
                 ];
 
                 const headers = {
@@ -105,23 +106,22 @@ export default function SelectedAgencyHome() {
                     completeAgencyData.courses = courseList;
                 }
 
-                // 4. Events (Updated to handle 'mode')
+                // 4. Events
                 if (eventsRes.ok) {
                     const eJson = await eventsRes.json();
                     const rawEvents = Array.isArray(eJson.events) ? eJson.events : (Array.isArray(eJson) ? eJson : []);
 
                     const formattedEvents = rawEvents.map(event => {
                         const startDate = new Date(event.startAt || event.date || event.createdAt);
-                        
-                        // Extracting 'mode' from meetings array as per your Postman structure
-                        const eventMode = event.meetings && event.meetings.length > 0 
-                            ? event.meetings[0].mode 
+
+                        const eventMode = event.meetings && event.meetings.length > 0
+                            ? event.meetings[0].mode
                             : 'venue';
 
                         return {
                             ...event,
                             id: event._id || event.id,
-                            mode: eventMode, 
+                            mode: eventMode,
                             bannerImage: event.bannerImageUrl || event.image,
                             date: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
                             time: startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
@@ -147,9 +147,18 @@ export default function SelectedAgencyHome() {
                 // 6. Mentors
                 if (mentorRes.ok) {
                     const mJson = await mentorRes.json();
-                    const mentorsList = mJson.mentors || mJson || [];
-                    setMentors(mentorsList);
-                    completeAgencyData.mentors = mentorsList;
+                    const rawMentors = mJson.mentors || [];
+
+                    const formattedMentors = rawMentors.map(m => ({
+                        id: m._id,
+                        name: m.name,
+                        profilepic: m.profilepic,
+                        experience: m.experiences && m.experiences.length > 0
+                            ? m.experiences[0]
+                            : "Professional mentor for higher education"
+                    }));
+
+                    setMentors(formattedMentors);
                 }
 
                 setAgencyData(completeAgencyData);
@@ -196,10 +205,7 @@ export default function SelectedAgencyHome() {
                             <Text style={styles.agencyTagline}>Education Services</Text>
                         </View>
                     </View>
-                    <TouchableOpacity style={styles.notificationBtn}>
-                        <Feather name="bell" size={22} color={COLORS.primary} />
-                        <View style={styles.notificationDot} />
-                    </TouchableOpacity>
+                    {/* Notification icon removed as requested */}
                 </View>
                 <View style={styles.searchContainer}>
                     <Feather name="search" size={20} color="#B0BCCB" style={styles.searchIcon} />
@@ -212,7 +218,7 @@ export default function SelectedAgencyHome() {
             </View>
 
             <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false} overScrollMode="never">
-                
+
                 {/* QUICK STATS */}
                 <View style={styles.statsContainer}>
                     {[
@@ -226,12 +232,12 @@ export default function SelectedAgencyHome() {
                                 <MaterialIcons name={stat.icon} size={20} color={COLORS.primary} />
                             </View>
                             <Text style={styles.statNumber}>{stat.count || 0}</Text>
-                            <Text style={stat.label}>{stat.label}</Text>
+                            <Text style={styles.statLabel}>{stat.label}</Text>
                         </View>
                     ))}
                 </View>
 
-                {/* COURSES */}
+                {/* COURSES - Keeping original color scheme */}
                 <SectionHeader title="Featured Courses" onBtnPress={() => router.push({ pathname: `/agency/selected/courses/${id}`, params: { courses: JSON.stringify(courses), agencyName: agencyData?.organizationName } })} />
                 <FlatList
                     horizontal
@@ -248,7 +254,7 @@ export default function SelectedAgencyHome() {
                     ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
                 />
 
-                {/* EVENTS (New Mode Badge Added) */}
+                {/* EVENTS */}
                 <SectionHeader title="Upcoming Events" onBtnPress={() => router.push(`/agency/selected/events/${id}`)} />
                 {events.length > 0 ? (
                     <FlatList
@@ -262,17 +268,16 @@ export default function SelectedAgencyHome() {
                                 style={styles.eventCardHorizontal}
                                 onPress={() => router.push({
                                     pathname: `/agency/selected/events/details`,
-                                    params: { id: item._id, title: item.title, image: item.bannerImageUrl, date: item.date, time: item.time}
+                                    params: { id: item._id, title: item.title, image: item.bannerImageUrl, date: item.date, time: item.time }
                                 })}
                             >
                                 <View style={styles.imageWrapper}>
-                                    <Image source={{ uri: item.bannerImageUrl  }} style={styles.eventImgHorizontal} resizeMode="cover" />
-                                    {/* Mode Badge Overlay */}
+                                    <Image source={{ uri: item.bannerImageUrl }} style={styles.eventImgHorizontal} resizeMode="cover" />
                                     <View style={[styles.modeBadge, { backgroundColor: item.mode === 'online' ? COLORS.online : COLORS.primary }]}>
                                         <Text style={styles.modeBadgeText}>{item.mode}</Text>
                                     </View>
                                 </View>
-                                
+
                                 <View style={styles.eventContentHorizontal}>
                                     <Text style={styles.eventTitleHorizontal} numberOfLines={1}>{item.title}</Text>
                                     <View style={styles.eventDetails}>
@@ -331,18 +336,36 @@ export default function SelectedAgencyHome() {
                     ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
                 />
 
-                {/* MENTORS */}
-                <SectionHeader title="Expert Mentors" onBtnPress={() => router.push(`/agency/selected/mentors/${id}`)} />
-                {mentors.map((mentor) => (
-                    <View key={mentor.id} style={styles.mentorCard}>
-                        <Image source={{ uri: mentor.avatar }} style={styles.mentorAvatar} />
-                        <View style={styles.mentorInfo}>
-                            <Text style={styles.mentorName}>{mentor.name}</Text>
-                            <Text style={styles.mentorSub}>{mentor.bio}</Text>
-                            <View style={styles.mentorTags}><View style={styles.mentorTag}><Text style={styles.mentorTagText}>Higher Education</Text></View></View>
-                        </View>
-                    </View>
-                ))}
+                {/* MENTORS SECTION - Keeping original layout but making it consistent */}
+                <SectionHeader title="Meet the Mentors" onBtnPress={() => router.push(`/agency/selected/mentors/${id}`)} />
+                <FlatList
+                    horizontal
+                    data={mentors}
+                    keyExtractor={(item) => item.id}
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.listContent}
+                    renderItem={({ item }) => (
+                        <TouchableOpacity
+                            style={styles.mentorCard}
+                            onPress={() => router.push({
+                                pathname: `/agency/selected/mentors/details`,
+                                params: { id: item.id, agencyId: id }
+                            })}
+                        >
+                            <Image
+                                source={item.profilepic ? { uri: item.profilepic } : DEFAULT_IMAGE}
+                                style={styles.mentorCircleImg}
+                            />
+                            <View style={styles.mentorTextContainer}>
+                                <Text style={styles.mentorDisplayName}>{item.name}</Text>
+                                <Text style={styles.mentorExpText} numberOfLines={3}>
+                                    {item.experience}
+                                </Text>
+                            </View>
+                        </TouchableOpacity>
+                    )}
+                    ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
+                />
 
                 <View style={{ height: 100 }} />
             </ScrollView>
@@ -412,28 +435,6 @@ const styles = StyleSheet.create({
         color: COLORS.textSecondary,
         marginTop: 2,
     },
-    notificationBtn: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: COLORS.white,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: COLORS.border,
-        position: 'relative',
-    },
-    notificationDot: {
-        position: 'absolute',
-        top: 12,
-        right: 12,
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: '#FF4757',
-        borderWidth: 1.5,
-        borderColor: COLORS.white,
-    },
     searchContainer: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -488,6 +489,7 @@ const styles = StyleSheet.create({
     },
     listContent: {
         paddingHorizontal: 2,
+        paddingBottom: 8,
     },
     sectionHeader: {
         flexDirection: 'row',
@@ -595,13 +597,8 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         textTransform: 'uppercase',
     },
-    eventCardHorizontal: {
-        width: 220, // Slightly adjusted width to accommodate labels
-        backgroundColor: COLORS.cardBg,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-        overflow: 'hidden',
+    imageWrapper: {
+        position: 'relative',
     },
     scholarshipCard: {
         width: 180,
@@ -635,49 +632,53 @@ const styles = StyleSheet.create({
         width: '100%',
         height: '100%',
     },
+    uniPlaceholder: {
+        width: '100%',
+        height: '100%',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    uniPlaceholderText: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: COLORS.primary,
+    },
+    // MENTOR CARD - Keeping original style but ensuring consistency
     mentorCard: {
+        width: 240,
+        backgroundColor: COLORS.white,
+        borderRadius: 12,
+        padding: 15,
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: COLORS.white,
-        borderRadius: 16,
-        padding: 14,
         borderWidth: 1,
         borderColor: COLORS.border,
-        marginBottom: 10,
+        // Shadow/Elevation for consistency
+        elevation: 1,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
     },
-    mentorAvatar: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
+    mentorCircleImg: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: COLORS.accent,
     },
-    mentorInfo: {
+    mentorTextContainer: {
         flex: 1,
-        marginLeft: 14,
+        marginLeft: 15,
     },
-    mentorName: {
+    mentorDisplayName: {
         fontSize: 16,
-        fontWeight: '700',
-        color: COLORS.textPrimary,
+        fontWeight: '500',
+        color: COLORS.primary,
         marginBottom: 4,
     },
-    mentorSub: {
+    mentorExpText: {
         fontSize: 13,
-        color: COLORS.textSecondary,
+        color: COLORS.textPrimary,
         lineHeight: 18,
-        marginBottom: 8,
-    },
-    mentorTags: {
-        flexDirection: 'row',
-    },
-    mentorTag: {
-        backgroundColor: 'rgba(118, 159, 205, 0.1)',
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 8,
-    },
-    mentorTagText: {
-        fontSize: 11,
-        color: COLORS.primary,
-        fontWeight: '600',
-    },
+    }
 });
