@@ -6,16 +6,25 @@ class SocketService {
     constructor() {
         this.socket = null;
         this.token = null;
+        this.currentAgencyId = null; // Track current agency
         this.isConnecting = false;
         this.connectionCallbacks = [];
         this.activeListeners = new Set(); // Track active listeners
     }
 
-    connect(token) {
-        // If already connecting or connected with same token, skip
-        if ((this.socket?.connected || this.isConnecting) && this.token === token) {
-            console.log("♻️ Using existing socket connection");
+    connect(token, agencyId = null) {
+        // If already connecting or connected with same token and agency, skip
+        if ((this.socket?.connected || this.isConnecting) && 
+            this.token === token && 
+            this.currentAgencyId === agencyId) {
+            console.log("♻️ Using existing socket connection for agency:", agencyId); // FIXED: removed extra "66"
             return this.socket;
+        }
+
+        // If agency changed, disconnect old socket
+        if (this.currentAgencyId !== agencyId && this.socket?.connected) {
+            console.log("🔄 Agency changed, reconnecting socket");
+            this.disconnect();
         }
 
         if (!token) {
@@ -24,7 +33,10 @@ class SocketService {
         }
 
         this.token = token;
+        this.currentAgencyId = agencyId;
         this.isConnecting = true;
+
+        console.log("🔌 Connecting socket for agency:", agencyId);
 
         this.socket = io(SOCKET_URL, {
             transports: ["websocket"],
@@ -38,9 +50,12 @@ class SocketService {
 
         // Connection events
         this.socket.on("connect", () => {
-            console.log("✅ Socket Connected");
+            console.log("✅ Socket Connected for agency:", this.currentAgencyId);
             this.isConnecting = false;
             this.notifyConnectionChange(true);
+            
+            // Request conversation list on connect (backend already sends it automatically)
+            console.log("📋 Socket connected, ready to receive conversation list");
         });
 
         this.socket.on("connect_error", (err) => {
@@ -52,19 +67,34 @@ class SocketService {
         this.socket.on("disconnect", (reason) => {
             console.warn("🔌 Socket Disconnected:", reason);
             this.notifyConnectionChange(false);
-            
+           
             if (reason === "io server disconnect" || reason === "transport close") {
                 console.log("🔄 Server disconnected, will attempt to reconnect...");
                 setTimeout(() => {
                     if (this.token && !this.socket?.connected) {
                         console.log("Attempting to reconnect...");
-                        this.connect(this.token);
+                        this.connect(this.token, this.currentAgencyId);
                     }
                 }, 2000);
             }
         });
 
+        // Listen for error events from backend
+        this.socket.on("error", (error) => {
+            console.error("❌ Socket error from server:", error);
+        });
+
         return this.socket;
+    }
+
+    updateAgencyContext(agencyId) {
+        if (this.currentAgencyId !== agencyId) {
+            console.log("🔄 Updating socket agency context to:", agencyId);
+            this.currentAgencyId = agencyId;
+            if (this.socket?.connected && this.token) {
+                this.connect(this.token, agencyId);
+            }
+        }
     }
 
     // Simple emitter methods
@@ -74,7 +104,7 @@ class SocketService {
             return false;
         }
 
-        console.log("📤 Sending message to:", receiverId);
+        console.log("📤 Sending message to:", receiverId, "agency:", this.currentAgencyId);
         this.socket.emit("send_message", {
             receiver: receiverId,
             content: content,
@@ -93,50 +123,50 @@ class SocketService {
         return true;
     }
 
-    // Listener methods - FIXED: Don't remove existing listeners
+    // Listener methods - IMPROVED: Allow multiple listeners for same event
     onConversationList(callback) {
-        // Check if we already have this listener
-        if (this.activeListeners.has('conversation_list')) {
-            console.log("📊 Conversation list listener already active");
-            return;
-        }
-        
         console.log("📊 Setting up conversation list listener");
         this.socket?.on("conversation_list", callback);
         this.activeListeners.add('conversation_list');
+        return () => {
+            this.socket?.off("conversation_list", callback);
+        };
     }
 
     onNewMessage(callback) {
-        if (this.activeListeners.has('receive_message')) {
-            console.log("📨 New message listener already active");
-            return;
-        }
-        
         console.log("📨 Setting up new message listener");
         this.socket?.on("receive_message", callback);
         this.activeListeners.add('receive_message');
+        return () => {
+            this.socket?.off("receive_message", callback);
+        };
     }
 
     onSentMessage(callback) {
-        if (this.activeListeners.has('sent_message')) {
-            console.log("✅ Sent message listener already active");
-            return;
-        }
-        
         console.log("✅ Setting up sent message listener");
         this.socket?.on("sent_message", callback);
         this.activeListeners.add('sent_message');
+        return () => {
+            this.socket?.off("sent_message", callback);
+        };
     }
 
     onConversationUpdate(callback) {
-        if (this.activeListeners.has('conversation_updated')) {
-            console.log("🔄 Conversation update listener already active");
-            return;
-        }
-        
         console.log("🔄 Setting up conversation update listener");
         this.socket?.on("conversation_updated", callback);
         this.activeListeners.add('conversation_updated');
+        return () => {
+            this.socket?.off("conversation_updated", callback);
+        };
+    }
+
+    onError(callback) {
+        console.log("🚨 Setting up error listener");
+        this.socket?.on("error", callback);
+        this.activeListeners.add('error');
+        return () => {
+            this.socket?.off("error", callback);
+        };
     }
 
     // Connection state methods
@@ -161,9 +191,17 @@ class SocketService {
         return this.socket?.connected || false;
     }
 
-    // Cleanup methods - only use when needed
-    removeListener(event) {
-        this.socket?.off(event);
+    getCurrentAgencyId() {
+        return this.currentAgencyId;
+    }
+
+    // Cleanup methods - IMPROVED
+    removeListener(event, callback = null) {
+        if (callback) {
+            this.socket?.off(event, callback);
+        } else {
+            this.socket?.off(event);
+        }
         this.activeListeners.delete(event);
         console.log(`🗑️ Removed listener for ${event}`);
     }
@@ -181,12 +219,13 @@ class SocketService {
             this.socket.disconnect();
             this.socket = null;
             this.token = null;
+            this.currentAgencyId = null;
             this.isConnecting = false;
             this.connectionCallbacks = [];
             this.activeListeners.clear();
         }
     }
-    
+   
     // Helper to check if listeners are active
     hasListener(event) {
         return this.activeListeners.has(event);

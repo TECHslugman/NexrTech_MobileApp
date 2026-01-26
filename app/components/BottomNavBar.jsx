@@ -89,7 +89,7 @@ export default function BottomNavBar() {
     if (needsAgencyId && agencyId) {
       router.push({
         pathname: screen,
-        params: { agencyId }
+        params: { agencyId, refresh: Date.now()} // Force refresh
       });
     } else {
       router.push(screen);

@@ -5,23 +5,20 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, Feather } from '@expo/vector-icons';
+import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
 
-const DEFAULT_IMAGE = require('../../../../../assets/images/agencies/default.png');
+const DEFAULT_IMAGE = 'https://i.pravatar.cc/300';
 const BASE_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1';
 
 const COLORS = {
     bg: '#F8FAFD',
     primary: '#769FCD',
     white: '#FFFFFF',
-    textPrimary: '#2D3748',
-    textSecondary: '#718096',
-    border: '#EEF2F7',
-    searchBg: '#F1F5F9',
+    textPrimary: '#1E293B',
+    textSecondary: '#64748B',
+    border: '#E2E8F0',
     cardBg: '#FFFFFF',
-    accent: '#E8F1FF',
-    lightGray: '#F8FAFD',
 };
 
 export default function MentorListPage() {
@@ -52,7 +49,8 @@ export default function MentorListPage() {
                         profilepic: m.profilepic,
                         experience: m.experiences && m.experiences.length > 0 
                             ? m.experiences[0] 
-                            : "Professional mentor for higher education"
+                            : "Professional mentor for higher education",
+                        isVerified: m.isVerified
                     }));
                     setMentors(formattedMentors);
                 }
@@ -77,93 +75,93 @@ export default function MentorListPage() {
                 pathname: `/agency/selected/mentors/details`,
                 params: { id: item.id, agencyId: id }
             })}
+            activeOpacity={0.7}
         >
-            <View style={styles.avatarContainer}>
-                <Image 
-                    source={item.profilepic ? { uri: item.profilepic } : DEFAULT_IMAGE} 
-                    style={styles.avatar} 
-                />
-            </View>
+            <Image 
+                source={item.profilepic ? { uri: item.profilepic } : { uri: DEFAULT_IMAGE }} 
+                style={styles.avatar} 
+            />
             
             <View style={styles.mentorInfo}>
-                <Text style={styles.mentorName}>{item.name}</Text>
+                <View style={styles.nameRow}>
+                    <Text style={styles.mentorName} numberOfLines={1}>{item.name}</Text>
+                    {item.isVerified && (
+                        <MaterialIcons name="verified" size={16} color={COLORS.primary} style={{marginLeft: 4}} />
+                    )}
+                </View>
                 <Text style={styles.mentorExp} numberOfLines={2}>
                     {item.experience}
                 </Text>
             </View>
             
-            <View style={styles.arrowContainer}>
-                <Feather name="chevron-right" size={20} color={COLORS.textSecondary} />
+            <View style={styles.arrowCircle}>
+                <Ionicons name="chevron-forward" size={18} color={COLORS.primary} />
             </View>
         </TouchableOpacity>
     );
 
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
-            <StatusBar barStyle="light-content" />
+            <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
             
-            {/* Header */}
+            {/* Unified Header */}
             <View style={styles.header}>
                 <View style={styles.headerTop}>
                     <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                        <Ionicons name="arrow-back" size={24} color={COLORS.white} />
+                        <Ionicons name="chevron-back" size={24} color={COLORS.white} />
                     </TouchableOpacity>
-                    <Text style={styles.headerTitle}>Mentors</Text>
-                    <View style={styles.placeholder} />
+                    <Text style={styles.headerTitle}>Find a Mentor</Text>
+                    <View style={{ width: 40 }} />
                 </View>
                 <Text style={styles.headerSubtitle}>
-                    Connect with experienced education mentors
+                    Get expert guidance for your education journey
                 </Text>
             </View>
 
-            {/* Search Bar */}
+            {/* Floating Search Bar */}
             <View style={styles.searchWrapper}>
                 <View style={styles.searchContainer}>
-                    <Feather name="search" size={20} color={COLORS.textSecondary} style={styles.searchIcon} />
+                    <Feather name="search" size={20} color={COLORS.textSecondary} />
                     <TextInput 
-                        placeholder="Search mentors by name..."
+                        placeholder="Search by name..."
                         style={styles.searchInput}
                         value={searchQuery}
                         onChangeText={setSearchQuery}
                         placeholderTextColor={COLORS.textSecondary}
                     />
+                    {searchQuery.length > 0 && (
+                        <TouchableOpacity onPress={() => setSearchQuery('')}>
+                            <Ionicons name="close-circle" size={20} color={COLORS.textSecondary} />
+                        </TouchableOpacity>
+                    )}
                 </View>
             </View>
 
-            {/* Content */}
             <View style={styles.content}>
                 {loading ? (
                     <View style={styles.loadingContainer}>
                         <ActivityIndicator size="large" color={COLORS.primary} />
-                        <Text style={styles.loadingText}>Loading mentors...</Text>
                     </View>
                 ) : (
-                    <>
-                        <View style={styles.resultsHeader}>
+                    <FlatList
+                        data={filteredMentors}
+                        keyExtractor={(item) => item.id}
+                        renderItem={renderMentorCard}
+                        showsVerticalScrollIndicator={false}
+                        contentContainerStyle={styles.listContent}
+                        ListHeaderComponent={
                             <Text style={styles.resultsCount}>
-                                {filteredMentors.length} {filteredMentors.length === 1 ? 'mentor' : 'mentors'} available
+                                {filteredMentors.length} {filteredMentors.length === 1 ? 'Mentor' : 'Mentors'} Available
                             </Text>
-                        </View>
-
-                        <FlatList
-                            data={filteredMentors}
-                            keyExtractor={(item) => item.id}
-                            renderItem={renderMentorCard}
-                            showsVerticalScrollIndicator={false}
-                            contentContainerStyle={styles.listContent}
-                            ItemSeparatorComponent={() => <View style={styles.separator} />}
-                            ListFooterComponent={<View style={styles.footer} />}
-                            ListEmptyComponent={
-                                <View style={styles.emptyContainer}>
-                                    <Feather name="users" size={60} color={COLORS.border} />
-                                    <Text style={styles.emptyTitle}>No mentors found</Text>
-                                    <Text style={styles.emptyText}>
-                                        {searchQuery ? 'Try a different search term' : 'No mentors available at this time'}
-                                    </Text>
-                                </View>
-                            }
-                        />
-                    </>
+                        }
+                        ListEmptyComponent={
+                            <View style={styles.emptyContainer}>
+                                <Feather name="user-x" size={50} color={COLORS.textSecondary} />
+                                <Text style={styles.emptyTitle}>No mentors found</Text>
+                                <Text style={styles.emptyText}>Try searching for another name.</Text>
+                            </View>
+                        }
+                    />
                 )}
             </View>
         </SafeAreaView>
@@ -171,175 +169,52 @@ export default function MentorListPage() {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: COLORS.bg,
-    },
+    container: { flex: 1, backgroundColor: COLORS.bg },
     header: {
         backgroundColor: COLORS.primary,
         paddingHorizontal: 20,
-        paddingTop: 20,
-        paddingBottom: 25,
-        borderBottomLeftRadius: 24,
-        borderBottomRightRadius: 24,
-        elevation: 4,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
+        paddingTop: 10,
+        paddingBottom: 40,
+        borderBottomLeftRadius: 20,
+        borderBottomRightRadius: 20,
     },
-    headerTop: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 8,
-    },
-    backButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: 'rgba(255, 255, 255, 0.15)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    headerTitle: {
-        fontSize: 22,
-        fontWeight: '700',
-        color: COLORS.white,
-        textAlign: 'center',
-        flex: 1,
-    },
-    placeholder: {
-        width: 40,
-    },
-    headerSubtitle: {
-        fontSize: 15,
-        color: 'rgba(255, 255, 255, 0.85)',
-        textAlign: 'center',
-        fontWeight: '400',
-        lineHeight: 20,
-    },
-    searchWrapper: {
-        paddingHorizontal: 20,
-        marginTop: -15,
-        zIndex: 1,
-    },
+    headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    backButton: { width: 40, height: 40, justifyContent: 'center' },
+    headerTitle: { fontSize: 20, fontWeight: '700', color: COLORS.white },
+    headerSubtitle: { fontSize: 14, color: 'rgba(255, 255, 255, 0.8)', textAlign: 'center', marginTop: 5 },
+    searchWrapper: { paddingHorizontal: 20, marginTop: -25 },
     searchContainer: {
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: COLORS.white,
-        borderRadius: 14,
-        paddingHorizontal: 16,
-        height: 52,
+        borderRadius: 12,
+        paddingHorizontal: 15,
+        height: 50,
         borderWidth: 1,
         borderColor: COLORS.border,
-        elevation: 3,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 6,
     },
-    searchIcon: {
-        marginRight: 12,
-    },
-    searchInput: {
-        flex: 1,
-        color: COLORS.textPrimary,
-        fontSize: 16,
-        fontWeight: '400',
-    },
-    content: {
-        flex: 1,
-        paddingTop: 20,
-    },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    loadingText: {
-        marginTop: 16,
-        color: COLORS.textSecondary,
-        fontSize: 16,
-        fontWeight: '500',
-    },
-    resultsHeader: {
-        paddingHorizontal: 20,
-        marginBottom: 16,
-    },
-    resultsCount: {
-        fontSize: 15,
-        color: COLORS.textSecondary,
-        fontWeight: '500',
-    },
-    listContent: {
-        paddingHorizontal: 20,
-        paddingBottom: 20,
-    },
+    searchInput: { flex: 1, marginLeft: 10, fontSize: 16, color: COLORS.textPrimary },
+    content: { flex: 1 },
+    loadingContainer: { flex: 1, justifyContent: 'center' },
+    listContent: { padding: 20, paddingBottom: 100 },
+    resultsCount: { fontSize: 14, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 15, textTransform: 'uppercase', letterSpacing: 0.5 },
     mentorCard: {
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: COLORS.cardBg,
         borderRadius: 16,
-        padding: 16,
+        padding: 15,
+        marginBottom: 12,
         borderWidth: 1,
         borderColor: COLORS.border,
-        elevation: 1,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 2,
     },
-    avatarContainer: {
-        position: 'relative',
-    },
-    avatar: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
-        backgroundColor: COLORS.accent,
-    },
-    mentorInfo: {
-        flex: 1,
-        marginLeft: 16,
-        marginRight: 12,
-    },
-    mentorName: {
-        fontSize: 17,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-        marginBottom: 6,
-    },
-    mentorExp: {
-        fontSize: 14,
-        color: COLORS.textSecondary,
-        lineHeight: 20,
-    },
-    arrowContainer: {
-        padding: 4,
-    },
-    separator: {
-        height: 12,
-    },
-    footer: {
-        height: 40,
-    },
-    emptyContainer: {
-        alignItems: 'center',
-        paddingTop: 60,
-        paddingHorizontal: 40,
-    },
-    emptyTitle: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-        marginTop: 20,
-        marginBottom: 8,
-    },
-    emptyText: {
-        fontSize: 15,
-        color: COLORS.textSecondary,
-        textAlign: 'center',
-        lineHeight: 22,
-    },
+    avatar: { width: 65, height: 65, borderRadius: 32.5, backgroundColor: COLORS.bg },
+    mentorInfo: { flex: 1, marginLeft: 15, marginRight: 10 },
+    nameRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+    mentorName: { fontSize: 17, fontWeight: '700', color: COLORS.textPrimary },
+    mentorExp: { fontSize: 13, color: COLORS.textSecondary, lineHeight: 18 },
+    arrowCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F0F7FF', justifyContent: 'center', alignItems: 'center' },
+    emptyContainer: { alignItems: 'center', marginTop: 100 },
+    emptyTitle: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, marginTop: 15 },
+    emptyText: { fontSize: 14, color: COLORS.textSecondary, marginTop: 5 }
 });
