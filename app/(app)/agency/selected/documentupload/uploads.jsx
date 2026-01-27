@@ -9,6 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker'; // Added this
 import { useAuth } from '../../../../context/AuthContext';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import {Config} from '../../../../config'
 
 const { width } = Dimensions.get('window');
 
@@ -23,7 +24,6 @@ const COLORS = {
     textDark: '#2D3748'
 };
 
-const BASE_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1/students';
 
 const DOCUMENT_STEPS = [
     { id: 'passport', label: 'Passport', sub: 'Applicant & dependents (12mo validity)', type: 'passport', required: true },
@@ -59,7 +59,7 @@ export default function DynamicDocumentUpload() {
 
     const fetchProfile = async () => {
         try {
-            const res = await fetch(`${BASE_URL}/profile`, {
+            const res = await fetch(`${Config.API_BASE_URL}/students/profile`, {
                 headers: { 'Authorization': `Bearer ${userToken}` }
             });
             const json = await res.json();
@@ -85,7 +85,7 @@ export default function DynamicDocumentUpload() {
             const fileSize = asset.fileSize || asset.size || 0;
             const uri = asset.uri;
 
-            const sasRes = await fetch(`${BASE_URL}/uploads/sas`, {
+            const sasRes = await fetch(`${Config.API_BASE_URL}/students/uploads/sas`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${userToken}`,
@@ -116,7 +116,7 @@ export default function DynamicDocumentUpload() {
 
             if (!azureRes.ok) throw new Error("Cloud storage upload failed.");
 
-            const confirmRes = await fetch(`${BASE_URL}/uploads/confirm`, {
+            const confirmRes = await fetch(`${Config.API_BASE_URL}/students/uploads/confirm`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${userToken}`,

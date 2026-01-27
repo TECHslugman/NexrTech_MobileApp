@@ -7,9 +7,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
+import { Config } from '../../../../config';
 
 const DEFAULT_IMAGE = 'https://i.pravatar.cc/300';
-const BASE_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1';
 
 export default function MentorDetails() {
     const { id, agencyId } = useLocalSearchParams(); 
@@ -30,7 +30,7 @@ export default function MentorDetails() {
     const fetchMentorDetails = async () => {
         try {
             setLoading(true);
-            const res = await fetch(`${BASE_URL}/students/mentors/${agencyId}`, {
+            const res = await fetch(`${Config.API_BASE_URL}/students/mentors/${agencyId}`, {
                 headers: { 
                     'Authorization': `Bearer ${userToken}`,
                     'Content-Type': 'application/json'
@@ -76,7 +76,7 @@ export default function MentorDetails() {
         console.log("Connecting to Mentor ID:", id);
 
         try {
-            const res = await fetch(`${BASE_URL}/students/mentors/connect/${id}`, {
+            const res = await fetch(`${Config.API_BASE_URL}/students/mentors/connect/${id}`, {
                 method: 'POST',
                 headers: { 
                     'Authorization': `Bearer ${userToken}`,

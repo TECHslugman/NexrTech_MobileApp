@@ -7,9 +7,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
+import {Config} from '../../../config';
 
 const DEFAULT_IMAGE = require('../../../../assets/images/agencies/default.png');
-const BASE_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1';
 
 const COLORS = {
     bg: '#F8FAFD',
@@ -50,12 +50,12 @@ export default function SelectedAgencyHome() {
                 console.log(`📡 Fetching Agency Data [ID: ${id}]`);
 
                 const endpoints = [
-                    `${BASE_URL}/agency/profile/${id}`,
-                    `${BASE_URL}/agency/universities/agency/${id}`,
-                    `${BASE_URL}/agency/courses/agency/${id}`,
-                    `${BASE_URL}/agency/events/student/${id}`,
-                    `${BASE_URL}/agency/scholarships/agency/${id}`,
-                    `${BASE_URL}/students/mentors/${id}`
+                    `${Config.API_BASE_URL}/agency/profile/${id}`,
+                    `${Config.API_BASE_URL}/agency/universities/agency/${id}`,
+                    `${Config.API_BASE_URL}/agency/courses/agency/${id}`,
+                    `${Config.API_BASE_URL}/agency/events/student/${id}`,
+                    `${Config.API_BASE_URL}/agency/scholarships/agency/${id}`,
+                    `${Config.API_BASE_URL}/students/mentors/${id}`
                 ];
 
                 const headers = {

@@ -15,6 +15,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
+import { Config } from '../../../../config';
 
 const COLORS = {
     bg: '#F8FAFD',
@@ -38,7 +39,7 @@ export default function UniversityDetail() {
     useEffect(() => {
         const fetchDetail = async () => {
             try {
-                const response = await fetch(`https://edu-agent-backend-nine.vercel.app/api/v1/agency/universities/${id}`, {
+                const response = await fetch(`${Config.API_BASE_URL}api/v1/agency/universities/${id}`, {
                     headers: { 'Authorization': `Bearer ${userToken}` }
                 });
 

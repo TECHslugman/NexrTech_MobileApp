@@ -23,8 +23,9 @@ const COLORS = {
 };
 
 // Agency-specific storage keys
-const getStorageKey = (agencyId) => `chat_conversations_${agencyId}`;
-const getMetadataKey = (agencyId) => `chat_metadata_${agencyId}`;
+// Include the userId (from your AuthContext) in the key
+const getStorageKey = (agencyId, userId) => `chat_${userId}_convos_${agencyId}`;
+const getMetadataKey = (agencyId, userId) => `chat_${userId}_meta_${agencyId}`;
 const AGENCY_STAFF_KEY = 'agency_staff';
 
 export default function MessagesScreen() {

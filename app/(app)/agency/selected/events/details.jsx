@@ -7,8 +7,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
+import { Config } from '../../../../config';
 
-const BASE_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1';
 const SEAT_IMAGE_URL = 'https://cdn-icons-png.flaticon.com/512/1723/1723651.png';
 
 const COLORS = {
@@ -36,7 +36,7 @@ const SeatInfoModal = ({ visible, onClose, seatId, onConfirm, registering }) => 
     const fetchSeatDetail = async () => {
         setLoading(true);
         try {
-            const response = await fetch(`${BASE_URL}/agency/events/profile/${seatId}/seats/info`, {
+            const response = await fetch(`${Config.API_BASE_URL}/agency/events/profile/${seatId}/seats/info`, {
                 headers: { 'Authorization': `Bearer ${userToken}` }
             });
             const json = await response.json();
@@ -166,7 +166,7 @@ export default function EventDetail() {
     useEffect(() => {
         const fetchDetail = async () => {
             try {
-                const response = await fetch(`${BASE_URL}/agency/events/profile/${id}`, {
+                const response = await fetch(`${Config.API_BASE_URL}/agency/events/profile/${id}`, {
                     headers: { 'Authorization': `Bearer ${userToken}` }
                 });
                 const json = await response.json();
@@ -204,7 +204,7 @@ export default function EventDetail() {
     const handleConfirmRegistration = async (seatId = null) => {
         setRegistering(true);
         try {
-            const res = await fetch(`${BASE_URL}/students/events/registration/${id}`, {
+            const res = await fetch(`${Config.API_BASE_URL}/students/events/registration/${id}`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${userToken}`,

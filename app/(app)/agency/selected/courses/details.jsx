@@ -15,6 +15,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
+import { Config } from '../../../../config';
 
 const DEFAULT_UNI_LOGO = require('../../../../../assets/images/agencies/default.png');
 
@@ -55,7 +56,7 @@ export default function CourseDetail() {
 
                 // Fetch course details from API
                 const courseResponse = await fetch(
-                    `https://edu-agent-backend-nine.vercel.app/api/v1/agency/courses/${courseId}`,
+                    `${Config.API_BASE_URL}/agency/courses/${courseId}`,
                     {
                         headers: {
                             'Authorization': `Bearer ${userToken}`,

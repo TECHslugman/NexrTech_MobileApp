@@ -12,6 +12,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
+import { Config } from '../../../../config';
 
 const COLORS = {
     bg: '#F8FAFD',
@@ -52,7 +53,7 @@ export default function ScholarshipDetail() {
         const fetchDetail = async () => {
             try {
                 const targetId = agencyId || id;
-                const response = await fetch(`https://edu-agent-backend-nine.vercel.app/api/v1/agency/scholarships/agency/${targetId}`, {
+                const response = await fetch(`${Config.API_BASE_URL}/agency/scholarships/agency/${targetId}`, {
                     headers: { 'Authorization': `Bearer ${userToken}` }
                 });
 

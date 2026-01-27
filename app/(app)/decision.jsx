@@ -19,6 +19,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Easing } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import {Config} from "../config";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -39,11 +40,8 @@ const COLORS = {
   success: '#57C785',
 };
 
-// --- API CONFIG ---
-const API_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1/agency/';
 
 const CARD_HEIGHT = 172;
-
 
 function ProgressBar({ value, height = 5, color = COLORS.success }) {
   const pct = Math.max(0, Math.min(1, value)) * 100;
@@ -189,7 +187,7 @@ export default function Dashboard() {
       isRefresh ? setRefreshing(true) : setLoading(true);
 
       console.log("DEBUG: Sending Token ->", userToken);
-      const response = await fetch(API_URL, {
+      const response = await fetch(`${Config.API_BASE_URL}/agency`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

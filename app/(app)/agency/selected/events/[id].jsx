@@ -7,8 +7,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
-
-const BASE_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1';
+import { Config } from '../../../../config';
 
 const COLORS = {
     bg: '#F8FAFD',
@@ -33,7 +32,7 @@ export default function AllEvents() {
     useEffect(() => {
         const fetchEvents = async () => {
             try {
-                const response = await fetch(`${BASE_URL}/agency/events/student/${id}`, {
+                const response = await fetch(`${Config.API_BASE_URL}/agency/events/student/${id}`, {
                     headers: { 'Authorization': `Bearer ${userToken}` }
                 });
 

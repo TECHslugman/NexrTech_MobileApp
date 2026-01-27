@@ -9,6 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../../context/AuthContext';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Image } from 'expo-image';
+import {Config} from '../../../config'
 
 const COLORS = {
     bg: '#F8FAFD',
@@ -30,7 +31,6 @@ const COLORS = {
 };
 
 const DEFAULT_IMAGE = require('../../../../assets/images/agencies/default.png');
-const BASE_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1/students';
 
 const formatDate = (dateString) => {
     if (!dateString) return "Not Set";
@@ -66,7 +66,7 @@ export default function UserProfile() {
 
     const fetchProfile = async () => {
         try {
-            const response = await fetch(`${BASE_URL}/profile`, {
+            const response = await fetch(`${Config.API_BASE_URL}/students/profile`, {
                 headers: {
                     'Authorization': `Bearer ${userToken}`,
                     'Content-Type': 'application/json'
@@ -104,7 +104,7 @@ export default function UserProfile() {
             if (mimeType === 'image/jpg') mimeType = 'image/jpeg';
 
             // Step 1: Get SAS token
-            const sasRes = await fetch(`${BASE_URL}/uploads/sas`, {
+            const sasRes = await fetch(`${Config.API_BASE_URL}/students/uploads/sas`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${userToken}`,
@@ -142,7 +142,7 @@ export default function UserProfile() {
             if (!azureRes.ok) throw new Error("Azure storage upload failed");
 
             // Step 3: Confirm upload 
-            const confirmRes = await fetch(`${BASE_URL}/uploads/confirm`, {
+            const confirmRes = await fetch(`${Config.API_BASE_URL}/students/uploads/confirm`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${userToken}`,
@@ -166,7 +166,7 @@ export default function UserProfile() {
             setImageKey(Date.now());
 
             // Step 5: Patch the profile
-            const patchRes = await fetch(`${BASE_URL}/profile`, {
+            const patchRes = await fetch(`${Config.API_BASE_URL}/students/profile`, {
                 method: 'PATCH',
                 headers: {
                     'Authorization': `Bearer ${userToken}`,
@@ -212,7 +212,7 @@ export default function UserProfile() {
     const handlePatchRequest = async () => {
         try {
             setLoading(true);
-            const response = await fetch(`${BASE_URL}/profile`, {
+            const response = await fetch(`${Config.API_BASE_URL}/students/profile`, {
                 method: 'PATCH',
                 headers: {
                     'Authorization': `Bearer ${userToken}`,

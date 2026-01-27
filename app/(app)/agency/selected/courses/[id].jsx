@@ -7,6 +7,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
+import { Config } from '../../../../config';
 
 const COLORS = {
     bg: '#F8FAFD',
@@ -38,8 +39,8 @@ export default function AgencyCourseList() {
 
             // Toggle URL based on search input
             const url = query.trim().length > 0
-                ? `https://edu-agent-backend-nine.vercel.app/api/v1/students/courses/query/${id}/search?q=${query}`
-                : `https://edu-agent-backend-nine.vercel.app/api/v1/agency/courses/agency/${id}`;
+                ? `${Config.API_BASE_URL}/students/courses/query/${id}/search?q=${query}`
+                : `${Config.API_BASE_URL}/agency/courses/agency/${id}`;
 
             const res = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${userToken}` }

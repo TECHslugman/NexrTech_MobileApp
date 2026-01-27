@@ -15,8 +15,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
-
-const BASE_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1';
+import { Config } from '../../../../config';
 
 const COLORS = {
     bg: '#F8FAFD',
@@ -49,10 +48,10 @@ export default function AllUniversities() {
             if (query.trim().length > 0) {
                 setIsSearching(true);
                 // Matches your Postman screenshot: students/universities/query/[agencyId]/search?q=...
-                url = `${BASE_URL}/students/universities/query/${id}/search?q=${query}`;
+                url = `${Config.API_BASE_URL}/api/v1/students/universities/query/${id}/search?q=${query}`;
             } else {
                 setLoading(true);
-                url = `${BASE_URL}/agency/universities/agency/${id}`;
+                url = `${Config.API_BASE_URL}/api/v1/agency/universities/agency/${id}`;
             }
 
             const response = await fetch(url, {

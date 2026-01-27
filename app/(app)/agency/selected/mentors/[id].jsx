@@ -7,9 +7,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
+import { Config } from '../../../../config';
 
 const DEFAULT_IMAGE = 'https://i.pravatar.cc/300';
-const BASE_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1';
+
 
 const COLORS = {
     bg: '#F8FAFD',
@@ -34,7 +35,7 @@ export default function MentorListPage() {
         const fetchMentors = async () => {
             if (!userToken || !id) return;
             try {
-                const response = await fetch(`${BASE_URL}/students/mentors/${id}`, {
+                const response = await fetch(`${Config.API_BASE_URL}/students/mentors/${id}`, {
                     headers: {
                         'Authorization': `Bearer ${userToken}`,
                         'Content-Type': 'application/json'

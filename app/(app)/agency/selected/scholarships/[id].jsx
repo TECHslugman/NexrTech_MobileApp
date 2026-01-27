@@ -14,8 +14,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
-
-const BASE_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1';
+import { Config } from '../../../../config';
 
 const COLORS = {
     bg: '#F8FAFD',
@@ -48,8 +47,8 @@ export default function AllScholarships() {
 
             // Using the endpoint from your Postman screenshot for search
             const url = query.trim().length > 0
-                ? `${BASE_URL}/students/scholarships/query/${id}/search?q=${query}`
-                : `${BASE_URL}/agency/scholarships/agency/${id}`;
+                ? `${Config.API_BASE_URL}/students/scholarships/query/${id}/search?q=${query}`
+                : `${Config.API_BASE_URL}/agency/scholarships/agency/${id}`;
 
             const response = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${userToken}` }

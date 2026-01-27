@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import socketService from '../../../services/SocketService';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Config } from '../../../config';
 
 const COLORS = {
     primary: '#0084FF',
@@ -25,7 +26,7 @@ const COLORS = {
     error: '#FF3B30',
 };
 
-const BASE_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1/students';
+
 
 export default function ChatScreen() {
     const { recipientId, name, logo, recipientType, initialConversationId, agencyId } = useLocalSearchParams();
@@ -47,7 +48,7 @@ export default function ChatScreen() {
     const fetchChatHistory = useCallback(async (id) => {
         if (!id || !userToken) return;
         try {
-            const response = await fetch(`${BASE_URL}/conversation/${id}/messages`, {
+            const response = await fetch(`${Config.API_BASE_URL}/students/conversation/${id}/messages`, {
                 headers: { 'Authorization': `Bearer ${userToken}` }
             });
             const data = await response.json();

@@ -15,6 +15,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
+import {Config} from "../../config";
 
 const COLORS = {
     bg: '#F6F9FC',
@@ -30,8 +31,6 @@ const COLORS = {
     lightBg: '#F8FAFC',
 };
 
-// Base URL for your API
-const BASE_URL = 'https://edu-agent-backend-nine.vercel.app/api/v1';
 const defaultHero = require('../../../assets/images/agencies/default.png');
 
 export default function AgencyDetails() {
@@ -49,13 +48,13 @@ export default function AgencyDetails() {
                 setLoading(true);
 
                 const [profileRes, partnerRes] = await Promise.all([
-                    fetch(`${BASE_URL}/agency/profile/${id}`, {
+                    fetch(`${Config.API_BASE_URL}/agency/profile/${id}`, {
                         headers: { 
                             'Authorization': `Bearer ${userToken}`,
                             'Content-Type': 'application/json' 
                         }
                     }),
-                    fetch(`${BASE_URL}/agency/universities/agency/${id}`, {
+                    fetch(`${Config.API_BASE_URL}/agency/universities/agency/${id}`, {
                         headers: { 
                             'Authorization': `Bearer ${userToken}`,
                             'Content-Type': 'application/json' 
@@ -105,7 +104,7 @@ export default function AgencyDetails() {
 
         try {
             setLoading(true);
-            const response = await fetch(`${BASE_URL}/students/select-agency`, {
+            const response = await fetch(`${Config.API_BASE_URL}/students/select-agency`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${userToken}`,
@@ -117,6 +116,7 @@ export default function AgencyDetails() {
             const json = await response.json();
 
             if (!response.ok) {
+                
                 alert(`Server Error (${response.status}): ${json.message || "Internal Server Error"}`);
                 return;
             }
