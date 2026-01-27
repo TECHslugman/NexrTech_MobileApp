@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage'; // Added for chat cleanup
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import socketService from '../services/SocketService'; // Import your updated service
 
 // Define the Agency shape
 interface ActiveAgency {
@@ -12,8 +14,8 @@ interface ActiveAgency {
 interface AuthContextType {
   userToken: string | null;
   isLoading: boolean;
-  activeAgency: ActiveAgency | null; // Added
-  setActiveAgency: (agency: ActiveAgency | null) => void; // Added
+  activeAgency: ActiveAgency | null;
+  setActiveAgency: (agency: ActiveAgency | null) => void;
   signIn: (token: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -23,8 +25,6 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userToken, setUserToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  
-  // New state for the selected agency
   const [activeAgency, setActiveAgency] = useState<ActiveAgency | null>(null); 
 
   useEffect(() => {
@@ -53,10 +53,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     try {
+      // 1. DISCONNECT SOCKET: Clears listeners, token, and connection in memory
+      console.log("🧹 Cleaning up socket connection...");
+      socketService.disconnect();
+
+      // 2. CLEAR LOCAL CHAT CACHE: Prevents the next user from seeing old message previews
+      // You can also use user-specific keys if you prefer, 
+      // but clearing on logout is the safest "clean slate" approach.
+      const keys = await AsyncStorage.getAllKeys();
+      const chatKeys = keys.filter(key => key.includes('metadata') || key.includes('conversations'));
+      if (chatKeys.length > 0) {
+        await AsyncStorage.multiRemove(chatKeys);
+      }
+
+      // 3. AUTH LOGOUT
       await GoogleSignin.signOut();
       await SecureStore.deleteItemAsync('userToken');
+      
       setUserToken(null);
-      setActiveAgency(null); // Clear agency on logout
+      setActiveAgency(null); 
+      
+      console.log("✅ Logout complete: Socket disconnected and storage cleared.");
     } catch (e) {
       console.error("Error during logout", e);
     }
@@ -66,8 +83,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     <AuthContext.Provider value={{ 
         userToken, 
         isLoading, 
-        activeAgency,    // Expose this
-        setActiveAgency, // Expose this
+        activeAgency,    
+        setActiveAgency, 
         signIn, 
         signOut 
     }}>

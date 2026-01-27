@@ -26,16 +26,15 @@ const COLORS = {
     error: '#FF3B30',
 };
 
-
-
 export default function ChatScreen() {
     const { recipientId, name, logo, recipientType, initialConversationId, agencyId } = useLocalSearchParams();
     const router = useRouter();
-    const { userToken, activeAgency } = useAuth();
+    const { userToken, activeAgency, user } = useAuth(); // Assuming 'user' exists in your AuthContext
     const insets = useSafeAreaInsets();
 
     const currentAgencyId = agencyId || activeAgency?.id;
-    const currentUserId = 'current_user'; 
+    // Standardizing currentUserId to ensure GiftedChat recognizes "Me" vs "Them"
+    const currentUserId = user?.id || 'current_user';
 
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -43,18 +42,21 @@ export default function ChatScreen() {
     const [socketReady, setSocketReady] = useState(false);
     const [conversationId, setConversationId] = useState(initialConversationId || null);
 
-    // --- 1. DEFINE HANDLERS (Must be above useEffect to avoid ReferenceErrors) ---
+    // --- 1. FETCH HISTORY (The Onboarding Message resides here) ---
 
     const fetchChatHistory = useCallback(async (id) => {
         if (!id || !userToken) return;
         try {
+            console.log(`📜 Fetching history for conversation: ${id}`);
             const response = await fetch(`${Config.API_BASE_URL}/students/conversation/${id}/messages`, {
                 headers: { 'Authorization': `Bearer ${userToken}` }
             });
+
+            if (!response.ok) throw new Error("Failed to fetch messages");
+
             const data = await response.json();
-            
-            // Backend returns messages in old -> new order; GiftedChat needs new -> old
             const rawMessages = data.messages || data;
+
             const formatted = Array.isArray(rawMessages) ? rawMessages.map(msg => ({
                 _id: msg._id,
                 text: msg.content,
@@ -65,20 +67,21 @@ export default function ChatScreen() {
                     avatar: msg.senderModel === 'Student' ? null : logo,
                 },
             })).reverse() : [];
-            
+
             setMessages(formatted);
         } catch (error) {
             console.error("Fetch Error:", error);
         } finally {
             setIsLoading(false);
         }
-    }, [userToken, name, logo]);
+    }, [userToken, name, logo, currentUserId]);
+
+    // --- 2. MESSAGE HANDLERS ---
 
     const handleReceiveMessage = useCallback((message) => {
-        // Prevent duplicate messages
         setMessages(prev => {
             if (prev.some(m => m._id === message._id)) return prev;
-            
+
             const isMe = message.senderModel === 'Student';
             const formatted = {
                 _id: message._id,
@@ -92,30 +95,35 @@ export default function ChatScreen() {
             };
             return GiftedChat.append(prev, [formatted]);
         });
-    }, [name, logo]);
+    }, [name, logo, currentUserId]);
 
     const handleSentMessage = useCallback((message) => {
-        console.log("✅ Message confirmed by server:", message._id);
+        // If the first message was sent, grab the conversationId from backend response
         if (message.conversationId && !conversationId) {
+            console.log("🆕 Conversation ID assigned:", message.conversationId);
             setConversationId(message.conversationId);
         }
     }, [conversationId]);
 
-    // --- 2. SOCKET LIFECYCLE ---
+    // --- 3. LIFECYCLE (Socket and History) ---
 
     useEffect(() => {
         if (!userToken || !currentAgencyId) return;
 
-        console.log("🔌 Initializing Socket for Agency:", currentAgencyId);
+        // 1. Reset messages for the new view
+        setMessages([]);
+
+        // 2. Connect (or get the existing instance)
         const socket = socketService.connect(userToken, currentAgencyId);
 
-        // Sync initial connection state
-        if (socket.connected) {
+        // 3. IMMEDIATE CHECK (The Fix)
+        // If the socket is already connected, update state right now
+        if (socket?.connected) {
             setIsConnected(true);
             setSocketReady(true);
         }
 
-        // Use service methods to subscribe
+        // 4. LISTENERS
         const unsubStatus = socketService.onConnectionChange((connected) => {
             setIsConnected(connected);
             setSocketReady(connected);
@@ -124,9 +132,9 @@ export default function ChatScreen() {
         const unsubNewMsg = socketService.onNewMessage(handleReceiveMessage);
         const unsubSentMsg = socketService.onSentMessage(handleSentMessage);
 
-        // Fetch history if we have an ID
-        if (conversationId) {
-            fetchChatHistory(conversationId);
+        // 5. HISTORY LOAD
+        if (initialConversationId) {
+            fetchChatHistory(initialConversationId);
         } else {
             setIsLoading(false);
         }
@@ -136,33 +144,31 @@ export default function ChatScreen() {
             unsubNewMsg();
             unsubSentMsg();
         };
-    }, [userToken, currentAgencyId, conversationId, handleReceiveMessage, handleSentMessage, fetchChatHistory]);
-
-    // --- 3. SEND ACTION ---
+    }, [userToken, currentAgencyId, initialConversationId]); // Removed the handlers from deps to prevent unnecessary re-runs
+    // --- 4. SEND ACTION ---
 
     const onSend = useCallback(async (newMessages = []) => {
-        if (!socketReady) {
+        // If the state is false, but the socket is actually fine, fix it on the fly
+        const isActuallyConnected = socketService.socket?.connected;
+
+        if (!socketReady && isActuallyConnected) {
+            setSocketReady(true);
+        } else if (!socketReady && !isActuallyConnected) {
             Alert.alert("Connecting", "Please wait until the connection is active.");
             return;
         }
 
         const message = newMessages[0];
-        
-        // Optimistically add to UI
         setMessages(prev => GiftedChat.append(prev, newMessages));
 
-        const success = socketService.sendMessage(
+        socketService.sendMessage(
             recipientId,
             message.text.trim(),
             recipientType || "Agency"
         );
+    }, [recipientId, socketReady, recipientType])
 
-        if (!success) {
-            Alert.alert("Error", "Could not send message. Check your connection.");
-        }
-    }, [recipientId, socketReady, recipientType]);
-
-    // --- 4. RENDER HELPERS ---
+    // --- 5. UI COMPONENTS ---
 
     const renderBubble = (props) => (
         <Bubble
@@ -200,8 +206,8 @@ export default function ChatScreen() {
                 </View>
             </View>
 
-            <KeyboardAvoidingView 
-                style={{ flex: 1 }} 
+            <KeyboardAvoidingView
+                style={{ flex: 1 }}
                 behavior={Platform.OS === "ios" ? "padding" : undefined}
                 keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
             >
@@ -235,14 +241,14 @@ const styles = StyleSheet.create({
     agencyInfo: { flex: 1, flexDirection: 'row', alignItems: 'center' },
     avatarContainer: { position: 'relative', marginRight: 12 },
     headerAvatar: { width: 40, height: 40, borderRadius: 20 },
-    placeholderAvatar: { 
-        width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.accent, 
-        justifyContent: 'center', alignItems: 'center' 
+    placeholderAvatar: {
+        width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.accent,
+        justifyContent: 'center', alignItems: 'center'
     },
     avatarText: { fontSize: 18, fontWeight: 'bold', color: COLORS.primary },
-    statusIndicator: { 
-        position: 'absolute', bottom: 0, right: 0, width: 10, height: 10, 
-        borderRadius: 5, borderWidth: 2, borderColor: '#FFF' 
+    statusIndicator: {
+        position: 'absolute', bottom: 0, right: 0, width: 10, height: 10,
+        borderRadius: 5, borderWidth: 2, borderColor: '#FFF'
     },
     headerContent: { flex: 1 },
     headerName: { fontSize: 16, fontWeight: '600', color: COLORS.textPrimary },
