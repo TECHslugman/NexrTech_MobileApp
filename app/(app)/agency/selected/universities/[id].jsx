@@ -48,10 +48,10 @@ export default function AllUniversities() {
             if (query.trim().length > 0) {
                 setIsSearching(true);
                 // Matches your Postman screenshot: students/universities/query/[agencyId]/search?q=...
-                url = `${Config.API_BASE_URL}/api/v1/students/universities/query/${id}/search?q=${query}`;
+                url = `${Config.API_BASE_URL}/students/universities/query/${id}/search?q=${query}`;
             } else {
                 setLoading(true);
-                url = `${Config.API_BASE_URL}/api/v1/agency/universities/agency/${id}`;
+                url = `${Config.API_BASE_URL}/agency/universities/agency/${id}`;
             }
 
             const response = await fetch(url, {

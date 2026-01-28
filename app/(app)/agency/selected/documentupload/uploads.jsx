@@ -6,10 +6,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import * as DocumentPicker from 'expo-document-picker'; // Added this
+import * as DocumentPicker from 'expo-document-picker';
 import { useAuth } from '../../../../context/AuthContext';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import {Config} from '../../../../config'
+import { Config } from '../../../../config';
 
 const { width } = Dimensions.get('window');
 
@@ -24,37 +24,27 @@ const COLORS = {
     textDark: '#2D3748'
 };
 
-
-const DOCUMENT_STEPS = [
-    { id: 'passport', label: 'Passport', sub: 'Applicant & dependents (12mo validity)', type: 'passport', required: true },
-    { id: 'academics', label: 'Academic Documents', sub: 'Year 10, 12, Diploma, Degree Transcripts', type: 'academic_results', required: true },
-    { id: 'change_course', label: 'Latest Transcript', sub: 'If changing course or institute', type: 'latest_transcript', required: false },
-    { id: 'english', label: 'English Competency', sub: 'IELTS/PTE/TOEFL Certificate', type: 'english_test', required: true },
-    { id: 'cv', label: 'CV / Resume', sub: 'Applicant and Spouse CVs', type: 'cv', required: true },
-    { id: 'marriage', label: 'Marriage Certificate', sub: 'If applicable', type: 'marriage_cert', required: false },
-    { id: 'sop', label: 'Statement of Purpose', sub: 'Your SOP document', type: 'sop', required: true },
-    { id: 'employment', label: 'Employer Statements', sub: 'Previous employment/Promotion orders', type: 'employment_proof', required: false },
-    { id: 'lor', label: 'Letter of Recommendation', sub: 'Recommendation from Employer', type: 'lor', required: false },
-    { id: 'study_leave', label: 'Study Leave Letter', sub: 'Job security/Return offer letter', type: 'study_leave', required: false },
-    { id: 'spouse_qual', label: 'Spouse Qualification', sub: 'Highest Qualification of Spouse', type: 'spouse_docs', required: false },
-    { id: 'visa_history', label: 'Visa History', sub: 'Previous grants or refusals', type: 'visa_history', required: false },
-    { id: 'financial', label: 'Financial Documents', sub: 'Bank statements, Sponsorship letters', type: 'bank_statement', required: true },
-];
-
 export default function DynamicDocumentUpload() {
     const { courseId, agencyId } = useLocalSearchParams();
     const router = useRouter();
     const { userToken } = useAuth();
 
+    const [documentSteps, setDocumentSteps] = useState([]); // Now dynamic
     const [currentStep, setCurrentStep] = useState(0);
     const [loading, setLoading] = useState(false);
+    const [fetchingSteps, setFetchingSteps] = useState(true); // Loading state for steps
     const [userData, setUserData] = useState(null);
     const [uploadedDocs, setUploadedDocs] = useState({});
 
-    const activeDoc = DOCUMENT_STEPS[currentStep];
+    // Current document based on dynamic steps
+    const activeDoc = documentSteps[currentStep];
 
     useEffect(() => {
-        fetchProfile();
+        const initializeData = async () => {
+            await fetchProfile();
+            await fetchRequiredDocuments();
+        };
+        initializeData();
     }, []);
 
     const fetchProfile = async () => {
@@ -69,13 +59,58 @@ export default function DynamicDocumentUpload() {
         }
     };
 
+    const fetchRequiredDocuments = async () => {
+        try {
+            setFetchingSteps(true);
+            // Ensure agencyId is valid before fetching
+            if (!agencyId) {
+                console.error("No agencyId found in params");
+                return;
+            }
+
+            const res = await fetch(`${Config.API_BASE_URL}/students/documents/${agencyId}`, {
+                headers: { 'Authorization': `Bearer ${userToken}` }
+            });
+
+            const json = await res.json();
+
+            // DEBUG: Check your terminal/console to see what the agent actually sent
+            console.log("Documents from API:", json);
+
+            // Adjust this check based on your actual API response key (e.g., json.data or json.documents)
+            const docsArray = json.documents || json.data || json;
+
+            if (res.ok && Array.isArray(docsArray) && docsArray.length > 0) {
+                const formattedSteps = docsArray.map((doc) => ({
+                    // Use the database ID or the name as a unique key
+                    id: doc._id || doc.name,
+                    // Render the name provided by the agent
+                    label: doc.name || 'Untitled Document',
+                    // Render the description provided by the agent
+                    sub: doc.description || `Please upload your ${doc.name}`,
+                    // The technical type used for the SAS/Upload link
+                    type: doc.type || doc.name.toLowerCase().replace(/\s+/g, '_'),
+                    required: doc.required ?? true
+                }));
+
+                setDocumentSteps(formattedSteps);
+            } else {
+                Alert.alert("Notice", "No document requirements found for this agency.");
+            }
+        } catch (e) {
+            console.error("Fetch Steps Error", e);
+            Alert.alert("Error", "Failed to load document requirements.");
+        } finally {
+            setFetchingSteps(false);
+        }
+    };
+
     const handleUpload = async (asset) => {
         const studentId = userData?._id;
         const activeAgencyId = agencyId || userData?.registeredAgency;
 
         if (!studentId || !activeAgencyId) {
             Alert.alert("Initializing", "Please wait for your session to load...");
-            fetchProfile();
             return;
         }
 
@@ -96,7 +131,7 @@ export default function DynamicDocumentUpload() {
                     size: fileSize,
                     agencyId: activeAgencyId,
                     studentId,
-                    documentType: activeDoc.type
+                    documentType: activeDoc.type // Using dynamic type from API
                 })
             });
 
@@ -126,7 +161,7 @@ export default function DynamicDocumentUpload() {
                     blobName,
                     studentId,
                     agencyId: activeAgencyId,
-                    courseId: courseId || null, 
+                    courseId: courseId || null,
                     mimeType,
                     size: fileSize,
                     documentType: activeDoc.type
@@ -134,10 +169,9 @@ export default function DynamicDocumentUpload() {
             });
 
             if (confirmRes.ok) {
-                // We store both URI and type so the UI knows if it should show an image or a PDF icon
-                setUploadedDocs(prev => ({ 
-                    ...prev, 
-                    [activeDoc.id]: { uri: uri, type: mimeType } 
+                setUploadedDocs(prev => ({
+                    ...prev,
+                    [activeDoc.id]: { uri: uri, type: mimeType }
                 }));
                 Alert.alert("Success", `${activeDoc.label} uploaded.`);
             } else {
@@ -151,11 +185,7 @@ export default function DynamicDocumentUpload() {
     };
 
     const pickImage = async (useCamera = false) => {
-        const options = {
-            mediaTypes: ['images'],
-            allowsEditing: true,
-            quality: 0.7,
-        };
+        const options = { mediaTypes: ['images'], allowsEditing: true, quality: 0.7 };
         const result = useCamera
             ? await ImagePicker.launchCameraAsync(options)
             : await ImagePicker.launchImageLibraryAsync(options);
@@ -185,14 +215,35 @@ export default function DynamicDocumentUpload() {
             return;
         }
 
-        if (currentStep < DOCUMENT_STEPS.length - 1) {
+        if (currentStep < documentSteps.length - 1) {
             setCurrentStep(currentStep + 1);
         } else {
-            Alert.alert("Done", "All documents submitted successfully!", [
-                { text: "OK", onPress: () => router.back() } 
+            Alert.alert("Done", "All requested documents have been uploaded!", [
+                { text: "OK", onPress: () => router.back() }
             ]);
         }
     };
+
+    if (fetchingSteps) {
+        return (
+            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+                <ActivityIndicator size="large" color={COLORS.primary} />
+                <Text style={{ marginTop: 10, color: COLORS.secondary }}>Fetching requirements...</Text>
+            </View>
+        );
+    }
+
+    if (documentSteps.length === 0) {
+        return (
+            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
+                <MaterialCommunityIcons name="file-search-outline" size={60} color={COLORS.gray} />
+                <Text style={{ textAlign: 'center', marginTop: 10, color: COLORS.textDark }}>No documents requested by the agent yet.</Text>
+                <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 20 }}>
+                    <Text style={{ color: COLORS.primary, fontWeight: '700' }}>Go Back</Text>
+                </TouchableOpacity>
+            </View>
+        );
+    }
 
     return (
         <SafeAreaView style={styles.container}>
@@ -203,9 +254,9 @@ export default function DynamicDocumentUpload() {
                     <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
                 </TouchableOpacity>
                 <View style={styles.progressContainer}>
-                    <Text style={styles.progressText}>Step {currentStep + 1} of 13</Text>
+                    <Text style={styles.progressText}>Step {currentStep + 1} of {documentSteps.length}</Text>
                     <View style={styles.progressBar}>
-                        <View style={[styles.progressFill, { width: `${((currentStep + 1) / 13) * 100}%` }]} />
+                        <View style={[styles.progressFill, { width: `${((currentStep + 1) / documentSteps.length) * 100}%` }]} />
                     </View>
                 </View>
             </View>
@@ -233,7 +284,7 @@ export default function DynamicDocumentUpload() {
                             {uploadedDocs[activeDoc.id].type?.includes('pdf') ? (
                                 <View style={styles.pdfIconContainer}>
                                     <MaterialCommunityIcons name="file-pdf-box" size={80} color="#EF4444" />
-                                    <Text style={{color: COLORS.gray}}>PDF Selected</Text>
+                                    <Text style={{ color: COLORS.gray }}>PDF Selected</Text>
                                 </View>
                             ) : (
                                 <Image source={{ uri: uploadedDocs[activeDoc.id].uri }} style={styles.previewImage} />
@@ -277,9 +328,9 @@ export default function DynamicDocumentUpload() {
                     onPress={nextStep}
                 >
                     <Text style={styles.nextButtonText}>
-                        {uploadedDocs[activeDoc.id] || !activeDoc.required ? 'CONTINUE' : 'UPLOAD TO PROCEED'}
+                        {uploadedDocs[activeDoc.id] || !activeDoc.required ? (currentStep === documentSteps.length - 1 ? 'FINISH' : 'CONTINUE') : 'UPLOAD TO PROCEED'}
                     </Text>
-                    <Ionicons name="arrow-forward" size={20} color={COLORS.white} />
+                    <Ionicons name={currentStep === documentSteps.length - 1 ? "checkmark-done" : "arrow-forward"} size={20} color={COLORS.white} />
                 </TouchableOpacity>
             </View>
         </SafeAreaView>

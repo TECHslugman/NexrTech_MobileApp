@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons, Feather } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
 import { Config } from '../../../../config';
 
@@ -18,62 +18,51 @@ const COLORS = {
     textPrimary: '#2D3748',
     textSecondary: '#718096',
     border: '#EEF2F7',
-    booked: '#E53E3E', // Red for already booked
+    booked: '#E53E3E',
     available: '#718096',
-    selected: '#38A169', // Green for your current selection
+    selected: '#38A169',
 };
 
-// MODAL 2: SEAT INFO POPUP
-const SeatInfoModal = ({ visible, onClose, seatId, onConfirm, registering }) => {
-    const { userToken } = useAuth();
-    const [loading, setLoading] = useState(true);
-    const [seatData, setSeatData] = useState(null);
-
-    useEffect(() => {
-        if (visible && seatId) fetchSeatDetail();
-    }, [visible, seatId]);
-
-    const fetchSeatDetail = async () => {
-        setLoading(true);
-        try {
-            const response = await fetch(`${Config.API_BASE_URL}/agency/events/profile/${seatId}/seats/info`, {
-                headers: { 'Authorization': `Bearer ${userToken}` }
-            });
-            const json = await response.json();
-            if (response.ok) {
-                setSeatData(json.seat); //
-            }
-        } catch (error) {
-            Alert.alert("Error", "Could not fetch seat info");
-        } finally {
-            setLoading(false);
-        }
-    };
+// MODAL 2: CONFIRMATION SUMMARY
+const MultiSeatInfoModal = ({ visible, onClose, selectedSeats, onConfirm, registering }) => {
+    const totalPrice = selectedSeats.reduce((sum, s) => sum + Number(s.price || 0), 0);
 
     return (
         <Modal visible={visible} transparent animationType="fade">
             <View style={styles.infoModalOverlay}>
                 <View style={styles.infoModalContent}>
-                    {loading ? <ActivityIndicator size="large" color={COLORS.primary} /> : (
-                        <>
-                            <Text style={styles.infoTitle}>Seat Details</Text>
-                            <View style={styles.infoDetailBox}>
-                                <Text style={styles.infoRow}>Position: <Text style={styles.boldText}>{seatData?.row}{seatData?.columns}</Text></Text>
-                                <Text style={styles.infoRow}>Type: <Text style={styles.boldText}>{seatData?.ticketTypes?.name}</Text></Text>
-                                <Text style={styles.infoRow}>Price: <Text style={[styles.boldText, { color: COLORS.primary }]}>Nu {seatData?.ticketTypes?.price}</Text></Text>
-
-                                {seatData?.ticketTypes?.description?.map((item, index) => (
-                                    <Text key={index} style={styles.seatDescSubtitle}>• {item}</Text>
-                                ))}
-                            </View>
-                            <View style={styles.infoBtnRow}>
-                                <TouchableOpacity style={styles.cancelSubBtn} onPress={onClose}><Text style={{ color: COLORS.primary }}>Back</Text></TouchableOpacity>
-                                <TouchableOpacity style={styles.confirmSubBtn} onPress={() => onConfirm(seatId)} disabled={registering}>
-                                    {registering ? <ActivityIndicator color="#FFF" /> : <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Confirm Seat</Text>}
-                                </TouchableOpacity>
-                            </View>
-                        </>
-                    )}
+                    <Text style={styles.infoTitle}>Confirm Selection</Text>
+                    <View style={styles.infoDetailBox}>
+                        <Text style={styles.infoLabel}>SELECTED SEATS ({selectedSeats.length})</Text>
+                        <ScrollView style={{ maxHeight: 200 }}>
+                            {selectedSeats.map((seat, index) => (
+                                <View key={index} style={styles.multiSeatRow}>
+                                    <View>
+                                        <Text style={styles.boldText}>Seat {seat.label}</Text>
+                                        <Text style={{ fontSize: 10, color: COLORS.textSecondary }}>{seat.type}</Text>
+                                    </View>
+                                    <Text style={{ color: COLORS.primary, fontWeight: '600' }}>Nu {seat.price}</Text>
+                                </View>
+                            ))}
+                        </ScrollView>
+                        <View style={styles.divider} />
+                        <View style={styles.multiSeatRow}>
+                            <Text style={[styles.boldText, { fontSize: 18 }]}>Total Price</Text>
+                            <Text style={[styles.boldText, { color: COLORS.primary, fontSize: 18 }]}>Nu {totalPrice}</Text>
+                        </View>
+                    </View>
+                    <View style={styles.infoBtnRow}>
+                        <TouchableOpacity style={styles.cancelSubBtn} onPress={onClose}>
+                            <Text style={{ color: COLORS.primary }}>Back</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.confirmSubBtn}
+                            onPress={() => onConfirm(selectedSeats.map(s => s.id))}
+                            disabled={registering}
+                        >
+                            {registering ? <ActivityIndicator color="#FFF" /> : <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Confirm Booking</Text>}
+                        </TouchableOpacity>
+                    </View>
                 </View>
             </View>
         </Modal>
@@ -81,9 +70,11 @@ const SeatInfoModal = ({ visible, onClose, seatId, onConfirm, registering }) => 
 };
 
 // MODAL 1: SEATING GRID
-const SeatingChartModal = ({ visible, onClose, seats, onConfirm, registering }) => {
-    const [tempSelectedId, setTempSelectedId] = useState(null);
-    const [isInfoVisible, setIsInfoVisible] = useState(false);
+const SeatingChartModal = ({ visible, onClose, seats, onConfirm, registering, eventId }) => {
+    const [selectedSeats, setSelectedSeats] = useState([]);
+    const [isSummaryVisible, setIsSummaryVisible] = useState(false);
+    const [fetchingSeatId, setFetchingSeatId] = useState(null);
+    const { userToken } = useAuth();
 
     const { processedRows, maxCols } = useMemo(() => {
         const rowsMap = {};
@@ -99,9 +90,42 @@ const SeatingChartModal = ({ visible, onClose, seats, onConfirm, registering }) 
 
     const sortedRowKeys = Object.keys(processedRows).sort();
 
-    const handleSeatClick = (id) => {
-        setTempSelectedId(id);
-        setIsInfoVisible(true);
+    const handleSeatToggle = async (seat) => {
+        const isAlreadySelected = selectedSeats.some(s => s.id === seat._id);
+
+        if (isAlreadySelected) {
+            setSelectedSeats(selectedSeats.filter(s => s.id !== seat._id));
+            return;
+        }
+
+        // Fetch individual seat info from Backend
+        setFetchingSeatId(seat._id);
+        try {
+            const response = await fetch(`${Config.API_BASE_URL}/agency/events/profile/${seat._id}/seats/info`, {
+                headers: { 'Authorization': `Bearer ${userToken}` }
+            });
+            const json = await response.json();
+
+            if (response.ok && json.seat) {
+                const sData = json.seat;
+                setSelectedSeats([...selectedSeats, {
+                    id: sData._id,
+                    label: `${sData.row}${sData.columns}`,
+                    price: sData.ticketTypes?.price || 0,
+                    type: sData.ticketTypes?.name || 'Standard'
+                }]);
+            } else {
+                Alert.alert("Error", "Could not fetch seat pricing.");
+            }
+        } catch (error) {
+            Alert.alert("Error", "Network error while fetching seat info.");
+        } finally {
+            setFetchingSeatId(null);
+        }
+    };
+
+    const handleReset = () => {
+        setSelectedSeats([]);
     };
 
     return (
@@ -110,9 +134,10 @@ const SeatingChartModal = ({ visible, onClose, seats, onConfirm, registering }) 
                 <View style={styles.modalContent}>
                     <View style={styles.modalHeader}>
                         <TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color={COLORS.textPrimary} /></TouchableOpacity>
-                        <Text style={styles.modalTitle}>Select Your Seat</Text>
-                        <View style={{ width: 24 }} />
+                        <Text style={styles.modalTitle}>Select Your Seats</Text>
+                        <TouchableOpacity onPress={handleReset}><Text style={{ color: COLORS.booked, fontWeight: '600' }}>Reset</Text></TouchableOpacity>
                     </View>
+
                     <ScrollView contentContainerStyle={styles.scrollContainer}>
                         <View style={styles.stageContainer}><View style={styles.stageLine} /><Text style={styles.stageText}>STAGE / SCREEN</Text></View>
                         {sortedRowKeys.map(rowKey => (
@@ -124,16 +149,25 @@ const SeatingChartModal = ({ visible, onClose, seats, onConfirm, registering }) 
                                         if (!seat) return <View key={`empty-${colNum}`} style={styles.seatPlaceholder} />;
 
                                         const isBooked = seat.isBooked;
-                                        const isSelected = tempSelectedId === seat._id;
-
-                                        let seatColor = COLORS.available;
-                                        if (isBooked) seatColor = COLORS.booked; // Others' seats are RED
-                                        if (isSelected) seatColor = COLORS.selected; // Your selection is GREEN
+                                        const isSelected = selectedSeats.some(s => s.id === seat._id);
+                                        const isFetching = fetchingSeatId === seat._id;
+                                        let seatColor = isBooked ? COLORS.booked : (isSelected ? COLORS.selected : COLORS.available);
 
                                         return (
-                                            <TouchableOpacity key={seat._id} disabled={isBooked} onPress={() => handleSeatClick(seat._id)} style={styles.seatBtn}>
-                                                <Image source={{ uri: SEAT_IMAGE_URL }} style={[styles.seatIcon, { tintColor: seatColor }]} />
-                                                <Text style={[styles.seatNum, { color: seatColor }]}>{seat.columns}</Text>
+                                            <TouchableOpacity
+                                                key={seat._id}
+                                                disabled={isBooked || isFetching}
+                                                onPress={() => handleSeatToggle(seat)}
+                                                style={styles.seatBtn}
+                                            >
+                                                {isFetching ? (
+                                                    <ActivityIndicator size="small" color={COLORS.primary} style={{ width: 32, height: 32 }} />
+                                                ) : (
+                                                    <>
+                                                        <Image source={{ uri: SEAT_IMAGE_URL }} style={[styles.seatIcon, { tintColor: seatColor }]} />
+                                                        <Text style={[styles.seatNum, { color: seatColor }]}>{seat.columns}</Text>
+                                                    </>
+                                                )}
                                             </TouchableOpacity>
                                         );
                                     })}
@@ -141,13 +175,28 @@ const SeatingChartModal = ({ visible, onClose, seats, onConfirm, registering }) 
                             </View>
                         ))}
                     </ScrollView>
+
+                    {selectedSeats.length > 0 && (
+                        <View style={styles.selectionBar}>
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.selectionCount}>{selectedSeats.length} Seats Selected</Text>
+                                <Text style={styles.selectionList} numberOfLines={1}>
+                                    {selectedSeats.map(s => s.label).join(', ')}
+                                </Text>
+                            </View>
+                            <TouchableOpacity style={styles.selectionBtn} onPress={() => setIsSummaryVisible(true)}>
+                                <Text style={styles.selectionBtnText}>Review Summary</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
                 </View>
             </View>
-            <SeatInfoModal
-                visible={isInfoVisible}
-                seatId={tempSelectedId}
-                onClose={() => { setIsInfoVisible(false); setTempSelectedId(null); }}
-                onConfirm={(id) => onConfirm(id)}
+
+            <MultiSeatInfoModal
+                visible={isSummaryVisible}
+                selectedSeats={selectedSeats}
+                onClose={() => setIsSummaryVisible(false)}
+                onConfirm={onConfirm}
                 registering={registering}
             />
         </Modal>
@@ -181,12 +230,11 @@ export default function EventDetail() {
                         description: e.description, about: e.about,
                         whoShouldAttend: e.whoShouldAttend,
                         agenda: e.agendaItems || [],
-                        // IMPORTANT: Capture the mode from the meetings array
                         mode: e.meetings?.[0]?.mode || 'offline',
                         seats: e.seats || []
                     });
                 }
-            } catch (error) { console.log(error); } finally { setLoading(false); }
+            } catch (error) { console.log("Fetch Error:", error); } finally { setLoading(false); }
         };
         fetchDetail();
     }, [id]);
@@ -201,7 +249,7 @@ export default function EventDetail() {
         };
     };
 
-    const handleConfirmRegistration = async (seatId = null) => {
+    const handleConfirmRegistration = async (seatIds = []) => {
         setRegistering(true);
         try {
             const res = await fetch(`${Config.API_BASE_URL}/students/events/registration/${id}`, {
@@ -209,28 +257,17 @@ export default function EventDetail() {
                 headers: {
                     'Authorization': `Bearer ${userToken}`,
                     'Content-Type': 'application/json'
-                }, 
-                // If seatId exists, send it. If online, body can be empty or omit seatId.
-                body: seatId ? JSON.stringify({ seatId: seatId }) : JSON.stringify({})
+                },
+                body: JSON.stringify({ seatIds: seatIds })
             });
 
             const result = await res.json();
-            console.log("Backend Response Message:", result.message);
-
             if (res.ok) {
-                const isOnline = data.mode === 'online';
-                Alert.alert(
-                    isOnline ? "Registration Successful" : "Registration Sent",
-                    isOnline
-                        ? "You have successfully registered for this online event. Please check your email for the meeting link."
-                        : `${result.message}\n\n⚠️ WARNING: Your seat is NOT yet confirmed. It requires agency approval.`,
-                    [{ text: "OK", onPress: () => setIsModalVisible(false) }]
-                );
+                Alert.alert("Success", "Registration successful!", [{ text: "OK", onPress: () => { setIsModalVisible(false); router.back(); } }]);
             } else {
-                Alert.alert("Registration Error", result.message || "Something went wrong.");
+                Alert.alert("Error", result.message || "Something went wrong.");
             }
         } catch (e) {
-            console.log("Fetch Error:", e);
             Alert.alert("Error", "Failed to connect to server.");
         } finally {
             setRegistering(false);
@@ -240,24 +277,6 @@ export default function EventDetail() {
     if (loading || !data) return <View style={styles.center}><ActivityIndicator size="large" color={COLORS.primary} /></View>;
     const startInfo = formatDateTime(data.startAt);
     const endInfo = formatDateTime(data.endAt);
-
-    // LOGIC FOR BUTTON PRESS
-    const handleRegisterPress = () => {
-        if (data.mode === 'seated') {
-            // Show the seat selection modal for seated events
-            setIsModalVisible(true);
-        } else {
-            // Directly trigger registration for online/offline (non-seated) events
-            Alert.alert(
-                "Confirm Registration",
-                "Would you like to register for this online event?",
-                [
-                    { text: "Cancel", style: "cancel" },
-                    { text: "Register", onPress: () => handleConfirmRegistration() }
-                ]
-            );
-        }
-    };
 
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
@@ -279,24 +298,21 @@ export default function EventDetail() {
                             <View style={[styles.infoIcon, { backgroundColor: '#EBF4FF' }]}><Feather name="calendar" size={18} color={COLORS.primary} /></View>
                             <View><Text style={styles.infoLabel}>STARTS ON</Text><Text style={styles.infoValue}>{startInfo.day}, {startInfo.date}</Text><Text style={styles.infoSub}>{startInfo.time}</Text></View>
                         </View>
-                        {/* Render Location Card ONLY if it's NOT online */}
+                        <View style={styles.infoCard}>
+                            <View style={[styles.infoIcon, { backgroundColor: '#FFF5F5' }]}><Feather name="clock" size={18} color={COLORS.booked} /></View>
+                            <View><Text style={styles.infoLabel}>ENDS ON</Text><Text style={styles.infoValue}>{endInfo.day}, {endInfo.date}</Text><Text style={styles.infoSub}>{endInfo.time}</Text></View>
+                        </View>
                         {data.mode !== 'online' && (
                             <View style={styles.infoCard}>
                                 <View style={[styles.infoIcon, { backgroundColor: '#F0FFF4' }]}><Feather name="map-pin" size={18} color="#48BB78" /></View>
                                 <View><Text style={styles.infoLabel}>LOCATION</Text><Text style={styles.infoValue}>{data.venueName}</Text><Text style={styles.infoSub}>{data.addressLine}</Text></View>
                             </View>
                         )}
-                        {/* If Online, show a Meeting card instead */}
-                        {data.mode === 'online' && (
-                            <View style={styles.infoCard}>
-                                <View style={[styles.infoIcon, { backgroundColor: '#F0FFF4' }]}><Feather name="video" size={18} color="#48BB78" /></View>
-                                <View><Text style={styles.infoLabel}>EVENT TYPE</Text><Text style={styles.infoValue}>Online Meeting</Text><Text style={styles.infoSub}>Link will be sent via Email</Text></View>
-                            </View>
-                        )}
                     </View>
 
                     {data.description && <View style={styles.section}><Text style={styles.sectionTitle}>Description</Text><Text style={styles.paragraph}>{data.description}</Text></View>}
                     {data.about && <View style={styles.section}><Text style={styles.sectionTitle}>About Event</Text><Text style={styles.paragraph}>{data.about}</Text></View>}
+                    {data.whoShouldAttend && <View style={styles.section}><Text style={styles.sectionTitle}>Who Should Attend</Text><Text style={styles.paragraph}>{data.whoShouldAttend}</Text></View>}
 
                     {data.agenda?.length > 0 && (
                         <View style={styles.section}>
@@ -310,15 +326,15 @@ export default function EventDetail() {
                         </View>
                     )}
                 </View>
-                <View style={{ height: 100 }} />
+                <View style={{ height: 120 }} />
             </ScrollView>
 
-            {/* Modal only appears if mode is seated */}
             {data.mode === 'seated' && (
                 <SeatingChartModal
                     visible={isModalVisible}
                     onClose={() => setIsModalVisible(false)}
                     seats={data.seats}
+                    eventId={data.id}
                     onConfirm={handleConfirmRegistration}
                     registering={registering}
                 />
@@ -327,16 +343,10 @@ export default function EventDetail() {
             <View style={styles.stickyFooter}>
                 <TouchableOpacity
                     style={styles.mainBtn}
-                    onPress={handleRegisterPress}
+                    onPress={() => data.mode === 'seated' ? setIsModalVisible(true) : handleConfirmRegistration()}
                     disabled={registering}
                 >
-                    {registering ? (
-                        <ActivityIndicator color="#FFF" />
-                    ) : (
-                        <Text style={styles.mainBtnText}>
-                            {data.mode === 'seated' ? 'Select Seat & Register' : 'Register for Event'}
-                        </Text>
-                    )}
+                    {registering ? <ActivityIndicator color="#FFF" /> : <Text style={styles.mainBtnText}>{data.mode === 'seated' ? 'Select Seats & Register' : 'Register for Event'}</Text>}
                 </TouchableOpacity>
             </View>
         </SafeAreaView>
@@ -369,7 +379,7 @@ const styles = StyleSheet.create({
     mainBtn: { backgroundColor: COLORS.primary, height: 50, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
     mainBtnText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-    modalContent: { backgroundColor: '#FFF', height: '80%', borderTopLeftRadius: 30, borderTopRightRadius: 30 },
+    modalContent: { backgroundColor: '#FFF', height: '85%', borderTopLeftRadius: 30, borderTopRightRadius: 30 },
     modalHeader: { flexDirection: 'row', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#F0F0F0', justifyContent: 'space-between' },
     modalTitle: { fontSize: 18, fontWeight: 'bold' },
     scrollContainer: { padding: 20 },
@@ -383,13 +393,19 @@ const styles = StyleSheet.create({
     seatIcon: { width: 32, height: 32 },
     seatNum: { fontSize: 10, fontWeight: 'bold', marginTop: 4 },
     seatPlaceholder: { width: 32, height: 32 },
+    selectionBar: { position: 'absolute', bottom: 0, width: '100%', backgroundColor: '#FFF', padding: 15, flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#EEE', elevation: 10 },
+    selectionCount: { fontSize: 14, fontWeight: 'bold' },
+    selectionList: { fontSize: 12, color: COLORS.textSecondary },
+    selectionBtn: { backgroundColor: COLORS.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
+    selectionBtnText: { color: '#FFF', fontWeight: 'bold' },
     infoModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
-    infoModalContent: { width: '85%', backgroundColor: '#FFF', borderRadius: 20, padding: 25 },
-    infoTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
+    infoModalContent: { width: '90%', backgroundColor: '#FFF', borderRadius: 20, padding: 20 },
+    infoTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
     infoDetailBox: { backgroundColor: COLORS.bg, padding: 15, borderRadius: 12, marginBottom: 20 },
-    infoRow: { fontSize: 16, marginBottom: 8, color: COLORS.textPrimary },
+    multiSeatRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5 },
+    divider: { height: 1, backgroundColor: '#DDD', marginVertical: 10 },
+    infoLabel: { fontSize: 12, color: COLORS.textSecondary, marginBottom: 5 },
     boldText: { fontWeight: 'bold' },
-    seatDescSubtitle: { fontSize: 13, color: COLORS.textSecondary, fontStyle: 'italic', marginBottom: 2 },
     infoBtnRow: { flexDirection: 'row', gap: 10 },
     cancelSubBtn: { flex: 1, height: 45, borderRadius: 10, borderWidth: 1, borderColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' },
     confirmSubBtn: { flex: 1, height: 45, borderRadius: 10, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' }

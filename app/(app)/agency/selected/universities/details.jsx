@@ -39,7 +39,7 @@ export default function UniversityDetail() {
     useEffect(() => {
         const fetchDetail = async () => {
             try {
-                const response = await fetch(`${Config.API_BASE_URL}api/v1/agency/universities/${id}`, {
+                const response = await fetch(`${Config.API_BASE_URL}/agency/universities/${id}`, {
                     headers: { 'Authorization': `Bearer ${userToken}` }
                 });
 

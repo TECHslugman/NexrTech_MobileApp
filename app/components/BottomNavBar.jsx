@@ -29,7 +29,7 @@ export default function BottomNavBar() {
         const potentialId = segments[selectedIndex + 1];
         
         // List of routes that are NOT IDs
-        const staticRoutes = ['profile', 'updates', 'messages', 'events', 'courses'];
+        const staticRoutes = ['profile', 'updates', 'messages', 'events', 'courses', 'documentupload'];
         if (potentialId && !staticRoutes.includes(potentialId)) {
           foundAgencyId = potentialId;
         }
@@ -61,6 +61,12 @@ export default function BottomNavBar() {
       getScreen: () => '/agency/selected/messages',
     },
     {
+      name: 'Documents',
+      route: 'uploads', 
+      icon: 'document-text-outline',
+      getScreen: () => '/agency/selected/documentupload/uploads',
+    },
+    {
       name: 'Profile',
       route: 'profile',
       icon: 'person-outline',
@@ -81,15 +87,15 @@ export default function BottomNavBar() {
   const handleNavigation = (screen, itemName) => {
     if (!screen) return;
 
-    // Only log navigation actions (useful for debugging clicks)
     console.log(`🚀 Navigating to ${itemName}`);
 
-    const needsAgencyId = ['Updates', 'Profile', 'Messages'].includes(itemName);
+    // Added 'Documents' to the list of routes that benefit from carrying the agencyId
+    const needsAgencyId = ['Updates', 'Profile', 'Messages', 'Documents'].includes(itemName);
 
     if (needsAgencyId && agencyId) {
       router.push({
         pathname: screen,
-        params: { agencyId, refresh: Date.now()} // Force refresh
+        params: { agencyId, refresh: Date.now()} 
       });
     } else {
       router.push(screen);
@@ -112,7 +118,7 @@ export default function BottomNavBar() {
           >
             {active ? (
               <View style={styles.navIconActive}>
-                <Ionicons name={item.icon} size={22} color={COLORS.white} />
+                <Ionicons name={item.icon.replace('-outline', '')} size={22} color={COLORS.white} />
               </View>
             ) : (
               <Ionicons
@@ -161,12 +167,12 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   navLabel: {
-    fontSize: 11,
+    fontSize: 10, // Slightly smaller to fit 5 items comfortably
     color: COLORS.textInactive,
     fontWeight: '500',
   },
   navLabelActive: {
-    fontSize: 11,
+    fontSize: 10,
     color: COLORS.primary,
     fontWeight: '700',
   },
