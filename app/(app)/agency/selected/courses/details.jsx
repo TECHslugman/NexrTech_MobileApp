@@ -11,7 +11,7 @@ import {
     Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
 import { Config } from '../../../../config';
@@ -31,6 +31,7 @@ const COLORS = {
 
 export default function CourseDetail() {
     const router = useRouter();
+    const insets = useSafeAreaInsets();
     const params = useLocalSearchParams();
     const { courseId, agencyId, courseName } = params;
 
@@ -38,30 +39,37 @@ export default function CourseDetail() {
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [courseData, setCourseData] = useState(null);
+    const [isAlreadySelected, setIsAlreadySelected] = useState(false);
 
     useEffect(() => {
-        const fetchCourseDetails = async () => {
+        const fetchCourseAndStatus = async () => {
             try {
                 setLoading(true);
-                const courseResponse = await fetch(
-                    `${Config.API_BASE_URL}/agency/courses/${courseId}`,
-                    {
+                const [courseRes, statusRes] = await Promise.all([
+                    fetch(`${Config.API_BASE_URL}/agency/courses/${courseId}`, {
                         headers: {
                             'Authorization': `Bearer ${userToken}`,
                             'Content-Type': 'application/json'
                         }
-                    }
-                );
+                    }),
+                    fetch(`${Config.API_BASE_URL}/students/application/status`, {
+                        headers: {
+                            'Authorization': `Bearer ${userToken}`,
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                ]);
 
-                if (courseResponse.ok) {
-                    const courseJson = await courseResponse.json();
-                    if (courseJson.course) {
-                        setCourseData(courseJson.course);
-                    } else {
-                        setCourseData(getFallbackData());
+                if (courseRes.ok) {
+                    const courseJson = await courseRes.json();
+                    setCourseData(courseJson.course || getFallbackData());
+                }
+
+                if (statusRes.ok) {
+                    const statusJson = await statusRes.json();
+                    if (statusJson.data !== null) {
+                        setIsAlreadySelected(true);
                     }
-                } else {
-                    setCourseData(getFallbackData());
                 }
             } catch (error) {
                 setCourseData(getFallbackData());
@@ -70,13 +78,12 @@ export default function CourseDetail() {
             }
         };
 
-        fetchCourseDetails();
+        fetchCourseAndStatus();
     }, [courseId, userToken]);
 
     const handleApplyNow = async () => {
         try {
             setSubmitting(true);
-            // This is the endpoint from your Postman screenshot
             const response = await fetch(
                 `${Config.API_BASE_URL}/students/courses/select/${courseId}`,
                 {
@@ -91,7 +98,7 @@ export default function CourseDetail() {
             if (response.ok) {
                 Alert.alert(
                     "Selection Successful",
-                    "The course has been selected. We are currently waiting for an agent to be assigned to your profile. Once an agent accepts, you will receive an email notification.",
+                    "The course has been selected. We are currently waiting for an agent to be assigned.",
                     [{ text: "OK", onPress: () => router.back() }]
                 );
             } else {
@@ -105,20 +112,18 @@ export default function CourseDetail() {
         }
     };
 
-    const getFallbackData = () => {
-        return {
-            title: courseName || "No data",
-            about: "no data",
-            description: "No data",
-            level: "No data",
-            duration: "No data",
-            tuitionFee: { totalfee: "No data", currency: "null" },
-            entryRequirements: ["No data"],
-            status: "null",
-            intakes: null,
-            providedBy: { _id: "695e06c57a990e549f30053f", logo: DEFAULT_UNI_LOGO }
-        };
-    };
+    const getFallbackData = () => ({
+        title: courseName || "No data",
+        about: "no data",
+        description: "No data",
+        level: "No data",
+        duration: "No data",
+        tuitionFee: { totalfee: "No data", currency: "null" },
+        entryRequirements: ["No data"],
+        status: "null",
+        intakes: null,
+        providedBy: { _id: "695e06c57a990e549f30053f", logo: DEFAULT_UNI_LOGO }
+    });
 
     const formatTuitionFee = () => {
         if (!courseData?.tuitionFee?.totalfee) return "Contact for details";
@@ -139,33 +144,24 @@ export default function CourseDetail() {
 
     if (loading) {
         return (
-            <View style={styles.center}>
+            <View style={[styles.center, { paddingTop: insets.top }]}>
                 <ActivityIndicator size="large" color={COLORS.primaryBlue} />
                 <Text style={styles.loadingText}>Loading course details...</Text>
             </View>
         );
     }
 
-    if (!courseData) {
-        return (
-            <View style={styles.center}>
-                <Feather name="alert-circle" size={50} color={COLORS.textSecondary} />
-                <Text style={styles.errorText}>Course details not found</Text>
-                <TouchableOpacity style={styles.retryButton} onPress={() => router.back()}>
-                    <Text style={styles.retryButtonText}>Go Back</Text>
-                </TouchableOpacity>
-            </View>
-        );
-    }
-
     return (
-        <SafeAreaView style={styles.safe} edges={['bottom']}>
+        <View style={[styles.container, { backgroundColor: COLORS.bg }]}>
             <StatusBar barStyle="light-content" />
 
             {/* Header */}
             <View style={[
                 styles.header,
-                { backgroundColor: courseData.level === 'graduate' ? '#4ECDC4' : '#FF6B6B' }
+                { 
+                    backgroundColor: courseData.level === 'graduate' ? '#4ECDC4' : '#FF6B6B',
+                    paddingTop: insets.top + 10 
+                }
             ]}>
                 <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
                     <Ionicons name="chevron-back" size={26} color="#FFF" />
@@ -194,7 +190,6 @@ export default function CourseDetail() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-                {/* About Section */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
                         <Feather name="info" size={20} color={COLORS.primaryBlue} />
@@ -205,7 +200,6 @@ export default function CourseDetail() {
                     </View>
                 </View>
 
-                {/* What You'll Learn Section */}
                 {courseData.description && (
                     <View style={styles.section}>
                         <View style={styles.sectionHeader}>
@@ -218,7 +212,6 @@ export default function CourseDetail() {
                     </View>
                 )}
 
-                {/* Tuition Fees */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
                         <Feather name="dollar-sign" size={20} color={COLORS.primaryBlue} />
@@ -237,7 +230,6 @@ export default function CourseDetail() {
                     </View>
                 </View>
 
-                {/* Entry Requirements */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
                         <Feather name="list" size={20} color={COLORS.primaryBlue} />
@@ -257,7 +249,6 @@ export default function CourseDetail() {
                     </View>
                 </View>
 
-                {/* Provided By Section */}
                 {courseData.providedBy && (
                     <View style={styles.section}>
                         <View style={styles.sectionHeader}>
@@ -278,7 +269,6 @@ export default function CourseDetail() {
                     </View>
                 )}
 
-                {/* Additional Info Grid */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
                         <Feather name="file-text" size={20} color={COLORS.primaryBlue} />
@@ -309,45 +299,69 @@ export default function CourseDetail() {
                 </View>
             </ScrollView>
 
-            <View style={styles.bottomBar}>
+            {/* Tracker Info Box - Appears above Bottom Bar if selected */}
+            {isAlreadySelected && (
+                <View style={styles.trackerLinkContainer}>
+                    <TouchableOpacity 
+                        style={styles.trackerBox}
+                        onPress={() => router.push({
+                            pathname: 'agency/selected/updates', 
+                            params: { id: agencyId }
+                        })}
+                    >
+                        <View style={styles.trackerLeft}>
+                            <View style={styles.trackerIconCircle}>
+                                <Ionicons name="time-outline" size={20} color={COLORS.primaryBlue} />
+                            </View>
+                            <View>
+                                <Text style={styles.trackerTitle}>You have an ongoing application</Text>
+                                <Text style={styles.trackerSub}>Click here to view status</Text>
+                            </View>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color={COLORS.primaryBlue} />
+                    </TouchableOpacity>
+                </View>
+            )}
+
+            {/* Bottom Bar */}
+            <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 10 }]}>
                 <TouchableOpacity
                     style={[
                         styles.applyButton,
-                        (courseData.status !== 'open' || submitting) && styles.applyButtonDisabled
+                        (courseData.status !== 'open' || submitting || isAlreadySelected) && styles.applyButtonDisabled
                     ]}
-                    disabled={courseData.status !== 'open' || submitting}
+                    disabled={courseData.status !== 'open' || submitting || isAlreadySelected}
                     onPress={handleApplyNow}
                 >
                     {submitting ? (
                         <ActivityIndicator color="#FFF" />
                     ) : (
                         <Text style={styles.applyText}>
-                            {courseData.status === 'open' ? 'APPLY NOW' : 'APPLICATIONS CLOSED'}
+                            {isAlreadySelected 
+                                ? 'APPLICATION IN PROGRESS' 
+                                : courseData.status === 'open' ? 'APPLY NOW' : 'APPLICATIONS CLOSED'}
                         </Text>
                     )}
                 </TouchableOpacity>
             </View>
-        </SafeAreaView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    safe: { flex: 1, backgroundColor: COLORS.bg },
+    container: { flex: 1 },
     center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
     loadingText: { marginTop: 16, fontSize: 16, color: COLORS.textSecondary },
-    errorText: { fontSize: 18, fontWeight: '600', color: COLORS.textPrimary, marginTop: 16, marginBottom: 8 },
-    retryButton: { backgroundColor: COLORS.primaryBlue, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, marginTop: 20 },
-    retryButtonText: { color: COLORS.white, fontWeight: '600', fontSize: 14 },
-    header: { height: 220, paddingTop: 40, paddingHorizontal: 20 },
+    header: { height: 240, paddingHorizontal: 20 },
     backBtn: { position: 'absolute', top: 50, left: 20, zIndex: 10 },
     headerContent: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     courseLevel: { color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: '600', letterSpacing: 1, marginBottom: 8 },
-    courseTitle: { color: '#FFF', fontSize: 28, fontWeight: 'bold', textAlign: 'center', lineHeight: 34, marginBottom: 16 },
-    courseMeta: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8 },
+    courseTitle: { color: '#FFF', fontSize: 26, fontWeight: 'bold', textAlign: 'center', lineHeight: 32, marginBottom: 16 },
+    courseMeta: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8 },
     metaItem: { flexDirection: 'row', alignItems: 'center' },
     metaText: { color: 'rgba(255,255,255,0.9)', fontSize: 12, fontWeight: '500', marginLeft: 6 },
     metaDivider: { width: 1, height: 12, backgroundColor: 'rgba(255,255,255,0.3)', marginHorizontal: 12 },
-    scrollContent: { paddingHorizontal: 20, paddingBottom: 100 },
+    scrollContent: { paddingHorizontal: 20, paddingBottom: 20 },
     section: { marginTop: 24 },
     sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
     sectionTitle: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, marginLeft: 8 },
@@ -361,7 +375,6 @@ const styles = StyleSheet.create({
     requirementItem: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
     bulletPoint: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.primaryBlue, marginTop: 8, marginRight: 10 },
     requirementText: { flex: 1, fontSize: 14, color: COLORS.textPrimary, lineHeight: 20 },
-    noRequirementsText: { fontSize: 14, color: COLORS.textSecondary, fontStyle: 'italic', textAlign: 'center', paddingVertical: 10 },
     universityCard: { backgroundColor: COLORS.white, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center' },
     universityLogo: { width: 120, height: 60, marginBottom: 16 },
     universityInfo: { alignItems: 'center' },
@@ -373,8 +386,14 @@ const styles = StyleSheet.create({
     infoValue: { fontSize: 16, fontWeight: '600', color: COLORS.textPrimary },
     statusBadge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, alignSelf: 'flex-start' },
     statusText: { fontSize: 12, fontWeight: '600' },
-    bottomBar: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 20, backgroundColor: COLORS.bg, borderTopWidth: 1, borderTopColor: COLORS.border },
+    trackerLinkContainer: { paddingHorizontal: 20, marginBottom: 10 },
+    trackerBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#EBF2FA', padding: 15, borderRadius: 16, borderWidth: 1, borderColor: '#D0E1F5' },
+    trackerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    trackerIconCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center' },
+    trackerTitle: { fontSize: 14, fontWeight: '700', color: COLORS.textPrimary },
+    trackerSub: { fontSize: 12, color: COLORS.primaryBlue, fontWeight: '500', marginTop: 2 },
+    bottomBar: { padding: 20, backgroundColor: COLORS.bg, borderTopWidth: 1, borderTopColor: COLORS.border },
     applyButton: { backgroundColor: COLORS.primaryBlue, height: 55, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 5 },
     applyButtonDisabled: { backgroundColor: COLORS.textSecondary },
-    applyText: { color: '#FFF', fontWeight: 'bold', fontSize: 16, letterSpacing: 1 },
+    applyText: { color: '#FFF', fontWeight: 'bold', fontSize: 15, letterSpacing: 1 },
 });

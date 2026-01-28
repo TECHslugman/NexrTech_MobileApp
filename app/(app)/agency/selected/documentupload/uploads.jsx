@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
-    ActivityIndicator, Alert, Image, ScrollView, Dimensions, StatusBar
+    ActivityIndicator, Alert, Image, Dimensions, StatusBar, FlatList
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -21,30 +21,29 @@ const COLORS = {
     border: '#E0EBFF',
     success: '#4ADE80',
     gray: '#94A3B8',
-    textDark: '#2D3748'
+    textDark: '#2D3748',
+    warning: '#FBBF24'
 };
 
-export default function DynamicDocumentUpload() {
+export default function SwipeableDocumentUpload() {
     const { courseId, agencyId } = useLocalSearchParams();
     const router = useRouter();
     const { userToken } = useAuth();
+    const flatListRef = useRef(null);
 
-    const [documentSteps, setDocumentSteps] = useState([]); // Now dynamic
-    const [currentStep, setCurrentStep] = useState(0);
+    const [documentSteps, setDocumentSteps] = useState([]);
+    const [currentIndex, setCurrentIndex] = useState(0);
     const [loading, setLoading] = useState(false);
-    const [fetchingSteps, setFetchingSteps] = useState(true); // Loading state for steps
+    const [fetchingSteps, setFetchingSteps] = useState(true);
     const [userData, setUserData] = useState(null);
-    const [uploadedDocs, setUploadedDocs] = useState({});
-
-    // Current document based on dynamic steps
-    const activeDoc = documentSteps[currentStep];
+    const [uploadedDocs, setUploadedDocs] = useState({}); // Stores status: { docId: { status: 'uploaded', uri: '...' } }
 
     useEffect(() => {
-        const initializeData = async () => {
+        const initialize = async () => {
             await fetchProfile();
             await fetchRequiredDocuments();
         };
-        initializeData();
+        initialize();
     }, []);
 
     const fetchProfile = async () => {
@@ -54,284 +53,235 @@ export default function DynamicDocumentUpload() {
             });
             const json = await res.json();
             if (res.ok) setUserData(json.profile);
-        } catch (e) {
-            console.error("Profile Load Error", e);
-        }
+        } catch (e) { console.error(e); }
     };
 
     const fetchRequiredDocuments = async () => {
         try {
             setFetchingSteps(true);
-            // Ensure agencyId is valid before fetching
-            if (!agencyId) {
-                console.error("No agencyId found in params");
-                return;
-            }
-
             const res = await fetch(`${Config.API_BASE_URL}/students/documents/${agencyId}`, {
                 headers: { 'Authorization': `Bearer ${userToken}` }
             });
-
             const json = await res.json();
-
-            // DEBUG: Check your terminal/console to see what the agent actually sent
-            console.log("Documents from API:", json);
-
-            // Adjust this check based on your actual API response key (e.g., json.data or json.documents)
+            
+            // Assuming your backend also returns the student's current uploads in this call or a separate one
+            // If separate, you'd fetch `${Config.API_BASE_URL}/students/my-uploads/${agencyId}`
             const docsArray = json.documents || json.data || json;
+            const existingUploads = json.existingUploads || {}; // Logic to map already uploaded files
 
-            if (res.ok && Array.isArray(docsArray) && docsArray.length > 0) {
-                const formattedSteps = docsArray.map((doc) => ({
-                    // Use the database ID or the name as a unique key
+            if (res.ok && Array.isArray(docsArray)) {
+                const formatted = docsArray.map((doc) => ({
                     id: doc._id || doc.name,
-                    // Render the name provided by the agent
-                    label: doc.name || 'Untitled Document',
-                    // Render the description provided by the agent
-                    sub: doc.description || `Please upload your ${doc.name}`,
-                    // The technical type used for the SAS/Upload link
+                    label: doc.name || 'Document',
+                    sub: doc.description || `Upload your ${doc.name}`,
                     type: doc.type || doc.name.toLowerCase().replace(/\s+/g, '_'),
-                    required: doc.required ?? true
+                    required: true 
                 }));
-
-                setDocumentSteps(formattedSteps);
-            } else {
-                Alert.alert("Notice", "No document requirements found for this agency.");
+                setDocumentSteps(formatted);
+                setUploadedDocs(existingUploads); 
             }
         } catch (e) {
-            console.error("Fetch Steps Error", e);
-            Alert.alert("Error", "Failed to load document requirements.");
+            Alert.alert("Error", "Failed to load requirements.");
         } finally {
             setFetchingSteps(false);
         }
     };
 
-    const handleUpload = async (asset) => {
+    const handleUpload = async (asset, docItem) => {
         const studentId = userData?._id;
         const activeAgencyId = agencyId || userData?.registeredAgency;
-
-        if (!studentId || !activeAgencyId) {
-            Alert.alert("Initializing", "Please wait for your session to load...");
-            return;
-        }
 
         try {
             setLoading(true);
             const mimeType = asset.mimeType || asset.type || 'application/pdf';
             const fileSize = asset.fileSize || asset.size || 0;
-            const uri = asset.uri;
 
             const sasRes = await fetch(`${Config.API_BASE_URL}/students/uploads/sas`, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${userToken}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    mimeType,
-                    size: fileSize,
-                    agencyId: activeAgencyId,
-                    studentId,
-                    documentType: activeDoc.type // Using dynamic type from API
-                })
+                headers: { 'Authorization': `Bearer ${userToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mimeType, size: fileSize, agencyId: activeAgencyId, studentId, documentType: docItem.type })
             });
 
-            if (!sasRes.ok) throw new Error("Failed to get upload link.");
             const { sasUrl, blobName } = await sasRes.json();
-
-            const blobRes = await fetch(uri);
+            const blobRes = await fetch(asset.uri);
             const blob = await blobRes.blob();
-            const azureRes = await fetch(sasUrl, {
+
+            await fetch(sasUrl, {
                 method: 'PUT',
                 body: blob,
-                headers: {
-                    'x-ms-blob-type': 'BlockBlob',
-                    'Content-Type': mimeType
-                }
+                headers: { 'x-ms-blob-type': 'BlockBlob', 'Content-Type': mimeType }
             });
-
-            if (!azureRes.ok) throw new Error("Cloud storage upload failed.");
 
             const confirmRes = await fetch(`${Config.API_BASE_URL}/students/uploads/confirm`, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${userToken}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    blobName,
-                    studentId,
-                    agencyId: activeAgencyId,
-                    courseId: courseId || null,
-                    mimeType,
-                    size: fileSize,
-                    documentType: activeDoc.type
-                })
+                headers: { 'Authorization': `Bearer ${userToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ blobName, studentId, agencyId: activeAgencyId, courseId: courseId || null, mimeType, size: fileSize, documentType: docItem.type })
             });
 
             if (confirmRes.ok) {
-                setUploadedDocs(prev => ({
-                    ...prev,
-                    [activeDoc.id]: { uri: uri, type: mimeType }
+                setUploadedDocs(prev => ({ 
+                    ...prev, 
+                    [docItem.id]: { uri: asset.uri, type: mimeType, status: 'pending_validation' } 
                 }));
-                Alert.alert("Success", `${activeDoc.label} uploaded.`);
-            } else {
-                throw new Error("Failed to link document.");
+                Alert.alert("Success", "Document sent for validation.");
             }
         } catch (err) {
-            Alert.alert("Upload Error", err.message);
+            Alert.alert("Upload Error", "Upload failed. Please retry.");
         } finally {
             setLoading(false);
         }
     };
 
-    const pickImage = async (useCamera = false) => {
-        const options = { mediaTypes: ['images'], allowsEditing: true, quality: 0.7 };
-        const result = useCamera
-            ? await ImagePicker.launchCameraAsync(options)
-            : await ImagePicker.launchImageLibraryAsync(options);
-
-        if (!result.canceled && result.assets[0]) {
-            handleUpload(result.assets[0]);
-        }
-    };
-
-    const pickDocument = async () => {
-        try {
-            const result = await DocumentPicker.getDocumentAsync({
-                type: 'application/pdf',
-                copyToCacheDirectory: true,
-            });
-            if (!result.canceled && result.assets[0]) {
-                handleUpload(result.assets[0]);
-            }
-        } catch (err) {
-            Alert.alert("Error", "Could not access files.");
-        }
-    };
-
-    const nextStep = () => {
-        if (activeDoc.required && !uploadedDocs[activeDoc.id]) {
-            Alert.alert("Required", `Please upload the ${activeDoc.label} to continue.`);
-            return;
-        }
-
-        if (currentStep < documentSteps.length - 1) {
-            setCurrentStep(currentStep + 1);
+    const handleFinish = () => {
+        const missingDocs = documentSteps.filter(doc => !uploadedDocs[doc.id]);
+        
+        if (missingDocs.length > 0) {
+            Alert.alert(
+                "Incomplete Uploads", 
+                `You still have ${missingDocs.length} document(s) left to upload. Please complete all of them before finishing.`,
+                [{ text: "Continue Uploading" }]
+            );
         } else {
-            Alert.alert("Done", "All requested documents have been uploaded!", [
-                { text: "OK", onPress: () => router.back() }
+            Alert.alert("All Done!", "Your documents are submitted for review.", [
+                { text: "Go to Home", onPress: () => router.back() }
             ]);
         }
     };
 
-    if (fetchingSteps) {
+    const renderDocCard = ({ item, index }) => {
+        const currentDoc = uploadedDocs[item.id];
+        const isUploaded = !!currentDoc;
+
         return (
-            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-                <ActivityIndicator size="large" color={COLORS.primary} />
-                <Text style={{ marginTop: 10, color: COLORS.secondary }}>Fetching requirements...</Text>
-            </View>
-        );
-    }
-
-    if (documentSteps.length === 0) {
-        return (
-            <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
-                <MaterialCommunityIcons name="file-search-outline" size={60} color={COLORS.gray} />
-                <Text style={{ textAlign: 'center', marginTop: 10, color: COLORS.textDark }}>No documents requested by the agent yet.</Text>
-                <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 20 }}>
-                    <Text style={{ color: COLORS.primary, fontWeight: '700' }}>Go Back</Text>
-                </TouchableOpacity>
-            </View>
-        );
-    }
-
-    return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" />
-
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => (currentStep > 0 ? setCurrentStep(currentStep - 1) : router.back())} style={styles.backButton}>
-                    <Ionicons name="chevron-back" size={24} color={COLORS.primary} />
-                </TouchableOpacity>
-                <View style={styles.progressContainer}>
-                    <Text style={styles.progressText}>Step {currentStep + 1} of {documentSteps.length}</Text>
-                    <View style={styles.progressBar}>
-                        <View style={[styles.progressFill, { width: `${((currentStep + 1) / documentSteps.length) * 100}%` }]} />
-                    </View>
-                </View>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            <View style={styles.cardContainer}>
                 <View style={styles.instructionBox}>
-                    <Text style={styles.docTitle}>{activeDoc.label}</Text>
-                    <Text style={styles.docSub}>{activeDoc.sub}</Text>
-                    <View style={[styles.badge, activeDoc.required ? styles.reqBadge : styles.optBadge]}>
-                        <Text style={[styles.badgeText, { color: activeDoc.required ? '#EF4444' : COLORS.success }]}>
-                            {activeDoc.required ? 'REQUIRED' : 'OPTIONAL'}
-                        </Text>
-                    </View>
+                    <Text style={styles.docTitle}>{item.label}</Text>
+                    <Text style={styles.docSub}>{item.sub}</Text>
+                    {isUploaded && (
+                        <View style={styles.statusBadge}>
+                            <Text style={styles.statusText}>PENDING VALIDATION</Text>
+                        </View>
+                    )}
                 </View>
 
-                <TouchableOpacity
-                    style={[styles.uploadCard, uploadedDocs[activeDoc.id] && styles.successCard]}
-                    onPress={pickDocument}
-                    disabled={loading}
+                <TouchableOpacity 
+                    style={[
+                        styles.uploadCard, 
+                        isUploaded && styles.successCard,
+                        loading && currentIndex === index && { opacity: 0.5 }
+                    ]} 
+                    onPress={() => !isUploaded && pickDocument(item)}
+                    disabled={isUploaded || (loading && currentIndex === index)}
                 >
-                    {loading ? (
+                    {loading && currentIndex === index ? (
                         <ActivityIndicator size="large" color={COLORS.primary} />
-                    ) : uploadedDocs[activeDoc.id] ? (
+                    ) : isUploaded ? (
                         <View style={styles.previewBox}>
-                            {uploadedDocs[activeDoc.id].type?.includes('pdf') ? (
-                                <View style={styles.pdfIconContainer}>
-                                    <MaterialCommunityIcons name="file-pdf-box" size={80} color="#EF4444" />
-                                    <Text style={{ color: COLORS.gray }}>PDF Selected</Text>
-                                </View>
-                            ) : (
-                                <Image source={{ uri: uploadedDocs[activeDoc.id].uri }} style={styles.previewImage} />
-                            )}
+                            <MaterialCommunityIcons 
+                                name={currentDoc.type?.includes('pdf') ? "file-pdf-box" : "image"} 
+                                size={80} 
+                                color={COLORS.success} 
+                            />
+                            <Text style={{color: COLORS.success, fontWeight: '700'}}>File Secured</Text>
                             <View style={styles.overlay}>
-                                <Ionicons name="checkmark-circle" size={60} color={COLORS.success} />
+                                <Ionicons name="lock-closed" size={40} color={COLORS.success} />
                             </View>
                         </View>
                     ) : (
                         <View style={styles.placeholderBox}>
                             <MaterialCommunityIcons name="cloud-upload-outline" size={80} color={COLORS.primary} />
-                            <Text style={styles.uploadMainText}>Tap to Browse Files</Text>
-                            <Text style={styles.uploadSubText}>Images or PDF (Max 5MB)</Text>
+                            <Text style={styles.uploadMainText}>Tap to Upload</Text>
                         </View>
                     )}
                 </TouchableOpacity>
 
                 <View style={styles.actionRow}>
-                    <TouchableOpacity style={styles.actionBtn} onPress={() => pickImage(true)}>
-                        <Feather name="camera" size={20} color={COLORS.primary} />
-                        <Text style={styles.actionText}>Camera</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionBtn} onPress={pickDocument}>
-                        <Feather name="file-text" size={20} color={COLORS.primary} />
-                        <Text style={styles.actionText}>PDF Files</Text>
-                    </TouchableOpacity>
+                    {!isUploaded ? (
+                        <>
+                            <TouchableOpacity style={styles.actionBtn} onPress={() => pickImage(item, true)}>
+                                <Feather name="camera" size={20} color={COLORS.primary} />
+                                <Text style={styles.actionText}>Camera</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.actionBtn} onPress={() => pickDocument(item)}>
+                                <Feather name="file-text" size={20} color={COLORS.primary} />
+                                <Text style={styles.actionText}>PDF</Text>
+                            </TouchableOpacity>
+                        </>
+                    ) : (
+                        <TouchableOpacity 
+                            style={[styles.actionBtn, { borderColor: COLORS.warning }]} 
+                            onPress={() => {
+                                // Logic to clear state and allow re-upload
+                                setUploadedDocs(prev => {
+                                    const next = {...prev};
+                                    delete next[item.id];
+                                    return next;
+                                });
+                            }}
+                        >
+                            <Feather name="refresh-cw" size={20} color={COLORS.warning} />
+                            <Text style={[styles.actionText, { color: COLORS.warning }]}>Retry / Change</Text>
+                        </TouchableOpacity>
+                    )}
                 </View>
+            </View>
+        );
+    };
 
-                <View style={styles.infoCard}>
-                    <Text style={styles.infoTitle}>Guidelines</Text>
-                    <View style={styles.infoItem}>
-                        <Feather name="check" size={14} color={COLORS.success} />
-                        <Text style={styles.infoText}>Documents must be clear and legible</Text>
+    // Helper functions for picker
+    const pickDocument = async (item) => {
+        const result = await DocumentPicker.getDocumentAsync({ type: 'application/pdf' });
+        if (!result.canceled) handleUpload(result.assets[0], item);
+    };
+
+    const pickImage = async (item, useCamera = false) => {
+        const options = { mediaTypes: ['images'], allowsEditing: true, quality: 0.7 };
+        const result = useCamera ? await ImagePicker.launchCameraAsync(options) : await ImagePicker.launchImageLibraryAsync(options);
+        if (!result.canceled) handleUpload(result.assets[0], item);
+    };
+
+    const onScroll = (event) => {
+        const index = Math.round(event.nativeEvent.contentOffset.x / width);
+        setCurrentIndex(index);
+    };
+
+    if (fetchingSteps) return <View style={styles.center}><ActivityIndicator size="large" color={COLORS.primary} /></View>;
+
+    return (
+        <SafeAreaView style={styles.container}>
+            <StatusBar barStyle="dark-content" />
+            <View style={styles.header}>
+                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                    <Ionicons name="close" size={24} color={COLORS.primary} />
+                </TouchableOpacity>
+                <View style={styles.progressContainer}>
+                    <Text style={styles.progressText}>{currentIndex + 1} of {documentSteps.length}</Text>
+                    <View style={styles.progressBar}>
+                        <View style={[styles.progressFill, { width: `${((currentIndex + 1) / documentSteps.length) * 100}%` }]} />
                     </View>
                 </View>
-            </ScrollView>
+            </View>
+
+            <FlatList
+                ref={flatListRef}
+                data={documentSteps}
+                renderItem={renderDocCard}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                onScroll={onScroll}
+                keyExtractor={(item) => item.id}
+                scrollEnabled={!loading}
+            />
 
             <View style={styles.footer}>
-                <TouchableOpacity
-                    style={[styles.nextButton, (!uploadedDocs[activeDoc.id] && activeDoc.required) && styles.disabledButton]}
-                    onPress={nextStep}
-                >
-                    <Text style={styles.nextButtonText}>
-                        {uploadedDocs[activeDoc.id] || !activeDoc.required ? (currentStep === documentSteps.length - 1 ? 'FINISH' : 'CONTINUE') : 'UPLOAD TO PROCEED'}
-                    </Text>
-                    <Ionicons name={currentStep === documentSteps.length - 1 ? "checkmark-done" : "arrow-forward"} size={20} color={COLORS.white} />
-                </TouchableOpacity>
+                {currentIndex === documentSteps.length - 1 ? (
+                    <TouchableOpacity style={styles.finishBtn} onPress={handleFinish}>
+                        <Text style={styles.finishText}>FINISH SUBMISSION</Text>
+                    </TouchableOpacity>
+                ) : (
+                    <Text style={styles.swipeText}>Swipe right to continue →</Text>
+                )}
             </View>
         </SafeAreaView>
     );
@@ -339,41 +289,30 @@ export default function DynamicDocumentUpload() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: COLORS.bg },
-    header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 15 },
+    center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    header: { flexDirection: 'row', alignItems: 'center', padding: 20 },
     backButton: { width: 45, height: 45, backgroundColor: COLORS.white, borderRadius: 12, justifyContent: 'center', alignItems: 'center', elevation: 2 },
     progressContainer: { flex: 1, marginLeft: 15 },
     progressText: { fontSize: 12, fontWeight: '700', color: COLORS.secondary, marginBottom: 5 },
     progressBar: { height: 6, backgroundColor: COLORS.border, borderRadius: 3 },
     progressFill: { height: '100%', backgroundColor: COLORS.primary, borderRadius: 3 },
-    scrollContent: { paddingHorizontal: 20, paddingBottom: 30 },
-    instructionBox: { alignItems: 'center', marginVertical: 30 },
-    docTitle: { fontSize: 24, fontWeight: '800', color: COLORS.textDark, textAlign: 'center' },
-    docSub: { fontSize: 14, color: COLORS.secondary, textAlign: 'center', marginTop: 8 },
-    badge: { marginTop: 12, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 6 },
-    reqBadge: { backgroundColor: '#FEE2E2' },
-    optBadge: { backgroundColor: '#F0FDF4' },
-    badgeText: { fontSize: 10, fontWeight: '900' },
-    uploadCard: {
-        height: 280, backgroundColor: COLORS.white, borderRadius: 24, borderWidth: 2,
-        borderColor: COLORS.primary, borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', elevation: 4
-    },
-    successCard: { borderStyle: 'solid', borderColor: COLORS.success },
+    cardContainer: { width: width, paddingHorizontal: 20, justifyContent: 'center' },
+    instructionBox: { alignItems: 'center', marginBottom: 20 },
+    docTitle: { fontSize: 22, fontWeight: '800', color: COLORS.textDark, textAlign: 'center' },
+    docSub: { fontSize: 14, color: COLORS.secondary, textAlign: 'center', marginTop: 5 },
+    statusBadge: { marginTop: 10, backgroundColor: '#FEF3C7', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
+    statusText: { fontSize: 10, fontWeight: '800', color: COLORS.warning },
+    uploadCard: { height: 300, backgroundColor: COLORS.white, borderRadius: 24, borderWidth: 2, borderColor: COLORS.primary, borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', elevation: 4 },
+    successCard: { borderStyle: 'solid', borderColor: COLORS.success, backgroundColor: '#F0FDF4' },
     placeholderBox: { alignItems: 'center' },
-    uploadMainText: { fontSize: 18, fontWeight: '700', color: COLORS.primary, marginTop: 15 },
-    uploadSubText: { fontSize: 12, color: COLORS.gray, marginTop: 5 },
-    previewBox: { width: '100%', height: '100%' },
-    pdfIconContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    previewImage: { width: '100%', height: '100%', opacity: 0.5 },
-    overlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
+    uploadMainText: { fontSize: 16, fontWeight: '700', color: COLORS.primary, marginTop: 10 },
+    previewBox: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' },
+    overlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.4)' },
     actionRow: { flexDirection: 'row', justifyContent: 'center', gap: 15, marginTop: 20 },
-    actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20, paddingVertical: 12, backgroundColor: COLORS.white, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border },
+    actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 25, paddingVertical: 12, backgroundColor: COLORS.white, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border },
     actionText: { color: COLORS.primary, fontWeight: '600' },
-    infoCard: { backgroundColor: COLORS.white, borderRadius: 16, padding: 20, marginTop: 30, borderWidth: 1, borderColor: COLORS.border },
-    infoTitle: { fontSize: 16, fontWeight: '700', color: COLORS.textDark, marginBottom: 12 },
-    infoItem: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
-    infoText: { fontSize: 13, color: COLORS.secondary },
-    footer: { padding: 20, backgroundColor: COLORS.bg, borderTopWidth: 1, borderTopColor: COLORS.border },
-    nextButton: { backgroundColor: COLORS.primary, height: 60, borderRadius: 16, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 },
-    disabledButton: { backgroundColor: COLORS.gray },
-    nextButtonText: { color: COLORS.white, fontWeight: '700', fontSize: 16 }
+    footer: { padding: 20, alignItems: 'center', height: 100, justifyContent: 'center' },
+    swipeText: { color: COLORS.gray, fontSize: 12 },
+    finishBtn: { backgroundColor: COLORS.primary, paddingHorizontal: 40, paddingVertical: 15, borderRadius: 16, width: '100%', alignItems: 'center' },
+    finishText: { color: COLORS.white, fontWeight: '800', fontSize: 16 }
 });

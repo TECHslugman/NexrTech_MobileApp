@@ -7,7 +7,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
-import {Config} from '../../../config';
+import { Config } from '../../../config';
 
 const DEFAULT_IMAGE = require('../../../../assets/images/agencies/default.png');
 
@@ -237,19 +237,45 @@ export default function SelectedAgencyHome() {
                     ))}
                 </View>
 
-                {/* COURSES - Keeping original color scheme */}
-                <SectionHeader title="Featured Courses" onBtnPress={() => router.push({ pathname: `/agency/selected/courses/${id}`, params: { courses: JSON.stringify(courses), agencyName: agencyData?.organizationName } })} />
+                {/* COURSES - Now interactive with navigation */}
+                <SectionHeader
+                    title="Featured Courses"
+                    onBtnPress={() => router.push({
+                        pathname: `/agency/selected/courses/${id}`,
+                        params: {
+                            courses: JSON.stringify(courses),
+                            agencyName: agencyData?.organizationName
+                        }
+                    })}
+                />
                 <FlatList
                     horizontal
                     data={courses}
-                    keyExtractor={(item, index) => `course-${item.id || index}`}
+                    keyExtractor={(item, index) => `course-${item._id || item.id || index}`}
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.listContent}
                     renderItem={({ item, index }) => (
-                        <View style={[styles.courseCard, { backgroundColor: index % 2 === 0 ? '#FF6B6B' : '#949BFF' }]}>
-                            <View style={styles.courseIcon}><Ionicons name="book-outline" size={20} color="rgba(255,255,255,0.9)" /></View>
-                            <Text style={styles.courseText} numberOfLines={2}>{item.title || item}</Text>
-                        </View>
+                        <TouchableOpacity
+                            style={[
+                                styles.courseCard,
+                                { backgroundColor: index % 2 === 0 ? '#FF6B6B' : '#949BFF' }
+                            ]}
+                            onPress={() => router.push({
+                                pathname: `/agency/selected/courses/details`, // Directs to the detail page we built
+                                params: {
+                                    courseId: item._id || item.id,
+                                    agencyId: id,
+                                    courseName: item.title
+                                }
+                            })}
+                        >
+                            <View style={styles.courseIcon}>
+                                <Ionicons name="book-outline" size={20} color="rgba(255,255,255,0.9)" />
+                            </View>
+                            <Text style={styles.courseText} numberOfLines={2}>
+                                {item.title || item}
+                            </Text>
+                        </TouchableOpacity>
                     )}
                     ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
                 />
