@@ -1,4 +1,3 @@
-// app/components/BottomNavBar.jsx
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,15 +20,14 @@ export default function BottomNavBar() {
   useEffect(() => {
     let foundAgencyId = params.agencyId || params.id;
 
-    // Fallback: extract from URL path if params are empty
     if (!foundAgencyId) {
       const segments = pathname.split('/');
       if (segments.includes('selected')) {
         const selectedIndex = segments.indexOf('selected');
         const potentialId = segments[selectedIndex + 1];
         
-        // List of routes that are NOT IDs
-        const staticRoutes = ['profile', 'updates', 'messages', 'events', 'courses', 'documentupload'];
+        // Static routes to ignore when extracting ID
+        const staticRoutes = ['profile', 'messages', 'events', 'courses', 'uploads'];
         if (potentialId && !staticRoutes.includes(potentialId)) {
           foundAgencyId = potentialId;
         }
@@ -47,12 +45,6 @@ export default function BottomNavBar() {
       route: 'home',
       icon: 'home',
       getScreen: () => agencyId ? `/agency/selected/${agencyId}` : null,
-    },
-    {
-      name: 'Updates',
-      route: 'updates',
-      icon: 'refresh-outline',
-      getScreen: () => '/agency/selected/updates',
     },
     {
       name: 'Messages',
@@ -87,15 +79,12 @@ export default function BottomNavBar() {
   const handleNavigation = (screen, itemName) => {
     if (!screen) return;
 
-    console.log(`🚀 Navigating to ${itemName}`);
-
-    // Added 'Documents' to the list of routes that benefit from carrying the agencyId
-    const needsAgencyId = ['Updates', 'Profile', 'Messages', 'Documents'].includes(itemName);
+    const needsAgencyId = ['Profile', 'Messages', 'Documents'].includes(itemName);
 
     if (needsAgencyId && agencyId) {
       router.push({
         pathname: screen,
-        params: { agencyId, refresh: Date.now()} 
+        params: { agencyId, refresh: Date.now() } 
       });
     } else {
       router.push(screen);
@@ -118,12 +107,12 @@ export default function BottomNavBar() {
           >
             {active ? (
               <View style={styles.navIconActive}>
-                <Ionicons name={item.icon.replace('-outline', '')} size={22} color={COLORS.white} />
+                <Ionicons name={item.icon.replace('-outline', '')} size={24} color={COLORS.white} />
               </View>
             ) : (
               <Ionicons
                 name={item.icon}
-                size={22}
+                size={24}
                 color={canNavigate ? COLORS.textInactive : COLORS.disabled}
               />
             )}
@@ -145,12 +134,13 @@ export default function BottomNavBar() {
 
 const styles = StyleSheet.create({
   navBar: {
-    height: 75,
+    height: 85,
     backgroundColor: COLORS.white,
     flexDirection: 'row',
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
-    paddingBottom: 20,
+    paddingBottom: 25,
+    paddingHorizontal: 10,
   },
   navItem: {
     flex: 1,
@@ -158,21 +148,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   navIconActive: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 2,
+    // Add a slight shadow for the active state
+    elevation: 3,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
   },
   navLabel: {
-    fontSize: 10, // Slightly smaller to fit 5 items comfortably
+    fontSize: 11,
     color: COLORS.textInactive,
     fontWeight: '500',
+    marginTop: 2,
   },
   navLabelActive: {
-    fontSize: 10,
     color: COLORS.primary,
     fontWeight: '700',
   },
