@@ -4,6 +4,7 @@ import {
     Image, ActivityIndicator, Alert, Modal
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import Toast from 'react-native-toast-message';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
@@ -114,11 +115,27 @@ const SeatingChartModal = ({ visible, onClose, seats, onConfirm, registering, ev
                     price: sData.ticketTypes?.price || 0,
                     type: sData.ticketTypes?.name || 'Standard'
                 }]);
+
+                // Optional: Subtle feedback that a seat was added
+                Toast.show({
+                    type: 'success',
+                    text1: 'Seat Added',
+                    text2: `Row ${sData.row}, Seat ${sData.columns} added to selection.`,
+                    visibilityTime: 1500
+                });
             } else {
-                Alert.alert("Error", "Could not fetch seat pricing.");
+                Toast.show({
+                    type: 'error',
+                    text1: 'Pricing Error',
+                    text2: 'Could not fetch seat pricing.'
+                });
             }
         } catch (error) {
-            Alert.alert("Error", "Network error while fetching seat info.");
+            Toast.show({
+                type: 'error',
+                text1: 'Connection Error',
+                text2: 'Network error while fetching seat info.'
+            });
         } finally {
             setFetchingSeatId(null);
         }
@@ -263,17 +280,36 @@ export default function EventDetail() {
 
             const result = await res.json();
             if (res.ok) {
-                Alert.alert("Success", "Registration successful!", [{ text: "OK", onPress: () => { setIsModalVisible(false); router.back(); } }]);
+                Toast.show({
+                    type: 'success',
+                    text1: 'Registration Successful!',
+                    text2: 'You have been registered for this event.',
+                    visibilityTime: 2000
+                });
+
+                // Smooth transition: close modal and go back after toast shows
+                setTimeout(() => {
+                    setIsModalVisible(false);
+                    router.back();
+                }, 2100);
+
             } else {
-                Alert.alert("Error", result.message || "Something went wrong.");
+                Toast.show({
+                    type: 'error',
+                    text1: 'Registration Failed',
+                    text2: result.message || "Something went wrong."
+                });
             }
         } catch (e) {
-            Alert.alert("Error", "Failed to connect to server.");
+            Toast.show({
+                type: 'error',
+                text1: 'Server Error',
+                text2: 'Failed to connect to server.'
+            });
         } finally {
             setRegistering(false);
         }
     };
-
     if (loading || !data) return <View style={styles.center}><ActivityIndicator size="large" color={COLORS.primary} /></View>;
     const startInfo = formatDateTime(data.startAt);
     const endInfo = formatDateTime(data.endAt);

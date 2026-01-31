@@ -1,25 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { 
-    View, Text, StyleSheet, ScrollView, TouchableOpacity, 
-    ActivityIndicator, Image, StatusBar, Alert, Linking 
+import {
+    View, Text, StyleSheet, ScrollView, TouchableOpacity,
+    ActivityIndicator, Image, StatusBar, Alert, Linking
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
 import { Config } from '../../../../config';
+import Toast from 'react-native-toast-message';
 
 const DEFAULT_IMAGE = 'https://i.pravatar.cc/300';
 
 export default function MentorDetails() {
-    const { id, agencyId } = useLocalSearchParams(); 
+    const { id, agencyId } = useLocalSearchParams();
     const router = useRouter();
     const { userToken, user } = useAuth(); // Ensure AuthContext provides 'user' (the student object)
 
     const [mentor, setMentor] = useState(null);
     const [loading, setLoading] = useState(true);
     const [connecting, setConnecting] = useState(false);
-    const [connectionStatus, setConnectionStatus] = useState('connect'); 
+    const [connectionStatus, setConnectionStatus] = useState('connect');
 
     useEffect(() => {
         if (id && agencyId) {
@@ -31,7 +32,7 @@ export default function MentorDetails() {
         try {
             setLoading(true);
             const res = await fetch(`${Config.API_BASE_URL}/students/mentors/${agencyId}`, {
-                headers: { 
+                headers: {
                     'Authorization': `Bearer ${userToken}`,
                     'Content-Type': 'application/json'
                 }
@@ -40,29 +41,41 @@ export default function MentorDetails() {
             const json = await res.json();
 
             if (res.ok && json.mentors) {
-                // Find the specific mentor by ID from the array in your response
                 const foundMentor = json.mentors.find(m => m._id === id);
-                
+
                 if (foundMentor) {
                     setMentor(foundMentor);
-                    
-                    // CHECK CONNECTION STATUS
-                    // Based on your JSON: mentees: [{ "student": "...", "status": "pending" }]
+
                     if (user?._id && foundMentor.mentees) {
                         const connection = foundMentor.mentees.find(m => m.student === user._id);
                         if (connection) {
-                            setConnectionStatus(connection.status); 
+                            setConnectionStatus(connection.status);
                         }
                     }
                 } else {
-                    Alert.alert("Error", "Mentor not found in this agency.");
+                   
+                    Toast.show({
+                        type: 'error',
+                        text1: 'Mentor Not Found',
+                        text2: 'This mentor is no longer listed in this agency.'
+                    });
                 }
             } else {
-                Alert.alert("Error", "Failed to fetch data from server.");
+               
+                Toast.show({
+                    type: 'error',
+                    text1: 'Fetch Failed',
+                    text2: 'Failed to retrieve data from the server.'
+                });
             }
         } catch (e) {
             console.error("Fetch Error:", e);
-            Alert.alert("Connection Error", "Please check your network.");
+           
+            Toast.show({
+                type: 'error',
+                text1: 'Connection Error',
+                text2: 'Please check your network connection.'
+            });
         } finally {
             setLoading(false);
         }
@@ -73,35 +86,44 @@ export default function MentorDetails() {
 
         setConnecting(true);
         console.log("--- Connection Request Started ---");
-        console.log("Connecting to Mentor ID:", id);
 
         try {
             const res = await fetch(`${Config.API_BASE_URL}/students/mentors/connect/${id}`, {
                 method: 'POST',
-                headers: { 
+                headers: {
                     'Authorization': `Bearer ${userToken}`,
                     'Content-Type': 'application/json'
                 }
             });
 
-            // Log the HTTP Status (e.g., 200, 400, 500)
             console.log("Backend Response Status:", res.status);
-
             const result = await res.json();
-            
-            // Log the full JSON body from the backend
             console.log("Backend Response Body:", JSON.stringify(result, null, 2));
 
             if (res.ok) {
                 setConnectionStatus('pending');
-                Alert.alert("Success", result.message || "Connection request sent!");
+               
+                Toast.show({
+                    type: 'success',
+                    text1: 'Request Sent!',
+                    text2: result.message || "Your connection request is now pending."
+                });
             } else {
-                // If backend sends a 400 or 404, result.message will tell us why
-                Alert.alert("Notice", result.message || "Request could not be processed.");
+               
+                Toast.show({
+                    type: 'info',
+                    text1: 'Notice',
+                    text2: result.message || "Request could not be processed."
+                });
             }
         } catch (error) {
             console.error("Network/Fetch Error:", error);
-            Alert.alert("Error", "Failed to send request. Check your internet.");
+           
+            Toast.show({
+                type: 'error',
+                text1: 'Request Failed',
+                text2: 'Failed to send request. Check your internet.'
+            });
         } finally {
             setConnecting(false);
             console.log("--- Connection Request Finished ---");
@@ -109,7 +131,7 @@ export default function MentorDetails() {
     };
 
     const getButtonConfig = () => {
-        switch(connectionStatus) {
+        switch (connectionStatus) {
             case 'pending':
                 return { color: '#94A3B8', text: 'Request Pending' };
             case 'accepted':
@@ -133,7 +155,7 @@ export default function MentorDetails() {
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar barStyle="light-content" backgroundColor="#769FCD" />
-            
+
             {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
@@ -146,12 +168,12 @@ export default function MentorDetails() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-                
+
                 {/* Profile Section */}
                 <View style={styles.profileSection}>
-                    <Image 
-                        source={{ uri: mentor?.profilepic || DEFAULT_IMAGE }} 
-                        style={styles.profileImage} 
+                    <Image
+                        source={{ uri: mentor?.profilepic || DEFAULT_IMAGE }}
+                        style={styles.profileImage}
                     />
                     <Text style={styles.profileName}>{mentor?.name}</Text>
                     <Text style={styles.profileTitle}>
@@ -160,20 +182,20 @@ export default function MentorDetails() {
 
                     {/* Action Buttons */}
                     <View style={styles.actionRow}>
-                        <TouchableOpacity 
-                            style={styles.actionBtn} 
+                        <TouchableOpacity
+                            style={styles.actionBtn}
                             onPress={() => Linking.openURL(`tel:${mentor?.phone}`)}
                         >
                             <Ionicons name="call" size={18} color="#769FCD" />
                             <Text style={styles.actionBtnText}>Call</Text>
                         </TouchableOpacity>
-                        
-                        <TouchableOpacity 
-                            style={[styles.actionBtn, {backgroundColor: '#769FCD'}]} 
+
+                        <TouchableOpacity
+                            style={[styles.actionBtn, { backgroundColor: '#769FCD' }]}
                             onPress={() => Linking.openURL(`mailto:${mentor?.email}`)}
                         >
                             <MaterialIcons name="email" size={18} color="#FFF" />
-                            <Text style={[styles.actionBtnText, {color: '#FFF'}]}>Email</Text>
+                            <Text style={[styles.actionBtnText, { color: '#FFF' }]}>Email</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -218,7 +240,7 @@ export default function MentorDetails() {
                 )}
 
                 {/* Dynamic Connect Button */}
-                <TouchableOpacity 
+                <TouchableOpacity
                     style={[styles.connectBtn, { backgroundColor: btn.color }]}
                     onPress={handleConnect}
                     disabled={connecting || connectionStatus !== 'connect'}
@@ -265,24 +287,24 @@ const styles = StyleSheet.create({
     profileName: { fontSize: 22, fontWeight: '700', color: '#1E293B' },
     profileTitle: { fontSize: 14, color: '#64748B', marginBottom: 20 },
     actionRow: { flexDirection: 'row', gap: 12, width: '100%' },
-    actionBtn: { 
-        flex: 1, 
-        flexDirection: 'row', 
-        height: 44, 
-        borderRadius: 8, 
-        borderWidth: 1, 
-        borderColor: '#769FCD', 
-        alignItems: 'center', 
-        justifyContent: 'center' 
+    actionBtn: {
+        flex: 1,
+        flexDirection: 'row',
+        height: 44,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#769FCD',
+        alignItems: 'center',
+        justifyContent: 'center'
     },
     actionBtnText: { marginLeft: 8, fontWeight: '600', color: '#769FCD' },
-    infoCard: { 
-        backgroundColor: '#FFF', 
-        borderRadius: 12, 
-        padding: 20, 
-        borderWidth: 1, 
-        borderColor: '#E2E8F0', 
-        marginBottom: 12 
+    infoCard: {
+        backgroundColor: '#FFF',
+        borderRadius: 12,
+        padding: 20,
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+        marginBottom: 12
     },
     cardHeader: { fontSize: 16, fontWeight: '700', color: '#1E293B', marginBottom: 12 },
     listItem: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },

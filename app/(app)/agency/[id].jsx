@@ -11,11 +11,12 @@ import {
     Dimensions,
     StatusBar,
 } from 'react-native';
+import Toast from 'react-native-toast-message';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
-import {Config} from "../../config";
+import { Config } from "../../config";
 
 const COLORS = {
     bg: '#F6F9FC',
@@ -49,15 +50,15 @@ export default function AgencyDetails() {
 
                 const [profileRes, partnerRes] = await Promise.all([
                     fetch(`${Config.API_BASE_URL}/agency/profile/${id}`, {
-                        headers: { 
+                        headers: {
                             'Authorization': `Bearer ${userToken}`,
-                            'Content-Type': 'application/json' 
+                            'Content-Type': 'application/json'
                         }
                     }),
                     fetch(`${Config.API_BASE_URL}/agency/universities/agency/${id}`, {
-                        headers: { 
+                        headers: {
                             'Authorization': `Bearer ${userToken}`,
-                            'Content-Type': 'application/json' 
+                            'Content-Type': 'application/json'
                         }
                     })
                 ]);
@@ -77,7 +78,7 @@ export default function AgencyDetails() {
                     about: fullProfile.about || "No description available",
                     services: fullProfile.servicesOffered || [],
                     process: fullProfile.process || [],
-                    partners: partnerList, 
+                    partners: partnerList,
                     imageUri: fullProfile.logo || null,
                 });
 
@@ -100,7 +101,14 @@ export default function AgencyDetails() {
     }, [id, userToken]);
 
     const handleSelectAgency = async () => {
-        if (!id) { alert("Error: Agency ID is missing."); return; }
+        if (!id) {
+            Toast.show({
+                type: 'error',
+                text1: 'Selection Error',
+                text2: 'Agency ID is missing.'
+            });
+            return;
+        }
 
         try {
             setLoading(true);
@@ -116,24 +124,40 @@ export default function AgencyDetails() {
             const json = await response.json();
 
             if (!response.ok) {
-                
-                alert(`Server Error (${response.status}): ${json.message || "Internal Server Error"}`);
+                Toast.show({
+                    type: 'error',
+                    text1: 'Server Error',
+                    text2: json.message || "Internal Server Error"
+                });
                 return;
             }
 
-            router.push({
-                pathname: `/agency/selected/${id}`,
-                params: { name: agencyData?.name, agencyLogo:agencyData?.imageUri }
+  
+            Toast.show({
+                type: 'success',
+                text1: 'Agency Selected',
+                text2: `Welcome to ${agencyData?.name || 'the agency'}!`
             });
+
+            setTimeout(() => {
+                router.replace({ // Using replace instead of push prevents "jumping" back
+                    pathname: `/agency/selected/${id}`,
+                    params: { name: agencyData?.name, agencyLogo: agencyData?.imageUri }
+                });
+            }, 500);
 
         } catch (error) {
             console.error("Network Error:", error);
-            alert("Check your internet connection.");
+            Toast.show({
+                type: 'error',
+                text1: 'Connection Error',
+                text2: 'Please check your internet connection.'
+            });
         } finally {
-            setLoading(false);
+
+            setTimeout(() => setLoading(false), 500);
         }
     };
-
     const heroSource = useMemo(() => {
         if (agencyData?.imageUri) return { uri: agencyData.imageUri };
         if (heroUri) return { uri: String(heroUri) };
@@ -157,12 +181,12 @@ export default function AgencyDetails() {
             {/* Banner with full-size logo */}
             <View style={styles.banner}>
                 <View style={styles.bannerOverlay} />
-                <Image 
-                    source={heroSource} 
-                    style={styles.bannerImage} 
+                <Image
+                    source={heroSource}
+                    style={styles.bannerImage}
                     resizeMode="cover"
                 />
-                
+
                 {/* Agency Info Overlay */}
                 <View style={styles.bannerInfo}>
                     <View style={styles.bannerContent}>
@@ -185,7 +209,7 @@ export default function AgencyDetails() {
         </View>
     );
 
-    const Section = ({ title, icon, children, showViewAll = false, onViewAll = () => {} }) => (
+    const Section = ({ title, icon, children, showViewAll = false, onViewAll = () => { } }) => (
         <View style={styles.section}>
             <View style={styles.sectionHeader}>
                 <View style={styles.sectionTitleContainer}>
@@ -215,11 +239,11 @@ export default function AgencyDetails() {
     return (
         <SafeAreaView style={styles.safe}>
             <StatusBar barStyle="light-content" />
-            
+
             {/* Header with back button */}
             <View style={styles.topBar}>
-                <TouchableOpacity 
-                    style={styles.backBtn} 
+                <TouchableOpacity
+                    style={styles.backBtn}
                     onPress={() => router.back()}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
@@ -228,7 +252,7 @@ export default function AgencyDetails() {
             </View>
 
             {/* Content */}
-            <ScrollView 
+            <ScrollView
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
             >
@@ -265,8 +289,8 @@ export default function AgencyDetails() {
                         ))}
                     </Section>
 
-                    <Section 
-                        title="Partner Universities" 
+                    <Section
+                        title="Partner Universities"
                         icon="star"
                         showViewAll={agencyData.partners?.length > 0}
                         onViewAll={() => router.push({
@@ -324,9 +348,9 @@ const { width } = Dimensions.get('window');
 const BANNER_HEIGHT = 180; // Smaller banner height
 
 const styles = StyleSheet.create({
-    safe: { 
-        flex: 1, 
-        backgroundColor: COLORS.bg 
+    safe: {
+        flex: 1,
+        backgroundColor: COLORS.bg
     },
     topBar: {
         position: 'absolute',

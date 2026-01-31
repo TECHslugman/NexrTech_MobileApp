@@ -40,7 +40,7 @@ export default function MessagesScreen() {
     const [fadeAnim] = useState(new Animated.Value(0));
     const [isLoadingChats, setIsLoadingChats] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
-    
+
     const conversationsRef = useRef({});
     const chatMetadataRef = useRef({});
     const agencyStaffRef = useRef([]);
@@ -65,7 +65,7 @@ export default function MessagesScreen() {
         const timer = setTimeout(() => {
             forceRefresh();
         }, 300);
-        
+
         return () => clearTimeout(timer);
     }, [agencyId]);
 
@@ -85,7 +85,7 @@ export default function MessagesScreen() {
 
             const storageKey = getStorageKey(agencyId);
             const metadataKey = getMetadataKey(agencyId);
-            
+
             const saved = await AsyncStorage.getItem(storageKey);
             if (saved) {
                 const conversations = JSON.parse(saved);
@@ -95,7 +95,7 @@ export default function MessagesScreen() {
                 conversationsRef.current = {};
                 console.log('📂 No saved conversations for agency', agencyId);
             }
-            
+
             const metadataSaved = await AsyncStorage.getItem(metadataKey);
             if (metadataSaved) {
                 const metadata = JSON.parse(metadataSaved);
@@ -105,9 +105,9 @@ export default function MessagesScreen() {
                 chatMetadataRef.current = {};
                 console.log('📊 No saved metadata for agency', agencyId);
             }
-            
+
             await refreshChats();
-            
+
         } catch (error) {
             console.error('❌ Error loading conversations:', error);
         }
@@ -138,13 +138,13 @@ export default function MessagesScreen() {
                 { id: 'agent_002', name: 'Sarah Agent', type: 'Agent', logo: 'https://i.pravatar.cc/150?u=agent1', agencyId: '6965f08b28d4d0d367698827' },
                 { id: 'mentor_003', name: 'Coach Johnson', type: 'Mentor', logo: 'https://i.pravatar.cc/150?u=mentor2', agencyId: '6965f08b28d4d0d367698827' },
             ];
-            
+
             const currentAgencyStaff = allStaff.filter(staff => staff.agencyId === agencyId);
             agencyStaffRef.current = currentAgencyStaff;
-            
+
             await AsyncStorage.setItem(AGENCY_STAFF_KEY, JSON.stringify(allStaff));
             console.log('👥 Fetched agency staff for', agencyId, ':', currentAgencyStaff.length);
-            
+
         } catch (error) {
             console.error('❌ Error fetching agency staff:', error);
         }
@@ -153,23 +153,23 @@ export default function MessagesScreen() {
     // Fix missing conversation storage
     const fixMissingConversation = async () => {
         if (!agencyId) return;
-        
+
         const storageKey = getStorageKey(agencyId);
         const metadataKey = getMetadataKey(agencyId);
-        
+
         const metadata = await AsyncStorage.getItem(metadataKey);
-        
+
         if (metadata) {
             const metadataObj = JSON.parse(metadata);
             const conversationsObj = {};
-            
+
             Object.keys(metadataObj).forEach(key => {
                 conversationsObj[key] = 'TEMPORARY_CONVERSATION_ID';
             });
-            
+
             await AsyncStorage.setItem(storageKey, JSON.stringify(conversationsObj));
             console.log("🛠️ Fixed missing conversations:", conversationsObj);
-            
+
             conversationsRef.current = conversationsObj;
             await refreshChats();
         }
@@ -178,7 +178,7 @@ export default function MessagesScreen() {
     // MAIN SOCKET AND DATA LOADING EFFECT
     useEffect(() => {
         console.log("🚀 Initializing MessagesScreen for agency:", agencyId);
-        
+
         if (!agencyId) {
             console.log("⏳ Waiting for agencyId...");
             return;
@@ -187,7 +187,7 @@ export default function MessagesScreen() {
         // Load data
         loadSavedConversations();
         loadAgencyStaff();
-        
+
         if (!userToken) {
             console.log("🔑 No user token available");
             return;
@@ -199,32 +199,32 @@ export default function MessagesScreen() {
         // Handle incoming messages
         const handleIncoming = (message) => {
             console.log("📩 New message received:", message);
-            
+
             // Check if message belongs to current agency
             const isFromCurrentAgency = checkIfFromCurrentAgency(message.sender, message);
-            
+
             if (!isFromCurrentAgency) {
                 console.log("📭 Message not for current agency, ignoring");
                 return;
             }
-            
+
             if (message.conversationId && message.sender) {
                 const senderId = message.sender;
                 conversationsRef.current[senderId] = message.conversationId;
-                
+
                 const metadata = {
                     id: senderId,
                     name: message.senderName || getRecipientName(senderId),
                     logo: message.senderAvatar || getRecipientLogo(senderId),
-                    type: message.senderModel === 'Agency' ? 'Agency' : 
-                          message.senderModel === 'Mentor' ? 'Mentor' : 
-                          message.senderModel === 'Agent' ? 'Agent' : 'Support',
+                    type: message.senderModel === 'Agency' ? 'Agency' :
+                        message.senderModel === 'Mentor' ? 'Mentor' :
+                            message.senderModel === 'Agent' ? 'Agent' : 'Support',
                     lastMessage: message.content,
                     timestamp: new Date(message.createdAt),
                     unreadCount: 1,
                     agencyId: agencyId
                 };
-                
+
                 saveChatMetadata(senderId, metadata);
                 saveConversationToStorage(senderId, message.conversationId);
                 refreshChats();
@@ -232,52 +232,52 @@ export default function MessagesScreen() {
         };
 
         // Handle sent messages
-// In MessagesScreen.jsx, update handleSentMessage:
-const handleSentMessage = async (message) => { // Changed from data to message
-    console.log('✅ Message sent received in MessagesScreen:', message);
-    
-    if (message?.conversationId && message?.receiver) {
-        const recipientId = message.receiver;
-        const conversationId = message.conversationId;
-        
-        console.log('💾 Processing sent message for:', {
-            recipientId,
-            conversationId,
-            currentAgencyId: agencyId
-        });
-        
-        // Check if recipient belongs to current agency
-        const isRecipientFromCurrentAgency = checkIfFromCurrentAgency(recipientId, message);
-        
-        if (!isRecipientFromCurrentAgency) {
-            console.log('📭 Message not for current agency, ignoring');
-            return;
-        }
-        
-        console.log('✅ Saving conversation for current agency');
-        
-        // Update refs immediately
-        conversationsRef.current[recipientId] = conversationId;
-        
-        const metadata = {
-            id: recipientId,
-            name: message.receiverName || getRecipientName(recipientId),
-            logo: message.receiverAvatar || getRecipientLogo(recipientId),
-            type: message.receiverModel || getRecipientType(recipientId),
-            lastMessage: message.content,
-            timestamp: new Date(message.createdAt),
-            unreadCount: 0,
-            agencyId: agencyId
+        // In MessagesScreen.jsx, update handleSentMessage:
+        const handleSentMessage = async (message) => { // Changed from data to message
+            console.log('✅ Message sent received in MessagesScreen:', message);
+
+            if (message?.conversationId && message?.receiver) {
+                const recipientId = message.receiver;
+                const conversationId = message.conversationId;
+
+                console.log('💾 Processing sent message for:', {
+                    recipientId,
+                    conversationId,
+                    currentAgencyId: agencyId
+                });
+
+                // Check if recipient belongs to current agency
+                const isRecipientFromCurrentAgency = checkIfFromCurrentAgency(recipientId, message);
+
+                if (!isRecipientFromCurrentAgency) {
+                    console.log('📭 Message not for current agency, ignoring');
+                    return;
+                }
+
+                console.log('✅ Saving conversation for current agency');
+
+                // Update refs immediately
+                conversationsRef.current[recipientId] = conversationId;
+
+                const metadata = {
+                    id: recipientId,
+                    name: message.receiverName || getRecipientName(recipientId),
+                    logo: message.receiverAvatar || getRecipientLogo(recipientId),
+                    type: message.receiverModel || getRecipientType(recipientId),
+                    lastMessage: message.content,
+                    timestamp: new Date(message.createdAt),
+                    unreadCount: 0,
+                    agencyId: agencyId
+                };
+
+                // Save both to storage
+                await saveChatMetadata(recipientId, metadata);
+                await saveConversationToStorage(recipientId, conversationId);
+
+                // Force UI update immediately
+                await refreshChats();
+            }
         };
-        
-        // Save both to storage
-        await saveChatMetadata(recipientId, metadata);
-        await saveConversationToStorage(recipientId, conversationId);
-        
-        // Force UI update immediately
-        await refreshChats();
-    }
-};
 
         // Setup socket listeners
         socketService.onNewMessage(handleIncoming);
@@ -288,7 +288,7 @@ const handleSentMessage = async (message) => { // Changed from data to message
             console.log('📋 Received conversation list:', conversations?.length);
             refreshChats();
         };
-        
+
         socketService.onConversationList(handleConversationList);
 
         // Cleanup function
@@ -303,33 +303,33 @@ const handleSentMessage = async (message) => { // Changed from data to message
     // Check if a sender/recipient belongs to current agency
     const checkIfFromCurrentAgency = (id, message = {}) => {
         if (!agencyId) return false;
-        
+
         // Direct match with current agency
         if (id === agencyId) return true;
-        
+
         // Check metadata
         const metadata = chatMetadataRef.current[id];
         if (metadata?.agencyId === agencyId) return true;
-        
+
         // Check agency staff
-        const isAgencyStaff = agencyStaffRef.current.some(staff => 
+        const isAgencyStaff = agencyStaffRef.current.some(staff =>
             staff.id === id && staff.agencyId === agencyId
         );
         if (isAgencyStaff) return true;
-        
+
         return false;
     };
 
     // Get all available contacts for current agency
     const getAgencyContacts = () => {
         const contacts = [];
-        
+
         // Check if we already have an active chat with the agency
-        const hasActiveAgencyChat = Object.keys(conversationsRef.current).some(key => 
-            key === agencyId || 
+        const hasActiveAgencyChat = Object.keys(conversationsRef.current).some(key =>
+            key === agencyId ||
             (chatMetadataRef.current[key]?.agencyId === agencyId && chatMetadataRef.current[key]?.type === 'Agency')
         );
-        
+
         // Only show agency in suggestions if we don't have an active chat
         if (!hasActiveAgencyChat) {
             contacts.push({
@@ -342,14 +342,14 @@ const handleSentMessage = async (message) => { // Changed from data to message
         } else {
             console.log("🎯 Agency already has active chat, hiding from suggestions");
         }
-        
+
         // Filter out staff members who already have active chats
-        const availableStaff = agencyStaffRef.current.filter(staff => 
+        const availableStaff = agencyStaffRef.current.filter(staff =>
             !conversationsRef.current[staff.id]
         );
-        
+
         contacts.push(...availableStaff);
-        
+
         console.log("👥 Available contacts for agency", agencyId, ":", contacts.length);
         return contacts;
     };
@@ -361,17 +361,17 @@ const handleSentMessage = async (message) => { // Changed from data to message
                 console.error("❌ No agencyId for saving conversation");
                 return;
             }
-            
+
             const storageKey = getStorageKey(agencyId);
-            
+
             const saved = await AsyncStorage.getItem(storageKey);
             const conversations = saved ? JSON.parse(saved) : {};
-            
+
             conversations[recipientId] = conversationId;
-            
+
             await AsyncStorage.setItem(storageKey, JSON.stringify(conversations));
             conversationsRef.current = conversations;
-            
+
             console.log('✅ SAVED conversation for agency:', agencyId, {
                 recipientId,
                 conversationId,
@@ -389,11 +389,11 @@ const handleSentMessage = async (message) => { // Changed from data to message
                 console.error("❌ No agencyId for saving metadata");
                 return;
             }
-            
+
             const metadataKey = getMetadataKey(agencyId);
             const saved = await AsyncStorage.getItem(metadataKey);
             const allMetadata = saved ? JSON.parse(saved) : {};
-            
+
             allMetadata[recipientId] = {
                 ...allMetadata[recipientId],
                 ...metadata,
@@ -401,7 +401,7 @@ const handleSentMessage = async (message) => { // Changed from data to message
                 lastMessage: metadata.lastMessage || allMetadata[recipientId]?.lastMessage || '',
                 agencyId: agencyId
             };
-            
+
             await AsyncStorage.setItem(metadataKey, JSON.stringify(allMetadata));
             chatMetadataRef.current = allMetadata;
             console.log('💾 Saved chat metadata for agency:', agencyId);
@@ -415,12 +415,12 @@ const handleSentMessage = async (message) => { // Changed from data to message
         if (chatMetadataRef.current[recipientId]?.name) {
             return chatMetadataRef.current[recipientId].name;
         }
-        
+
         if (recipientId === agencyId) return agencyName || 'Agency Support';
-        
+
         const staff = agencyStaffRef.current.find(staff => staff.id === recipientId);
         if (staff) return staff.name;
-        
+
         return 'Support';
     };
 
@@ -429,12 +429,12 @@ const handleSentMessage = async (message) => { // Changed from data to message
         if (chatMetadataRef.current[recipientId]?.logo) {
             return chatMetadataRef.current[recipientId].logo;
         }
-        
+
         if (recipientId === agencyId) return agencyLogo;
-        
+
         const staff = agencyStaffRef.current.find(staff => staff.id === recipientId);
         if (staff) return staff.logo;
-        
+
         return '';
     };
 
@@ -443,12 +443,12 @@ const handleSentMessage = async (message) => { // Changed from data to message
         if (chatMetadataRef.current[recipientId]?.type) {
             return chatMetadataRef.current[recipientId].type;
         }
-        
+
         if (recipientId === agencyId) return 'Agency';
-        
+
         const staff = agencyStaffRef.current.find(staff => staff.id === recipientId);
         if (staff) return staff.type;
-        
+
         return 'Support';
     };
 
@@ -473,40 +473,40 @@ const handleSentMessage = async (message) => { // Changed from data to message
     const refreshChats = async () => {
         try {
             setIsLoadingChats(true);
-            
+
             if (!agencyId) {
                 console.log("⏳ No agencyId, skipping refresh");
                 setIsLoadingChats(false);
                 return;
             }
-            
+
             const storageKey = getStorageKey(agencyId);
             const metadataKey = getMetadataKey(agencyId);
-            
+
             const saved = await AsyncStorage.getItem(storageKey);
             const metadataSaved = await AsyncStorage.getItem(metadataKey);
-            
+
             if (saved) {
                 const conversations = JSON.parse(saved);
                 conversationsRef.current = conversations;
             } else {
                 conversationsRef.current = {};
             }
-            
+
             if (metadataSaved) {
                 const metadata = JSON.parse(metadataSaved);
                 chatMetadataRef.current = metadata;
             } else {
                 chatMetadataRef.current = {};
             }
-            
+
             // Create chat list from BOTH conversations and metadata
             let chatList = [];
-            
+
             // First, add all conversations from storage
             Object.entries(conversationsRef.current).forEach(([recipientId, conversationId]) => {
                 const metadata = chatMetadataRef.current[recipientId] || {};
-                
+
                 // Check if this chat belongs to current agency
                 if (metadata.agencyId === agencyId || recipientId === agencyId) {
                     chatList.push({
@@ -522,7 +522,7 @@ const handleSentMessage = async (message) => { // Changed from data to message
                     });
                 }
             });
-            
+
             // Also check metadata for any chats that might not be in conversations storage
             Object.entries(chatMetadataRef.current).forEach(([recipientId, metadata]) => {
                 if (metadata.agencyId === agencyId && !chatList.find(chat => chat.id === recipientId)) {
@@ -539,13 +539,13 @@ const handleSentMessage = async (message) => { // Changed from data to message
                     });
                 }
             });
-            
+
             // Sort by timestamp
             chatList.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-            
+
             setChats(chatList);
             console.log('✅ Refreshed chats for agency', agencyId, ':', chatList.length);
-            
+
             setIsLoadingChats(false);
         } catch (error) {
             console.error('❌ Error refreshing chats:', error);
@@ -556,12 +556,17 @@ const handleSentMessage = async (message) => { // Changed from data to message
     // When starting a new chat
     const startNewChat = (recipient) => {
         if (!recipient.id) {
-            Alert.alert("Error", "Recipient ID is missing.");
+            // REPLACED Alert with Toast
+            Toast.show({
+                type: 'error',
+                text1: 'Recipient Missing',
+                text2: 'Unable to start chat. Recipient ID is missing.'
+            });
             return;
         }
 
         console.log("🚀 Starting new chat with:", recipient);
-        
+
         const metadata = {
             id: recipient.id,
             name: recipient.name,
@@ -572,9 +577,17 @@ const handleSentMessage = async (message) => { // Changed from data to message
             unreadCount: 0,
             agencyId: agencyId
         };
-        
+
         saveChatMetadata(recipient.id, metadata);
-        
+
+        // Optional: Add a subtle success toast if you want feedback before navigating
+        Toast.show({
+            type: 'success',
+            text1: 'Starting Chat',
+            text2: `Connecting you with ${recipient.name}...`,
+            visibilityTime: 1500, // Makes it disappear quickly as we navigate
+        });
+
         handleGoToChat(recipient);
     };
 
@@ -594,12 +607,16 @@ const handleSentMessage = async (message) => { // Changed from data to message
     // Navigate to chat screen
     const handleGoToChat = (recipient) => {
         if (!recipient.id) {
-            Alert.alert("Error", "Recipient ID is missing.");
+            Toast.show({
+                type: 'error',
+                text1: 'Connection Error',
+                text2: 'Could not open chat. Recipient ID is missing.'
+            });
             return;
         }
 
         const conversationId = conversationsRef.current[recipient.id];
-        
+
         console.log("📍 Navigating to chat with:", {
             recipientId: recipient.id,
             conversationId: conversationId,
@@ -646,7 +663,7 @@ const handleSentMessage = async (message) => { // Changed from data to message
                     </View>
                 )}
             </View>
-            
+
             <View style={styles.chatContent}>
                 <View style={styles.chatHeader}>
                     <Text style={styles.chatName} numberOfLines={1}>{item.name}</Text>
@@ -654,19 +671,19 @@ const handleSentMessage = async (message) => { // Changed from data to message
                         {item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </Text>
                 </View>
-                
+
                 <View style={styles.chatPreview}>
                     <Text style={styles.chatMessage} numberOfLines={1}>
                         {item.lastMessage}
                     </Text>
-                    
+
                     {item.unreadCount > 0 && (
                         <View style={styles.unreadBadge}>
                             <Text style={styles.unreadText}>{item.unreadCount}</Text>
                         </View>
                     )}
                 </View>
-                
+
                 <View style={styles.chatTypeContainer}>
                     <Text style={styles.chatType}>{item.type}</Text>
                     {item.conversationId && (
@@ -692,39 +709,39 @@ const handleSentMessage = async (message) => { // Changed from data to message
                 </View>
                 <Text style={styles.headerTitle}>Messages</Text>
                 <View style={styles.headerIcons}>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.headerIcon}
                         onPress={async () => {
                             console.log("🔍 DEBUG STORAGE:");
-                            
+
                             if (!agencyId) {
                                 console.log("No agencyId!");
                                 return;
                             }
-                            
+
                             const storageKey = getStorageKey(agencyId);
                             const metadataKey = getMetadataKey(agencyId);
-                            
+
                             console.log("Keys:", { storageKey, metadataKey });
-                            
+
                             const conversations = await AsyncStorage.getItem(storageKey);
                             const metadata = await AsyncStorage.getItem(metadataKey);
-                            
+
                             console.log("Conversations:", conversations ? JSON.parse(conversations) : 'EMPTY');
                             console.log("Metadata:", metadata ? JSON.parse(metadata) : 'EMPTY');
-                            
+
                             // If metadata exists but conversations don't, fix it
                             if (metadata && !conversations) {
                                 console.log("🚨 Found metadata but no conversations!");
                                 await fixMissingConversation();
                             }
-                            
+
                             refreshChats();
                         }}
                     >
                         <Ionicons name="bug-outline" size={22} color={COLORS.textPrimary} />
                     </TouchableOpacity>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.headerIcon}
                         onPress={() => setShowSuggestion(true)}
                     >
@@ -812,16 +829,16 @@ const handleSentMessage = async (message) => { // Changed from data to message
                                             )}
                                         </View>
                                         <View style={styles.checkIcon}>
-                                            <Ionicons 
-                                                name={conversationsRef.current[contact.id] ? "chatbubble" : "chatbubble-outline"} 
-                                                size={20} 
-                                                color={conversationsRef.current[contact.id] ? COLORS.primary : COLORS.textSecondary} 
+                                            <Ionicons
+                                                name={conversationsRef.current[contact.id] ? "chatbubble" : "chatbubble-outline"}
+                                                size={20}
+                                                color={conversationsRef.current[contact.id] ? COLORS.primary : COLORS.textSecondary}
                                             />
                                         </View>
                                     </TouchableOpacity>
                                 );
                             })}
-                            
+
                             {getAgencyContacts().length === 0 && (
                                 <View style={styles.noContacts}>
                                     <Ionicons name="people-outline" size={40} color={COLORS.border} />
@@ -877,7 +894,7 @@ const handleSentMessage = async (message) => { // Changed from data to message
                                 <Ionicons name="refresh" size={20} color={COLORS.primary} />
                             </TouchableOpacity>
                         </View>
-                        
+
                         <FlatList
                             data={chats}
                             renderItem={renderChatItem}
@@ -914,13 +931,13 @@ const handleSentMessage = async (message) => { // Changed from data to message
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: COLORS.bg },
-    header: { 
-        flexDirection: 'row', 
-        alignItems: 'center', 
+    header: {
+        flexDirection: 'row',
+        alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 16, 
-        paddingVertical: 12, 
-        borderBottomWidth: 1, 
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderBottomWidth: 1,
         borderBottomColor: COLORS.border,
         backgroundColor: COLORS.white
     },
@@ -929,22 +946,22 @@ const styles = StyleSheet.create({
     headerIcons: { flexDirection: 'row', alignItems: 'center' },
     headerIcon: { marginLeft: 15, padding: 4 },
     refreshButton: { padding: 8 },
-    chatItem: { 
-        flexDirection: 'row', 
-        padding: 12, 
-        borderBottomWidth: 1, 
+    chatItem: {
+        flexDirection: 'row',
+        padding: 12,
+        borderBottomWidth: 1,
         borderBottomColor: COLORS.border,
         backgroundColor: COLORS.white
     },
     chatAvatar: { marginRight: 12 },
     chatLogo: { width: 50, height: 50, borderRadius: 25 },
-    chatFallback: { 
-        width: 50, 
-        height: 50, 
-        borderRadius: 25, 
-        backgroundColor: COLORS.accent, 
-        justifyContent: 'center', 
-        alignItems: 'center' 
+    chatFallback: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        backgroundColor: COLORS.accent,
+        justifyContent: 'center',
+        alignItems: 'center'
     },
     chatFallbackText: { fontSize: 20, fontWeight: 'bold', color: COLORS.primary },
     chatContent: { flex: 1 },
@@ -953,12 +970,12 @@ const styles = StyleSheet.create({
     chatTime: { fontSize: 12, color: COLORS.textSecondary },
     chatPreview: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
     chatMessage: { fontSize: 14, color: COLORS.textSecondary, flex: 1 },
-    unreadBadge: { 
-        backgroundColor: COLORS.primary, 
-        borderRadius: 10, 
-        minWidth: 20, 
-        height: 20, 
-        justifyContent: 'center', 
+    unreadBadge: {
+        backgroundColor: COLORS.primary,
+        borderRadius: 10,
+        minWidth: 20,
+        height: 20,
+        justifyContent: 'center',
         alignItems: 'center',
         marginLeft: 8
     },
@@ -974,15 +991,15 @@ const styles = StyleSheet.create({
     messengerIcon: { alignItems: 'center' },
     emptyTitle: { fontSize: 20, fontWeight: 'bold', color: COLORS.textPrimary, marginBottom: 8 },
     emptySubtitle: { fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 20 },
-    floatingButton: { 
-        position: 'absolute', 
-        bottom: 20, 
-        right: 20, 
-        width: 56, 
-        height: 56, 
-        borderRadius: 28, 
-        backgroundColor: COLORS.primary, 
-        justifyContent: 'center', 
+    floatingButton: {
+        position: 'absolute',
+        bottom: 20,
+        right: 20,
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        backgroundColor: COLORS.primary,
+        justifyContent: 'center',
         alignItems: 'center',
         elevation: 4,
         shadowColor: '#000',
@@ -991,11 +1008,11 @@ const styles = StyleSheet.create({
         shadowRadius: 3.84,
     },
     chatsContainer: { flex: 1 },
-    chatSectionHeader: { 
-        flexDirection: 'row', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        paddingHorizontal: 16, 
+    chatSectionHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 16,
         paddingVertical: 12,
         backgroundColor: COLORS.white,
         borderBottomWidth: 1,
@@ -1007,35 +1024,35 @@ const styles = StyleSheet.create({
     placeholderText: { fontSize: 14, color: COLORS.textSecondary, marginTop: 10 },
     suggestionOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000 },
     overlayBackground: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
-    suggestionSheet: { 
-        position: 'absolute', 
-        bottom: 0, 
-        left: 0, 
-        right: 0, 
-        backgroundColor: COLORS.white, 
-        borderTopLeftRadius: 20, 
-        borderTopRightRadius: 20, 
-        paddingBottom: 30, 
-        maxHeight: '80%' 
+    suggestionSheet: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: COLORS.white,
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        paddingBottom: 30,
+        maxHeight: '80%'
     },
-    sheetHeader: { 
-        flexDirection: 'row', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        padding: 16, 
-        borderBottomWidth: 1, 
-        borderBottomColor: COLORS.border 
+    sheetHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: COLORS.border
     },
     sheetTitle: { fontSize: 18, fontWeight: 'bold', color: COLORS.textPrimary },
     closeButton: { padding: 4 },
-    searchContainer: { 
-        flexDirection: 'row', 
-        alignItems: 'center', 
-        backgroundColor: COLORS.accent, 
-        margin: 16, 
-        paddingHorizontal: 12, 
-        paddingVertical: 8, 
-        borderRadius: 10 
+    searchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: COLORS.accent,
+        margin: 16,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 10
     },
     searchIcon: { marginRight: 8 },
     searchPlaceholder: { fontSize: 16, color: COLORS.textSecondary },
@@ -1044,13 +1061,13 @@ const styles = StyleSheet.create({
     agencyItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border },
     agencyAvatar: { marginRight: 12 },
     agencyLogo: { width: 50, height: 50, borderRadius: 25 },
-    fallbackAvatar: { 
-        width: 50, 
-        height: 50, 
-        borderRadius: 25, 
-        backgroundColor: COLORS.accent, 
-        justifyContent: 'center', 
-        alignItems: 'center' 
+    fallbackAvatar: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        backgroundColor: COLORS.accent,
+        justifyContent: 'center',
+        alignItems: 'center'
     },
     fallbackText: { fontSize: 20, fontWeight: 'bold', color: COLORS.primary },
     agencyInfo: { flex: 1 },

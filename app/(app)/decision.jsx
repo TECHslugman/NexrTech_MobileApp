@@ -11,7 +11,6 @@ import {
   Animated,
   StatusBar,
   Dimensions,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { Feather, AntDesign } from '@expo/vector-icons';

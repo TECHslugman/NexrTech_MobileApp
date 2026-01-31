@@ -8,6 +8,7 @@ import {
     Alert,
     Linking,
 } from 'react-native';
+import Toast from 'react-native-toast-message';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';

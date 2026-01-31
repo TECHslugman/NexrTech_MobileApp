@@ -8,9 +8,9 @@ import {
     Image,
     ActivityIndicator,
     StatusBar,
-    Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import Toast from 'react-native-toast-message';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
@@ -69,6 +69,8 @@ export default function CourseDetail() {
                     const statusJson = await statusRes.json();
                     if (statusJson.data !== null) {
                         setIsAlreadySelected(true);
+                    } else {
+                        setIsAlreadySelected(false);
                     }
                 }
             } catch (error) {
@@ -78,7 +80,9 @@ export default function CourseDetail() {
             }
         };
 
-        fetchCourseAndStatus();
+        if (userToken) {
+            fetchCourseAndStatus();
+        }
     }, [courseId, userToken]);
 
     const handleApplyNow = async () => {
@@ -96,17 +100,41 @@ export default function CourseDetail() {
             );
 
             if (response.ok) {
-                Alert.alert(
-                    "Selection Successful",
-                    "The course has been selected. We are currently waiting for an agent to be assigned.",
-                    [{ text: "OK", onPress: () => router.back() }]
-                );
+                setIsAlreadySelected(true);
+
+                // REPLACED Success Alert
+                Toast.show({
+                    type: 'success',
+                    text1: 'Selection Successful',
+                    text2: 'Course selected! Waiting for agent assignment.',
+                    visibilityTime: 2000,
+                });
+
+                // Delay navigation slightly so the user sees the toast
+                setTimeout(() => {
+                    router.back();
+                }, 2100);
+
             } else {
                 const errorData = await response.json();
-                Alert.alert("Selection Failed", errorData.message || "Something went wrong.");
+                if (response.status === 400 || errorData.message?.includes('already')) {
+                    setIsAlreadySelected(true);
+                }
+
+                // REPLACED Failure Alert
+                Toast.show({
+                    type: 'error',
+                    text1: 'Selection Failed',
+                    text2: errorData.message || "Something went wrong."
+                });
             }
         } catch (error) {
-            Alert.alert("Error", "Could not connect to the server.");
+            // REPLACED Connection Alert
+            Toast.show({
+                type: 'error',
+                text1: 'Network Error',
+                text2: 'Could not connect to the server.'
+            });
         } finally {
             setSubmitting(false);
         }
@@ -151,6 +179,7 @@ export default function CourseDetail() {
         );
     }
 
+
     return (
         <View style={[styles.container, { backgroundColor: COLORS.bg }]}>
             <StatusBar barStyle="light-content" />
@@ -158,9 +187,9 @@ export default function CourseDetail() {
             {/* Header */}
             <View style={[
                 styles.header,
-                { 
+                {
                     backgroundColor: courseData.level === 'graduate' ? '#4ECDC4' : '#FF6B6B',
-                    paddingTop: insets.top + 10 
+                    paddingTop: insets.top + 10
                 }
             ]}>
                 <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
@@ -170,6 +199,7 @@ export default function CourseDetail() {
                 <View style={styles.headerContent}>
                     <Text style={styles.courseLevel}>{courseData.level?.toUpperCase() || 'UNDERGRADUATE'}</Text>
                     <Text style={styles.courseTitle} numberOfLines={2}>{courseData.title}</Text>
+
                     <View style={styles.courseMeta}>
                         <View style={styles.metaItem}>
                             <Feather name="clock" size={16} color="rgba(255,255,255,0.8)" />
@@ -190,6 +220,7 @@ export default function CourseDetail() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+                {/* About Section */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
                         <Feather name="info" size={20} color={COLORS.primaryBlue} />
@@ -200,6 +231,7 @@ export default function CourseDetail() {
                     </View>
                 </View>
 
+                {/* Description Section */}
                 {courseData.description && (
                     <View style={styles.section}>
                         <View style={styles.sectionHeader}>
@@ -212,6 +244,7 @@ export default function CourseDetail() {
                     </View>
                 )}
 
+                {/* Fees Section */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
                         <Feather name="dollar-sign" size={20} color={COLORS.primaryBlue} />
@@ -222,14 +255,10 @@ export default function CourseDetail() {
                             <Text style={styles.feeAmount}>{formatTuitionFee()}</Text>
                             <Text style={styles.feeNote}>Tuition fee per year</Text>
                         </View>
-                        {courseData.tuitionFee?.currency && (
-                            <View style={styles.currencyInfo}>
-                                <Text style={styles.currencyText}>Currency: {courseData.tuitionFee.currency}</Text>
-                            </View>
-                        )}
                     </View>
                 </View>
 
+                {/* Requirements Section */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
                         <Feather name="list" size={20} color={COLORS.primaryBlue} />
@@ -249,6 +278,7 @@ export default function CourseDetail() {
                     </View>
                 </View>
 
+                {/* Provided By Section */}
                 {courseData.providedBy && (
                     <View style={styles.section}>
                         <View style={styles.sectionHeader}>
@@ -268,62 +298,11 @@ export default function CourseDetail() {
                         </View>
                     </View>
                 )}
-
-                <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <Feather name="file-text" size={20} color={COLORS.primaryBlue} />
-                        <Text style={styles.sectionTitle}>Course Information</Text>
-                    </View>
-                    <View style={styles.infoGrid}>
-                        <View style={styles.infoItem}>
-                            <Text style={styles.infoLabel}>Course Level</Text>
-                            <Text style={styles.infoValue}>{courseData.level?.charAt(0).toUpperCase() + courseData.level?.slice(1) || 'Undergraduate'}</Text>
-                        </View>
-                        <View style={styles.infoItem}>
-                            <Text style={styles.infoLabel}>Duration</Text>
-                            <Text style={styles.infoValue}>{courseData.duration || 'N/A'}</Text>
-                        </View>
-                        <View style={styles.infoItem}>
-                            <Text style={styles.infoLabel}>Status</Text>
-                            <View style={[styles.statusBadge, { backgroundColor: courseData.status === 'open' ? '#D4EDDA' : '#F8D7DA' }]}>
-                                <Text style={[styles.statusText, { color: courseData.status === 'open' ? '#155724' : '#721C24' }]}>
-                                    {courseData.status === 'open' ? 'Open' : 'Closed'}
-                                </Text>
-                            </View>
-                        </View>
-                        <View style={styles.infoItem}>
-                            <Text style={styles.infoLabel}>Available Seats</Text>
-                            <Text style={styles.infoValue}>{courseData.intakes ? `${courseData.intakes} seats` : 'Limited'}</Text>
-                        </View>
-                    </View>
-                </View>
             </ScrollView>
 
-            {/* Tracker Info Box - Appears above Bottom Bar if selected */}
-            {isAlreadySelected && (
-                <View style={styles.trackerLinkContainer}>
-                    <TouchableOpacity 
-                        style={styles.trackerBox}
-                        onPress={() => router.push({
-                            pathname: 'agency/selected/updates', 
-                            params: { id: agencyId }
-                        })}
-                    >
-                        <View style={styles.trackerLeft}>
-                            <View style={styles.trackerIconCircle}>
-                                <Ionicons name="time-outline" size={20} color={COLORS.primaryBlue} />
-                            </View>
-                            <View>
-                                <Text style={styles.trackerTitle}>You have an ongoing application</Text>
-                                <Text style={styles.trackerSub}>Click here to view status</Text>
-                            </View>
-                        </View>
-                        <Ionicons name="chevron-forward" size={18} color={COLORS.primaryBlue} />
-                    </TouchableOpacity>
-                </View>
-            )}
+            {/* REMOVED: Tracker Notification logic was here */}
 
-            {/* Bottom Bar */}
+            {/* Bottom Action Bar */}
             <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 10 }]}>
                 <TouchableOpacity
                     style={[
@@ -337,8 +316,8 @@ export default function CourseDetail() {
                         <ActivityIndicator color="#FFF" />
                     ) : (
                         <Text style={styles.applyText}>
-                            {isAlreadySelected 
-                                ? 'APPLICATION IN PROGRESS' 
+                            {isAlreadySelected
+                                ? 'APPLICATION IN PROGRESS'
                                 : courseData.status === 'open' ? 'APPLY NOW' : 'APPLICATIONS CLOSED'}
                         </Text>
                     )}
@@ -347,6 +326,7 @@ export default function CourseDetail() {
         </View>
     );
 }
+
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
@@ -367,11 +347,9 @@ const styles = StyleSheet.create({
     sectionTitle: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, marginLeft: 8 },
     card: { backgroundColor: COLORS.white, borderRadius: 16, padding: 18, borderWidth: 1, borderColor: COLORS.border },
     cardText: { fontSize: 15, color: COLORS.textPrimary, lineHeight: 22 },
-    feeContainer: { alignItems: 'center', marginBottom: 12 },
+    feeContainer: { alignItems: 'center' },
     feeAmount: { fontSize: 24, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 4 },
     feeNote: { fontSize: 14, color: COLORS.textSecondary },
-    currencyInfo: { paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.border },
-    currencyText: { fontSize: 14, color: COLORS.textSecondary, fontStyle: 'italic' },
     requirementItem: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
     bulletPoint: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.primaryBlue, marginTop: 8, marginRight: 10 },
     requirementText: { flex: 1, fontSize: 14, color: COLORS.textPrimary, lineHeight: 20 },
@@ -380,12 +358,6 @@ const styles = StyleSheet.create({
     universityInfo: { alignItems: 'center' },
     universityName: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 8, textAlign: 'center' },
     universityNote: { fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 20 },
-    infoGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-    infoItem: { width: '48%', backgroundColor: COLORS.white, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: COLORS.border },
-    infoLabel: { fontSize: 12, color: COLORS.textSecondary, marginBottom: 4 },
-    infoValue: { fontSize: 16, fontWeight: '600', color: COLORS.textPrimary },
-    statusBadge: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, alignSelf: 'flex-start' },
-    statusText: { fontSize: 12, fontWeight: '600' },
     trackerLinkContainer: { paddingHorizontal: 20, marginBottom: 10 },
     trackerBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#EBF2FA', padding: 15, borderRadius: 16, borderWidth: 1, borderColor: '#D0E1F5' },
     trackerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },

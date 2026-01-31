@@ -148,25 +148,47 @@ export default function ChatScreen() {
     // --- 4. SEND ACTION ---
 
     const onSend = useCallback(async (newMessages = []) => {
-        // If the state is false, but the socket is actually fine, fix it on the fly
+        // 1. Check actual socket status
         const isActuallyConnected = socketService.socket?.connected;
 
         if (!socketReady && isActuallyConnected) {
             setSocketReady(true);
         } else if (!socketReady && !isActuallyConnected) {
-            Alert.alert("Connecting", "Please wait until the connection is active.");
+            Toast.show({
+                type: 'info',
+                text1: 'Connecting...',
+                text2: 'Wait a moment while we establish a secure connection.',
+                position: 'bottom', 
+            });
             return;
         }
 
         const message = newMessages[0];
+
+        // 2. Prevent empty message sends
+        if (!message.text || message.text.trim().length === 0) {
+            return;
+        }
+
+        // 3. Optimistic UI Update (Update screen immediately)
         setMessages(prev => GiftedChat.append(prev, newMessages));
 
-        socketService.sendMessage(
-            recipientId,
-            message.text.trim(),
-            recipientType || "Agency"
-        );
-    }, [recipientId, socketReady, recipientType])
+        // 4. Emit via Socket
+        try {
+            socketService.sendMessage(
+                recipientId,
+                message.text.trim(),
+                recipientType || "Agency"
+            );
+        } catch (error) {
+            console.error("Socket Send Error:", error);
+            Toast.show({
+                type: 'error',
+                text1: 'Message Not Sent',
+                text2: 'Please check your internet connection.',
+            });
+        }
+    }, [recipientId, socketReady, recipientType]);
 
     // --- 5. UI COMPONENTS ---
 
