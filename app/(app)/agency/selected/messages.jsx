@@ -21,7 +21,7 @@ const COLORS = {
     active: '#769FCD',
     inactive: '#8E8E93',
 };
-
+//branch change 
 // Agency-specific storage keys
 const getStorageKey = (agencyId) => `chat_conversations_${agencyId}`;
 const getMetadataKey = (agencyId) => `chat_metadata_${agencyId}`;
