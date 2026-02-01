@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1073729546583",
+    "project_id": "eduagent-b8a2f",
+    "storage_bucket": "eduagent-b8a2f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1073729546583:android:793aa68c923d45959cf612",
+        "android_client_info": {
+          "package_name": "com.pradeep.eduapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCvko4sN3qCIsNCzSr0JBqr3kY1RXhLmaY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
