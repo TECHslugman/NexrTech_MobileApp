@@ -1,13 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
-    FlatList, Image, useWindowDimensions, ActivityIndicator, StatusBar, Linking
+    FlatList, Image, Dimensions, ActivityIndicator, StatusBar, Animated
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import { Config } from '../../../config';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// Responsive scaling functions
+const scale = (size) => (SCREEN_WIDTH / 375) * size;
+const verticalScale = (size) => (SCREEN_HEIGHT / 812) * size;
+const moderateScale = (size, factor = 0.5) => size + (scale(size) - size) * factor;
 
 const DEFAULT_IMAGE = require('../../../../assets/images/agencies/default.png');
 
@@ -23,11 +30,16 @@ const COLORS = {
     textSecondary: '#718096',
     accent: '#E2E8F0',
     lightBlue: '#E8F1FF',
-    online: '#48BB78', // Green for online
-    seated: '#ED8936', // Orange for seated
+    online: '#48BB78',
+    seated: '#ED8936',
+    gradient1: '#FF6B6B',
+    gradient2: '#949BFF',
+    gradient3: '#4ECDC4',
+    gradient4: '#FFD93D',
 };
-const GAP = 12;
-const CARD_BORDER_RADIUS = 16;
+
+const GAP = moderateScale(12);
+const CARD_BORDER_RADIUS = moderateScale(16);
 
 export default function SelectedAgencyHome() {
     const router = useRouter();
@@ -174,16 +186,21 @@ export default function SelectedAgencyHome() {
 
     if (loading) {
         return (
-            <View style={[styles.safe, styles.center]}>
+            <SafeAreaView style={[styles.safe, styles.loadingContainer]}>
+                <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
                 <ActivityIndicator size="large" color={COLORS.primary} />
-            </View>
+                <Text style={styles.loadingText}>Loading your dashboard...</Text>
+            </SafeAreaView>
         );
     }
+
+    const gradients = [COLORS.gradient1, COLORS.gradient2, COLORS.gradient3, COLORS.gradient4];
 
     return (
         <SafeAreaView style={styles.safe} edges={['top']}>
             <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
 
+            {/* HEADER */}
             <View style={styles.header}>
                 <View style={styles.headerTop}>
                     <View style={styles.agencyInfo}>
@@ -191,8 +208,8 @@ export default function SelectedAgencyHome() {
                             {agencyData?.logo ? (
                                 <Image
                                     source={{ uri: agencyData.logo }}
-                                    style={{ width: '100%', height: '100%', borderRadius: 12 }}
-                                    resizeMode="contain"
+                                    style={styles.agencyBadgeImage}
+                                    resizeMode="cover"
                                 />
                             ) : (
                                 <Text style={styles.agencyInitial}>
@@ -200,15 +217,19 @@ export default function SelectedAgencyHome() {
                                 </Text>
                             )}
                         </View>
-                        <View>
-                            <Text style={styles.agencyName}>{agencyData?.organizationName || "Agency"}</Text>
+                        <View style={styles.agencyTextContainer}>
+                            <Text style={styles.agencyName} numberOfLines={1}>
+                                {agencyData?.organizationName || "Agency"}
+                            </Text>
                             <Text style={styles.agencyTagline}>Education Services</Text>
                         </View>
                     </View>
-                    {/* Notification icon removed as requested */}
                 </View>
+
                 <View style={styles.searchContainer}>
-                    <Feather name="search" size={20} color="#B0BCCB" style={styles.searchIcon} />
+                    <View style={styles.searchIconContainer}>
+                        <Feather name="search" size={moderateScale(18)} color="#B0BCCB" />
+                    </View>
                     <TextInput
                         placeholder="Search courses, events..."
                         style={styles.searchInput}
@@ -217,19 +238,22 @@ export default function SelectedAgencyHome() {
                 </View>
             </View>
 
-            <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false} overScrollMode="never">
-
+            <ScrollView
+                contentContainerStyle={styles.body}
+                showsVerticalScrollIndicator={false}
+                overScrollMode="never"
+            >
                 {/* QUICK STATS */}
                 <View style={styles.statsContainer}>
                     {[
-                        { icon: "school", label: "Course", count: courses.length },
-                        { icon: "event", label: "Event", count: events.length },
-                        { icon: "workspace-premium", label: "Scholarship", count: scholarships.length },
-                        { icon: "people", label: "Mentor", count: mentors.length }
+                        { icon: "school", label: "Courses", count: courses.length, color: '#FF6B6B' },
+                        { icon: "event", label: "Events", count: events.length, color: '#949BFF' },
+                        { icon: "workspace-premium", label: "Scholarships", count: scholarships.length, color: '#4ECDC4' },
+                        { icon: "people", label: "Mentors", count: mentors.length, color: COLORS.primary }
                     ].map((stat, idx) => (
                         <View key={idx} style={styles.statCard}>
-                            <View style={styles.statIconContainer}>
-                                <MaterialIcons name={stat.icon} size={20} color={COLORS.primary} />
+                            <View style={[styles.statIconContainer, { backgroundColor: stat.color + '15' }]}>
+                                <MaterialIcons name={stat.icon} size={moderateScale(22)} color={stat.color} />
                             </View>
                             <Text style={styles.statNumber}>{stat.count || 0}</Text>
                             <Text style={styles.statLabel}>{stat.label}</Text>
@@ -237,9 +261,10 @@ export default function SelectedAgencyHome() {
                     ))}
                 </View>
 
-                {/* COURSES - Now interactive with navigation */}
+                {/* COURSES */}
                 <SectionHeader
                     title="Featured Courses"
+                    icon="book-open"
                     onBtnPress={() => router.push({
                         pathname: `/agency/selected/courses/${id}`,
                         params: {
@@ -248,40 +273,52 @@ export default function SelectedAgencyHome() {
                         }
                     })}
                 />
-                <FlatList
-                    horizontal
-                    data={courses}
-                    keyExtractor={(item, index) => `course-${item._id || item.id || index}`}
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.listContent}
-                    renderItem={({ item, index }) => (
-                        <TouchableOpacity
-                            style={[
-                                styles.courseCard,
-                                { backgroundColor: index % 2 === 0 ? '#FF6B6B' : '#949BFF' }
-                            ]}
-                            onPress={() => router.push({
-                                pathname: `/agency/selected/courses/details`, // Directs to the detail page we built
-                                params: {
-                                    courseId: item._id || item.id,
-                                    agencyId: id,
-                                    courseName: item.title
-                                }
-                            })}
-                        >
-                            <View style={styles.courseIcon}>
-                                <Ionicons name="book-outline" size={20} color="rgba(255,255,255,0.9)" />
-                            </View>
-                            <Text style={styles.courseText} numberOfLines={2}>
-                                {item.title || item}
-                            </Text>
-                        </TouchableOpacity>
-                    )}
-                    ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
-                />
+                {courses.length > 0 ? (
+                    <FlatList
+                        horizontal
+                        data={courses}
+                        keyExtractor={(item, index) => `course-${item._id || item.id || index}`}
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.listContent}
+                        renderItem={({ item, index }) => (
+                            <TouchableOpacity
+                                style={[
+                                    styles.courseCard,
+                                    { backgroundColor: gradients[index % gradients.length] }
+                                ]}
+                                onPress={() => router.push({
+                                    pathname: `/agency/selected/courses/details`,
+                                    params: {
+                                        courseId: item._id || item.id,
+                                        agencyId: id,
+                                        courseName: item.title
+                                    }
+                                })}
+                                activeOpacity={0.8}
+                            >
+                                <View style={styles.courseIconBg}>
+                                    <Ionicons name="book-outline" size={moderateScale(24)} color="#FFFFFF" />
+                                </View>
+                                <Text style={styles.courseText} numberOfLines={3}>
+                                    {item.title || item}
+                                </Text>
+                                <View style={styles.courseArrow}>
+                                    <Feather name="arrow-right" size={moderateScale(16)} color="#FFFFFF" />
+                                </View>
+                            </TouchableOpacity>
+                        )}
+                        ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
+                    />
+                ) : (
+                    <EmptyState icon="book" message="No courses available yet" />
+                )}
 
                 {/* EVENTS */}
-                <SectionHeader title="Upcoming Events" onBtnPress={() => router.push(`/agency/selected/events/${id}`)} />
+                <SectionHeader
+                    title="Upcoming Events"
+                    icon="calendar"
+                    onBtnPress={() => router.push(`/agency/selected/events/${id}`)}
+                />
                 {events.length > 0 ? (
                     <FlatList
                         horizontal
@@ -291,34 +328,60 @@ export default function SelectedAgencyHome() {
                         contentContainerStyle={styles.listContent}
                         renderItem={({ item }) => (
                             <TouchableOpacity
-                                style={styles.eventCardHorizontal}
+                                style={styles.eventCard}
                                 onPress={() => router.push({
                                     pathname: `/agency/selected/events/details`,
-                                    params: { id: item._id, title: item.title, image: item.bannerImageUrl, date: item.date, time: item.time }
+                                    params: {
+                                        id: item._id,
+                                        title: item.title,
+                                        image: item.bannerImageUrl,
+                                        date: item.date,
+                                        time: item.time
+                                    }
                                 })}
+                                activeOpacity={0.9}
                             >
-                                <View style={styles.imageWrapper}>
-                                    <Image source={{ uri: item.bannerImageUrl }} style={styles.eventImgHorizontal} resizeMode="cover" />
-                                    <View style={[styles.modeBadge, { backgroundColor: item.mode === 'online' ? COLORS.online : COLORS.primary }]}>
+                                <View style={styles.eventImageContainer}>
+                                    <Image
+                                        source={{ uri: item.bannerImageUrl }}
+                                        style={styles.eventImage}
+                                        resizeMode="cover"
+                                    />
+                                    <View style={styles.eventGradient} />
+                                    <View style={[
+                                        styles.modeBadge,
+                                        { backgroundColor: item.mode === 'online' ? COLORS.online : COLORS.seated }
+                                    ]}>
+                                        <Feather
+                                            name={item.mode === 'online' ? 'video' : 'map-pin'}
+                                            size={moderateScale(10)}
+                                            color="#FFFFFF"
+                                        />
                                         <Text style={styles.modeBadgeText}>{item.mode}</Text>
                                     </View>
                                 </View>
 
-                                <View style={styles.eventContentHorizontal}>
-                                    <Text style={styles.eventTitleHorizontal} numberOfLines={1}>{item.title}</Text>
-                                    <View style={styles.eventDetails}>
-                                        <View style={styles.eventDetailRow}>
-                                            <Feather name="calendar" size={12} color={COLORS.textSecondary} />
-                                            <Text style={styles.eventDetailText}>{item.date}</Text>
+                                <View style={styles.eventContent}>
+                                    <Text style={styles.eventTitle} numberOfLines={2}>
+                                        {item.title}
+                                    </Text>
+                                    <View style={styles.eventMetaContainer}>
+                                        <View style={styles.eventMetaRow}>
+                                            <View style={styles.eventMetaBadge}>
+                                                <Feather name="calendar" size={moderateScale(11)} color={COLORS.primary} />
+                                            </View>
+                                            <Text style={styles.eventMetaText} numberOfLines={1}>
+                                                {item.date}
+                                            </Text>
                                         </View>
-                                        <View style={styles.eventDetailRow}>
-                                            <Feather name="clock" size={12} color={COLORS.textSecondary} />
-                                            <Text style={styles.eventDetailText}>{item.time}</Text>
+                                        <View style={styles.eventMetaRow}>
+                                            <View style={styles.eventMetaBadge}>
+                                                <Feather name="clock" size={moderateScale(11)} color={COLORS.primary} />
+                                            </View>
+                                            <Text style={styles.eventMetaText} numberOfLines={1}>
+                                                {item.time}
+                                            </Text>
                                         </View>
-                                    </View>
-                                    <View style={styles.eventAction}>
-                                        <Text style={styles.eventActionText}>Details</Text>
-                                        <Feather name="arrow-right" size={12} color={COLORS.primary} />
                                     </View>
                                 </View>
                             </TouchableOpacity>
@@ -326,87 +389,186 @@ export default function SelectedAgencyHome() {
                         ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
                     />
                 ) : (
-                    <Text style={styles.noEventsText}>No upcoming events</Text>
+                    <EmptyState icon="calendar" message="No upcoming events" />
                 )}
 
                 {/* SCHOLARSHIPS */}
-                <SectionHeader title="Available Scholarships" onBtnPress={() => router.push({ pathname: `/agency/selected/scholarships/${id}`, params: { initialData: JSON.stringify(scholarships), agencyName: agencyData?.organizationName } })} />
-                <FlatList
-                    horizontal
-                    data={scholarships}
-                    keyExtractor={(item) => item.id}
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.listContent}
-                    renderItem={({ item }) => (
-                        <TouchableOpacity style={styles.scholarshipCard} onPress={() => router.push({ pathname: `/agency/selected/scholarships/details`, params: { id: item.id, title: item.title } })}>
-                            <View style={styles.scholarshipHeader}><MaterialIcons name="workspace-premium" size={18} color={COLORS.white} /></View>
-                            <Text style={styles.scholarshipText} numberOfLines={2}>{item.title}</Text>
-                        </TouchableOpacity>
-                    )}
-                    ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
+                <SectionHeader
+                    title="Available Scholarships"
+                    icon="award"
+                    onBtnPress={() => router.push({
+                        pathname: `/agency/selected/scholarships/${id}`,
+                        params: {
+                            initialData: JSON.stringify(scholarships),
+                            agencyName: agencyData?.organizationName
+                        }
+                    })}
                 />
+                {scholarships.length > 0 ? (
+                    <FlatList
+                        horizontal
+                        data={scholarships}
+                        keyExtractor={(item) => item.id}
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.listContent}
+                        renderItem={({ item }) => (
+                            <TouchableOpacity
+                                style={styles.scholarshipCard}
+                                onPress={() => router.push({
+                                    pathname: `/agency/selected/scholarships/details`,
+                                    params: { id: item.id, title: item.title }
+                                })}
+                                activeOpacity={0.8}
+                            >
+                                <View style={styles.scholarshipIconContainer}>
+                                    <MaterialIcons
+                                        name="workspace-premium"
+                                        size={moderateScale(28)}
+                                        color="#FFFFFF"
+                                    />
+                                </View>
+                                <Text style={styles.scholarshipText} numberOfLines={3}>
+                                    {item.title}
+                                </Text>
+                                <View style={styles.scholarshipFooter}>
+                                    <Text style={styles.scholarshipLabel}>Learn More</Text>
+                                    <Feather name="arrow-right" size={moderateScale(14)} color="#FFFFFF" />
+                                </View>
+                            </TouchableOpacity>
+                        )}
+                        ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
+                    />
+                ) : (
+                    <EmptyState icon="award" message="No scholarships available" />
+                )}
 
                 {/* UNIVERSITIES */}
-                <SectionHeader title="Partner Universities" onBtnPress={() => router.push({ pathname: `/agency/selected/universities/${id}` })} />
-                <FlatList
-                    horizontal
-                    data={agencyData?.partnerUniversities || []}
-                    keyExtractor={(item, index) => item._id || index.toString()}
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.listContent}
-                    renderItem={({ item }) => (
-                        <TouchableOpacity style={styles.uniTile} onPress={() => router.push({ pathname: `/agency/selected/universities/details`, params: { id: item._id, name: item.name, logo: item.logo, website: item.websiteUrl } })}>
-                            {item.logo ? <Image source={{ uri: item.logo }} style={styles.uniImg} resizeMode="contain" /> : <View style={styles.uniPlaceholder}><Text style={styles.uniPlaceholderText}>{item.name?.substring(0, 2).toUpperCase() || 'UN'}</Text></View>}
-                        </TouchableOpacity>
-                    )}
-                    ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
+                <SectionHeader
+                    title="Partner Universities"
+                    icon="briefcase"
+                    onBtnPress={() => router.push({ pathname: `/agency/selected/universities/${id}` })}
                 />
+                {agencyData?.partnerUniversities?.length > 0 ? (
+                    <FlatList
+                        horizontal
+                        data={agencyData.partnerUniversities}
+                        keyExtractor={(item, index) => item._id || index.toString()}
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.listContent}
+                        renderItem={({ item }) => (
+                            <TouchableOpacity
+                                style={styles.universityCard}
+                                onPress={() => router.push({
+                                    pathname: `/agency/selected/universities/details`,
+                                    params: {
+                                        id: item._id,
+                                        name: item.name,
+                                        logo: item.logo,
+                                        website: item.websiteUrl
+                                    }
+                                })}
+                                activeOpacity={0.85}
+                            >
+                                <View style={styles.universityLogoContainer}>
+                                    {item.logo ? (
+                                        <Image
+                                            source={{ uri: item.logo }}
+                                            style={styles.universityLogo}
+                                            resizeMode="contain"
+                                        />
+                                    ) : (
+                                        <View style={styles.universityPlaceholder}>
+                                            <Feather name="briefcase" size={moderateScale(28)} color={COLORS.primary} />
+                                        </View>
+                                    )}
+                                </View>
+                                {item.name && (
+                                    <Text style={styles.universityName} numberOfLines={2}>
+                                        {item.name}
+                                    </Text>
+                                )}
+                            </TouchableOpacity>
+                        )}
+                        ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
+                    />
+                ) : (
+                    <EmptyState icon="briefcase" message="No partner universities" />
+                )}
 
-                {/* MENTORS SECTION - Keeping original layout but making it consistent */}
-                <SectionHeader title="Meet the Mentors" onBtnPress={() => router.push(`/agency/selected/mentors/${id}`)} />
-                <FlatList
-                    horizontal
-                    data={mentors}
-                    keyExtractor={(item) => item.id}
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.listContent}
-                    renderItem={({ item }) => (
-                        <TouchableOpacity
-                            style={styles.mentorCard}
-                            onPress={() => router.push({
-                                pathname: `/agency/selected/mentors/details`,
-                                params: { id: item.id, agencyId: id }
-                            })}
-                        >
-                            <Image
-                                source={item.profilepic ? { uri: item.profilepic } : DEFAULT_IMAGE}
-                                style={styles.mentorCircleImg}
-                            />
-                            <View style={styles.mentorTextContainer}>
-                                <Text style={styles.mentorDisplayName}>{item.name}</Text>
-                                <Text style={styles.mentorExpText} numberOfLines={3}>
-                                    {item.experience}
-                                </Text>
-                            </View>
-                        </TouchableOpacity>
-                    )}
-                    ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
+                {/* MENTORS */}
+                <SectionHeader
+                    title="Meet the Mentors"
+                    icon="users"
+                    onBtnPress={() => router.push(`/agency/selected/mentors/${id}`)}
                 />
+                {mentors.length > 0 ? (
+                    <FlatList
+                        horizontal
+                        data={mentors}
+                        keyExtractor={(item) => item.id}
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.listContent}
+                        renderItem={({ item }) => (
+                            <TouchableOpacity
+                                style={styles.mentorCard}
+                                onPress={() => router.push({
+                                    pathname: `/agency/selected/mentors/details`,
+                                    params: { id: item.id, agencyId: id }
+                                })}
+                                activeOpacity={0.9}
+                            >
+                                <View style={styles.mentorImageContainer}>
+                                    <Image
+                                        source={item.profilepic ? { uri: item.profilepic } : DEFAULT_IMAGE}
+                                        style={styles.mentorImage}
+                                        resizeMode="cover"
+                                    />
+                                    <View style={styles.mentorOnlineBadge} />
+                                </View>
+                                <View style={styles.mentorContent}>
+                                    <Text style={styles.mentorName} numberOfLines={1}>
+                                        {item.name}
+                                    </Text>
+                                    <Text style={styles.mentorExperience} numberOfLines={3}>
+                                        {item.experience}
+                                    </Text>
+                                </View>
+                            </TouchableOpacity>
+                        )}
+                        ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
+                    />
+                ) : (
+                    <EmptyState icon="users" message="No mentors available" />
+                )}
 
-                <View style={{ height: 100 }} />
+                <View style={{ height: moderateScale(40) }} />
             </ScrollView>
         </SafeAreaView>
     );
 }
 
-function SectionHeader({ title, onBtnPress }) {
+function SectionHeader({ title, icon, onBtnPress }) {
     return (
         <View style={styles.sectionHeader}>
-            <Text style={styles.sectionHeading}>{title}</Text>
-            <TouchableOpacity onPress={onBtnPress} style={styles.viewAllBtn}>
+            <View style={styles.sectionHeaderLeft}>
+                <View style={styles.sectionIconBadge}>
+                    <Feather name={icon} size={moderateScale(16)} color={COLORS.primary} />
+                </View>
+                <Text style={styles.sectionHeading}>{title}</Text>
+            </View>
+            <TouchableOpacity onPress={onBtnPress} style={styles.viewAllBtn} activeOpacity={0.7}>
                 <Text style={styles.viewAllText}>View all</Text>
-                <Feather name="chevron-right" size={14} color={COLORS.primary} />
+                <Feather name="arrow-right" size={moderateScale(14)} color={COLORS.primary} />
             </TouchableOpacity>
+        </View>
+    );
+}
+
+function EmptyState({ icon, message }) {
+    return (
+        <View style={styles.emptyState}>
+            <Feather name={icon} size={moderateScale(40)} color={COLORS.border} />
+            <Text style={styles.emptyStateText}>{message}</Text>
         </View>
     );
 }
@@ -416,295 +578,439 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: COLORS.bg
     },
-    center: {
-        flex: 1,
+    loadingContainer: {
         justifyContent: 'center',
-        alignItems: 'center'
+        alignItems: 'center',
+        gap: moderateScale(12),
+    },
+    loadingText: {
+        fontSize: moderateScale(14),
+        color: COLORS.textSecondary,
+        fontWeight: '500',
     },
     header: {
         backgroundColor: COLORS.bg,
-        paddingHorizontal: 20,
-        paddingTop: 15,
-        paddingBottom: 20,
+        paddingHorizontal: '5%',
+        paddingTop: moderateScale(15),
+        paddingBottom: moderateScale(20),
     },
     headerTop: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 16,
+        marginBottom: moderateScale(16),
     },
     agencyInfo: {
         flexDirection: 'row',
         alignItems: 'center',
     },
     agencyBadge: {
-        width: 44,
-        height: 44,
-        borderRadius: 12,
+        width: moderateScale(56),
+        height: moderateScale(56),
+        borderRadius: moderateScale(16),
         backgroundColor: COLORS.primary,
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 12,
+        marginRight: moderateScale(14),
+        overflow: 'hidden',
+        borderWidth: 3,
+        borderColor: COLORS.white,
+        elevation: 4,
+        shadowColor: COLORS.primary,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+    },
+    agencyBadgeImage: {
+        width: '100%',
+        height: '100%',
     },
     agencyInitial: {
-        fontSize: 18,
-        fontWeight: 'bold',
+        fontSize: moderateScale(22),
+        fontWeight: '700',
         color: COLORS.white,
     },
+    agencyTextContainer: {
+        flex: 1,
+    },
     agencyName: {
-        fontSize: 20,
+        fontSize: moderateScale(20),
         fontWeight: '700',
         color: COLORS.textPrimary,
+        marginBottom: moderateScale(2),
     },
     agencyTagline: {
-        fontSize: 13,
+        fontSize: moderateScale(13),
         color: COLORS.textSecondary,
-        marginTop: 2,
+        fontWeight: '500',
     },
     searchContainer: {
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: COLORS.white,
-        borderRadius: 12,
-        paddingHorizontal: 16,
-        height: 48,
+        borderRadius: moderateScale(14),
+        paddingHorizontal: '4%',
+        height: moderateScale(50),
         borderWidth: 1,
         borderColor: COLORS.border,
-    },
-    searchIcon: {
-        marginRight: 10,
-    },
-    searchInput: {
-        flex: 1,
-        fontSize: 15,
-        color: COLORS.textPrimary,
-    },
-    statsContainer: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 20,
-        marginTop: 10,
-    },
-    statCard: {
-        flex: 1,
-        backgroundColor: COLORS.white,
-        borderRadius: 14,
-        padding: 14,
-        alignItems: 'center',
-        marginHorizontal: 4,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-    },
-    statIconContainer: {
-        marginBottom: 6,
-    },
-    statNumber: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: COLORS.textPrimary,
-        marginBottom: 2,
-    },
-    statLabel: {
-        fontSize: 11,
-        color: COLORS.textSecondary,
-        fontWeight: '500',
-    },
-    body: {
-        paddingHorizontal: 20,
-        paddingBottom: 20,
-    },
-    listContent: {
-        paddingHorizontal: 2,
-        paddingBottom: 8,
-    },
-    sectionHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 12,
-        marginTop: 20,
-    },
-    sectionHeading: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: COLORS.sectionTitle,
-    },
-    viewAllBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    viewAllText: {
-        fontSize: 14,
-        color: COLORS.primary,
-        fontWeight: '600',
-        marginRight: 4,
-    },
-    courseCard: {
-        width: 160,
-        height: 120,
-        borderRadius: 16,
-        padding: 16,
-        justifyContent: 'space-between',
-    },
-    courseIcon: {
-        marginBottom: 8,
-    },
-    courseText: {
-        color: COLORS.white,
-        fontWeight: '600',
-        fontSize: 15,
-        lineHeight: 20,
-    },
-    eventCardHorizontal: {
-        width: 280,
-        backgroundColor: COLORS.white,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-        overflow: 'hidden',
-        marginRight: GAP,
-    },
-    eventImgHorizontal: {
-        width: '100%',
-        height: 120,
-    },
-    eventContentHorizontal: {
-        padding: 12,
-    },
-    eventTitleHorizontal: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-        marginBottom: 8,
-    },
-    eventDetails: {
-        marginBottom: 12,
-    },
-    eventDetailRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        marginBottom: 4,
-    },
-    eventDetailText: {
-        fontSize: 12,
-        color: COLORS.textSecondary,
-    },
-    eventAction: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'flex-end',
-        gap: 4,
-    },
-    eventActionText: {
-        fontSize: 12,
-        color: COLORS.primary,
-        fontWeight: '600',
-    },
-    noEventsText: {
-        textAlign: 'center',
-        color: COLORS.textSecondary,
-        fontStyle: 'italic',
-        marginVertical: 20,
-    },
-
-    modeBadge: {
-        position: 'absolute',
-        top: 8,
-        left: 8,
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 6,
-        zIndex: 1,
-    },
-    modeBadgeText: {
-        color: '#FFFFFF',
-        fontSize: 10,
-        fontWeight: '700',
-        textTransform: 'uppercase',
-    },
-    imageWrapper: {
-        position: 'relative',
-    },
-    scholarshipCard: {
-        width: 180,
-        height: 120,
-        borderRadius: 16,
-        backgroundColor: COLORS.primary,
-        padding: 16,
-        justifyContent: 'space-between',
-    },
-    scholarshipHeader: {
-        marginBottom: 10,
-    },
-    scholarshipText: {
-        color: COLORS.white,
-        fontWeight: '600',
-        fontSize: 15,
-        lineHeight: 20,
-    },
-    uniTile: {
-        width: 140,
-        height: 100,
-        borderRadius: 16,
-        backgroundColor: COLORS.white,
-        padding: 20,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: COLORS.border,
-    },
-    uniImg: {
-        width: '100%',
-        height: '100%',
-    },
-    uniPlaceholder: {
-        width: '100%',
-        height: '100%',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    uniPlaceholderText: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: COLORS.primary,
-    },
-    // MENTOR CARD - Keeping original style but ensuring consistency
-    mentorCard: {
-        width: 240,
-        backgroundColor: COLORS.white,
-        borderRadius: 12,
-        padding: 15,
-        flexDirection: 'row',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: COLORS.border,
-        // Shadow/Elevation for consistency
         elevation: 1,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.05,
         shadowRadius: 2,
     },
-    mentorCircleImg: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
+    searchIconContainer: {
+        marginRight: moderateScale(10),
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: moderateScale(15),
+        color: COLORS.textPrimary,
+    },
+    body: {
+        paddingHorizontal: '5%',
+        paddingBottom: moderateScale(20),
+    },
+    statsContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: moderateScale(20),
+        marginTop: moderateScale(10),
+        gap: moderateScale(10),
+    },
+    statCard: {
+        flex: 1,
+        backgroundColor: COLORS.white,
+        borderRadius: moderateScale(16),
+        padding: '4%',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        minHeight: moderateScale(100),
+        justifyContent: 'space-between',
+        elevation: 1,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+    },
+    statIconContainer: {
+        width: moderateScale(44),
+        height: moderateScale(44),
+        borderRadius: moderateScale(12),
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: moderateScale(8),
+    },
+    statNumber: {
+        fontSize: moderateScale(20),
+        fontWeight: '700',
+        color: COLORS.textPrimary,
+        marginBottom: moderateScale(2),
+    },
+    statLabel: {
+        fontSize: moderateScale(11),
+        color: COLORS.textSecondary,
+        fontWeight: '600',
+        textAlign: 'center',
+    },
+    listContent: {
+        paddingVertical: moderateScale(8),
+    },
+    sectionHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: moderateScale(14),
+        marginTop: moderateScale(24),
+    },
+    sectionHeaderLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: moderateScale(10),
+        flex: 1,
+    },
+    sectionIconBadge: {
+        width: moderateScale(36),
+        height: moderateScale(36),
+        borderRadius: moderateScale(10),
+        backgroundColor: COLORS.lightBlue,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    sectionHeading: {
+        fontSize: moderateScale(18),
+        fontWeight: '700',
+        color: COLORS.sectionTitle,
+        flex: 1,
+    },
+    viewAllBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: moderateScale(6),
+        paddingHorizontal: moderateScale(10),
+        backgroundColor: COLORS.lightBlue,
+        borderRadius: moderateScale(8),
+        gap: moderateScale(4),
+    },
+    viewAllText: {
+        fontSize: moderateScale(13),
+        color: COLORS.primary,
+        fontWeight: '600',
+    },
+    courseCard: {
+        width: moderateScale(170),
+        height: moderateScale(140),
+        borderRadius: CARD_BORDER_RADIUS,
+        padding: moderateScale(16),
+        justifyContent: 'space-between',
+        elevation: 3,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.15,
+        shadowRadius: 4,
+    },
+    courseIconBg: {
+        width: moderateScale(44),
+        height: moderateScale(44),
+        borderRadius: moderateScale(12),
+        backgroundColor: 'rgba(255, 255, 255, 0.25)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    courseText: {
+        color: COLORS.white,
+        fontWeight: '700',
+        fontSize: moderateScale(15),
+        lineHeight: moderateScale(20),
+        flex: 1,
+        marginTop: moderateScale(12),
+    },
+    courseArrow: {
+        alignSelf: 'flex-end',
+    },
+    eventCard: {
+        width: moderateScale(280),
+        backgroundColor: COLORS.white,
+        borderRadius: CARD_BORDER_RADIUS,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        overflow: 'hidden',
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 4,
+    },
+    eventImageContainer: {
+        width: '100%',
+        height: moderateScale(140),
+        position: 'relative',
+    },
+    eventImage: {
+        width: '100%',
+        height: '100%',
+    },
+    eventGradient: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: '40%',
+        backgroundColor: 'rgba(0,0,0,0.1)',
+    },
+    modeBadge: {
+        position: 'absolute',
+        top: moderateScale(10),
+        right: moderateScale(10),
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: moderateScale(10),
+        paddingVertical: moderateScale(6),
+        borderRadius: moderateScale(8),
+        gap: moderateScale(4),
+    },
+    modeBadgeText: {
+        color: '#FFFFFF',
+        fontSize: moderateScale(10),
+        fontWeight: '700',
+        textTransform: 'uppercase',
+    },
+    eventContent: {
+        padding: moderateScale(14),
+    },
+    eventTitle: {
+        fontSize: moderateScale(15),
+        fontWeight: '700',
+        color: COLORS.textPrimary,
+        marginBottom: moderateScale(10),
+        lineHeight: moderateScale(20),
+    },
+    eventMetaContainer: {
+        gap: moderateScale(6),
+    },
+    eventMetaRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: moderateScale(8),
+    },
+    eventMetaBadge: {
+        width: moderateScale(24),
+        height: moderateScale(24),
+        borderRadius: moderateScale(6),
+        backgroundColor: COLORS.lightBlue,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    eventMetaText: {
+        fontSize: moderateScale(12),
+        color: COLORS.textSecondary,
+        fontWeight: '500',
+        flex: 1,
+    },
+    scholarshipCard: {
+        width: moderateScale(190),
+        height: moderateScale(160),
+        borderRadius: CARD_BORDER_RADIUS,
+        backgroundColor: COLORS.primary,
+        padding: moderateScale(18),
+        justifyContent: 'space-between',
+        elevation: 3,
+        shadowColor: COLORS.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 6,
+    },
+    scholarshipIconContainer: {
+        width: moderateScale(56),
+        height: moderateScale(56),
+        borderRadius: moderateScale(14),
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    scholarshipText: {
+        color: COLORS.white,
+        fontWeight: '700',
+        fontSize: moderateScale(15),
+        lineHeight: moderateScale(20),
+        flex: 1,
+        marginTop: moderateScale(12),
+    },
+    scholarshipFooter: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    scholarshipLabel: {
+        color: COLORS.white,
+        fontSize: moderateScale(12),
+        fontWeight: '600',
+    },
+    universityCard: {
+        width: moderateScale(140),
+        minHeight: moderateScale(140),
+        borderRadius: CARD_BORDER_RADIUS,
+        backgroundColor: COLORS.white,
+        padding: moderateScale(16),
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        gap: moderateScale(10),
+        elevation: 1,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+    },
+    universityLogoContainer: {
+        width: moderateScale(70),
+        height: moderateScale(70),
+        borderRadius: moderateScale(12),
+        overflow: 'hidden',
         backgroundColor: COLORS.accent,
     },
-    mentorTextContainer: {
-        flex: 1,
-        marginLeft: 15,
+    universityLogo: {
+        width: '100%',
+        height: '100%',
     },
-    mentorDisplayName: {
-        fontSize: 16,
-        fontWeight: '500',
-        color: COLORS.primary,
-        marginBottom: 4,
+    universityPlaceholder: {
+        width: '100%',
+        height: '100%',
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: COLORS.lightBlue,
     },
-    mentorExpText: {
-        fontSize: 13,
+    universityName: {
+        fontSize: moderateScale(12),
+        fontWeight: '600',
         color: COLORS.textPrimary,
-        lineHeight: 18,
-    }
+        textAlign: 'center',
+        lineHeight: moderateScale(16),
+    },
+    mentorCard: {
+        width: moderateScale(260),
+        backgroundColor: COLORS.white,
+        borderRadius: CARD_BORDER_RADIUS,
+        padding: moderateScale(16),
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 4,
+    },
+    mentorImageContainer: {
+        width: moderateScale(80),
+        height: moderateScale(80),
+        borderRadius: moderateScale(40),
+        overflow: 'hidden',
+        alignSelf: 'center',
+        marginBottom: moderateScale(12),
+        position: 'relative',
+        borderWidth: 3,
+        borderColor: COLORS.lightBlue,
+    },
+    mentorImage: {
+        width: '100%',
+        height: '100%',
+    },
+    mentorOnlineBadge: {
+        position: 'absolute',
+        bottom: moderateScale(4),
+        right: moderateScale(4),
+        width: moderateScale(16),
+        height: moderateScale(16),
+        borderRadius: moderateScale(8),
+        backgroundColor: COLORS.online,
+        borderWidth: 2,
+        borderColor: COLORS.white,
+    },
+    mentorContent: {
+        alignItems: 'center',
+    },
+    mentorName: {
+        fontSize: moderateScale(16),
+        fontWeight: '700',
+        color: COLORS.primary,
+        marginBottom: moderateScale(6),
+        textAlign: 'center',
+    },
+    mentorExperience: {
+        fontSize: moderateScale(12),
+        color: COLORS.textSecondary,
+        lineHeight: moderateScale(18),
+        textAlign: 'center',
+        fontWeight: '500',
+    },
+    emptyState: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: moderateScale(40),
+        gap: moderateScale(12),
+    },
+    emptyStateText: {
+        fontSize: moderateScale(14),
+        color: COLORS.textSecondary,
+        fontWeight: '500',
+    },
 });
