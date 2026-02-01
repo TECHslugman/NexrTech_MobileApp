@@ -4,12 +4,12 @@ import {
     ActivityIndicator, Dimensions, StatusBar, FlatList,
     Platform, RefreshControl, Linking
 } from 'react-native';
-import Toast from 'react-native-toast-message'; 
+import Toast from 'react-native-toast-message';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { useAuth } from '../../../../context/AuthContext';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Config } from '../../../../config';
 
 const { width } = Dimensions.get('window');
@@ -48,12 +48,19 @@ export default function SwipeableDocumentUpload() {
         initialize();
     }, []);
 
-    const initialize = async () => {
+    const initialize = useCallback(async () => {
         setFetchingSteps(true);
         await Promise.all([fetchProfile(), fetchRequiredDocuments()]);
         await Promise.all([fetchDocumentStatuses(), fetchUploadedFiles()]);
         setFetchingSteps(false);
-    };
+    }, [userToken, agencyId]);
+
+
+    useFocusEffect(
+        useCallback(() => {
+            initialize();
+        }, [initialize])
+    );
 
     const onRefresh = useCallback(async () => {
         setRefreshing(true);

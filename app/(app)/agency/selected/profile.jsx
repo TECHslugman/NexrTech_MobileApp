@@ -30,7 +30,7 @@ const COLORS = {
     warning: '#FF9800',
 };
 
-const DEFAULT_IMAGE = require('../../../../assets/images/agencies/default.png');
+const DEFAULT_IMAGE = require('../../../../assets/images/agencies/profile_default.png');
 
 const formatDate = (dateString) => {
     if (!dateString) return "Not Set";
