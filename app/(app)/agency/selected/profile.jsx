@@ -74,6 +74,7 @@ export default function UserProfile() {
             });
 
             const json = await response.json();
+            console.log("Profile Fetch Response:", json);
 
             if (response.ok) {
                 setUserData(json.profile);
@@ -113,8 +114,7 @@ export default function UserProfile() {
                 body: JSON.stringify({
                     mimeType,
                     size: asset.fileSize || 0,
-                    studentId: studentId,
-                    documentType: 'profile_picture'
+                    documentType: 'profile'
                 })
             });
 
@@ -150,10 +150,11 @@ export default function UserProfile() {
                 },
                 body: JSON.stringify({
                     blobName,
-                    studentId: studentId,
+                    size: asset.fileSize || 0,
                     mimeType,
-                    documentType: 'profile_picture'
+                    documentType: 'profile'
                 })
+    
             });
 
             // Step 4: Optimistic UI Update
@@ -161,7 +162,7 @@ export default function UserProfile() {
 
             setUserData(prev => ({
                 ...prev,
-                profileURL: newImageUrl
+                profileUrl: newImageUrl
             }));
             setImageKey(Date.now());
 
@@ -172,7 +173,7 @@ export default function UserProfile() {
                     'Authorization': `Bearer ${userToken}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ profileURL: newImageUrl })
+                body: JSON.stringify({ profileUrl: newImageUrl })
             });
 
             if (patchRes.ok) {
@@ -220,6 +221,7 @@ export default function UserProfile() {
                 },
                 body: JSON.stringify({ [editField.key]: editField.value })
             });
+        
 
             if (response.ok) {
                 setModalVisible(false);
@@ -235,8 +237,8 @@ export default function UserProfile() {
 
     // Get image URL with cache busting
    const getImageUrl = () => {
-    if (!userData?.profileURL) return null;
-    return userData.profileURL; 
+    if (!userData?.profileUrl) return null;
+    return userData.profileUrl; 
 };
 
     const profileImageUri = getImageUrl();

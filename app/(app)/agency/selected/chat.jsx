@@ -10,6 +10,7 @@ import { useAuth } from '../../../context/AuthContext';
 import socketService from '../../../services/SocketService';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Config } from '../../../config';
+import Toast from 'react-native-toast-message';
 
 const COLORS = {
     primary: '#0084FF',

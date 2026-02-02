@@ -73,7 +73,7 @@ function RootLayoutNav() {
     if (!userToken) return;
     try {
       await fetch(`${Config.API_BASE_URL}/students/update-push-token`, {
-        method: 'PUT',
+        method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${userToken}`,
           'Content-Type': 'application/json',
