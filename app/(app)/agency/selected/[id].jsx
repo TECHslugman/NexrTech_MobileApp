@@ -8,7 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import { Config } from '../../../config';
-
+import { useFocusEffect } from 'expo-router';
 const DEFAULT_IMAGE = require('../../../../assets/images/agencies/default.png');
 
 const COLORS = {
@@ -35,142 +35,164 @@ export default function SelectedAgencyHome() {
     const { userToken, setActiveAgency } = useAuth();
 
     const [loading, setLoading] = useState(true);
+    const [notificationCount, setNotificationCount] = useState(0);
     const [agencyData, setAgencyData] = useState(null);
     const [courses, setCourses] = useState([]);
     const [events, setEvents] = useState([]);
     const [scholarships, setScholarships] = useState([]);
     const [mentors, setMentors] = useState([]);
 
-    useEffect(() => {
-        const fetchAllData = async () => {
-            if (!userToken || !id) return;
-            setLoading(true);
+    useFocusEffect(
+        React.useCallback(() => {
+            const fetchAllData = async () => {
+                if (!userToken || !id) return;
+                setLoading(true);
 
-            try {
-                console.log(`📡 Fetching Agency Data [ID: ${id}]`);
+                try {
+                    console.log(`📡 Fetching Agency Data [ID: ${id}]`);
 
-                const endpoints = [
-                    `${Config.API_BASE_URL}/agency/profile/${id}`,
-                    `${Config.API_BASE_URL}/agency/universities/agency/${id}`,
-                    `${Config.API_BASE_URL}/agency/courses/agency/${id}`,
-                    `${Config.API_BASE_URL}/agency/events/student/${id}`,
-                    `${Config.API_BASE_URL}/agency/scholarships/agency/${id}`,
-                    `${Config.API_BASE_URL}/students/mentors/${id}`
-                ];
+                    const endpoints = [
+                        `${Config.API_BASE_URL}/agency/profile/${id}`,
+                        `${Config.API_BASE_URL}/agency/universities/agency/${id}`,
+                        `${Config.API_BASE_URL}/agency/courses/agency/${id}`,
+                        `${Config.API_BASE_URL}/agency/events/student/${id}`,
+                        `${Config.API_BASE_URL}/agency/scholarships/agency/${id}`,
+                        `${Config.API_BASE_URL}/students/mentors/${id}`,
+                        `${Config.API_BASE_URL}/students/students/notification/count`
+                    ];
 
-                const headers = {
-                    'Authorization': `Bearer ${userToken}`,
-                    'Content-Type': 'application/json'
-                };
+                    const headers = {
+                        'Authorization': `Bearer ${userToken}`,
+                        'Content-Type': 'application/json'
+                    };
 
-                const responses = await Promise.all(
-                    endpoints.map(url => fetch(url, { headers }))
-                );
+                    const responses = await Promise.all(
+                        endpoints.map(url => fetch(url, { headers }))
+                    );
 
-                const [agencyRes, uniRes, coursesRes, eventsRes, scholarRes, mentorRes] = responses;
+                    const [
+                        agencyRes,
+                        uniRes,
+                        coursesRes,
+                        eventsRes,
+                        scholarRes,
+                        mentorRes,
+                        countRes 
+                    ] = responses;
 
-                let completeAgencyData = {
-                    partnerUniversities: [],
-                    courses: [],
-                    events: [],
-                    scholarships: [],
-                    mentors: []
-                };
+                    let completeAgencyData = {
+                        partnerUniversities: [],
+                        courses: [],
+                        events: [],
+                        scholarships: [],
+                        mentors: []
+                    };
 
-                // 1. Agency Profile
-                if (agencyRes.ok) {
-                    const aJson = await agencyRes.json();
-                    const profile = aJson.agency || aJson.profile || aJson;
-                    completeAgencyData = { ...completeAgencyData, ...profile };
-                    setActiveAgency({
-                        id: id,
-                        name: profile.organizationName || name || profile.name || "Agency",
-                        logo: profile.logo || agencyLogo
-                    });
+                    // 1. Agency Profile
+                    if (agencyRes.ok) {
+                        const aJson = await agencyRes.json();
+                        const profile = aJson.agency || aJson.profile || aJson;
+                        completeAgencyData = { ...completeAgencyData, ...profile };
+                        setActiveAgency({
+                            id: id,
+                            name: profile.organizationName || profile.name || "Agency",
+                            logo: profile.logo || agencyLogo
+                        });
+                    }
+
+                    // 2. Universities
+                    if (uniRes.ok) {
+                        const uJson = await uniRes.json();
+                        completeAgencyData.partnerUniversities = uJson.university?.partnerUniversities || uJson.partnerUniversities || [];
+                    }
+
+                    // 3. Courses
+                    if (coursesRes.ok) {
+                        const cJson = await coursesRes.json();
+                        const courseList = (cJson.courses || cJson || []).map(c => ({
+                            id: c._id || c.id || Math.random().toString(),
+                            title: c.title || c.name || "Course"
+                        }));
+                        setCourses(courseList);
+                        completeAgencyData.courses = courseList;
+                    }
+
+                    // 4. Events
+                    if (eventsRes.ok) {
+                        const eJson = await eventsRes.json();
+                        const rawEvents = Array.isArray(eJson.events) ? eJson.events : (Array.isArray(eJson) ? eJson : []);
+
+                        const formattedEvents = rawEvents.map(event => {
+                            const startDate = new Date(event.startAt || event.date || event.createdAt);
+                            const eventMode = event.meetings && event.meetings.length > 0
+                                ? event.meetings[0].mode
+                                : 'venue';
+
+                            return {
+                                ...event,
+                                id: event._id || event.id,
+                                mode: eventMode,
+                                bannerImage: event.bannerImageUrl || event.image,
+                                date: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                                time: startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                            };
+                        });
+                        setEvents(formattedEvents);
+                        completeAgencyData.events = formattedEvents;
+                    }
+
+                    // 5. Scholarships
+                    if (scholarRes.ok) {
+                        const sJson = await scholarRes.json();
+                        const rawScholar = sJson.scholarship || sJson || [];
+                        const formattedScholar = rawScholar.map(s => ({
+                            id: s._id || s.id,
+                            title: s.title || "Scholarship Program",
+                            amount: s.amount || s.funding
+                        }));
+                        setScholarships(formattedScholar);
+                        completeAgencyData.scholarships = formattedScholar;
+                    }
+
+                    // 6. Mentors
+                    if (mentorRes.ok) {
+                        const mJson = await mentorRes.json();
+                        const rawMentors = mJson.mentors || [];
+                        const formattedMentors = rawMentors.map(m => ({
+                            id: m._id,
+                            name: m.name,
+                            profilepic: m.profilepic,
+                            experience: m.experiences && m.experiences.length > 0
+                                ? m.experiences[0]
+                                : "Professional mentor for higher education"
+                        }));
+                        setMentors(formattedMentors);
+                    }
+
+                    // 7. Notification Count
+                    if (countRes) {
+                        if (countRes.ok) {
+                            const countJson = await countRes.json();
+                            setNotificationCount(countJson.total || 0);
+                        } else {
+                            const errorText = await countRes.text();
+                            console.error(`❌ Notification API failed with status ${countRes.status}:`, errorText);
+                        }
+                    }
+
+                    setAgencyData(completeAgencyData);
+                } catch (error) {
+                    console.error("❌ FetchAllData Error:", error);
+                } finally {
+                    setLoading(false);
                 }
+            };
 
-                // 2. Universities
-                if (uniRes.ok) {
-                    const uJson = await uniRes.json();
-                    completeAgencyData.partnerUniversities = uJson.university?.partnerUniversities || uJson.partnerUniversities || [];
-                }
-
-                // 3. Courses
-                if (coursesRes.ok) {
-                    const cJson = await coursesRes.json();
-                    const courseList = (cJson.courses || cJson || []).map(c => ({
-                        id: c._id || c.id || Math.random().toString(),
-                        title: c.title || c.name || "Course"
-                    }));
-                    setCourses(courseList);
-                    completeAgencyData.courses = courseList;
-                }
-
-                // 4. Events
-                if (eventsRes.ok) {
-                    const eJson = await eventsRes.json();
-                    const rawEvents = Array.isArray(eJson.events) ? eJson.events : (Array.isArray(eJson) ? eJson : []);
-
-                    const formattedEvents = rawEvents.map(event => {
-                        const startDate = new Date(event.startAt || event.date || event.createdAt);
-
-                        const eventMode = event.meetings && event.meetings.length > 0
-                            ? event.meetings[0].mode
-                            : 'venue';
-
-                        return {
-                            ...event,
-                            id: event._id || event.id,
-                            mode: eventMode,
-                            bannerImage: event.bannerImageUrl || event.image,
-                            date: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-                            time: startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
-                        };
-                    });
-                    setEvents(formattedEvents);
-                    completeAgencyData.events = formattedEvents;
-                }
-
-                // 5. Scholarships
-                if (scholarRes.ok) {
-                    const sJson = await scholarRes.json();
-                    const rawScholar = sJson.scholarship || sJson || [];
-                    const formattedScholar = rawScholar.map(s => ({
-                        id: s._id || s.id,
-                        title: s.title || "Scholarship Program",
-                        amount: s.amount || s.funding
-                    }));
-                    setScholarships(formattedScholar);
-                    completeAgencyData.scholarships = formattedScholar;
-                }
-
-                // 6. Mentors
-                if (mentorRes.ok) {
-                    const mJson = await mentorRes.json();
-                    const rawMentors = mJson.mentors || [];
-
-                    const formattedMentors = rawMentors.map(m => ({
-                        id: m._id,
-                        name: m.name,
-                        profilepic: m.profilepic,
-                        experience: m.experiences && m.experiences.length > 0
-                            ? m.experiences[0]
-                            : "Professional mentor for higher education"
-                    }));
-
-                    setMentors(formattedMentors);
-                }
-
-                setAgencyData(completeAgencyData);
-            } catch (error) {
-                console.error("❌ FetchAllData Error:", error);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchAllData();
-    }, [id, userToken]);
+            fetchAllData();
+        
+            return () => {}; 
+        }, [id, userToken]) 
+    );
 
     if (loading) {
         return (
@@ -205,7 +227,19 @@ export default function SelectedAgencyHome() {
                             <Text style={styles.agencyTagline}>Education Services</Text>
                         </View>
                     </View>
-                    {/* Notification icon removed as requested */}
+                    <TouchableOpacity
+                        style={styles.notificationButton}
+                        onPress={() => router.push(`(app)/agency/selected/notifications/${id}`)}
+                    >
+                        <Ionicons name="notifications-outline" size={24} color={COLORS.textPrimary} />
+                        {notificationCount > 0 && (
+                            <View style={styles.notificationBadge}>
+                                <Text style={styles.notificationBadgeText}>
+                                    {notificationCount > 9 ? '9+' : notificationCount}
+                                </Text>
+                            </View>
+                        )}
+                    </TouchableOpacity>
                 </View>
                 <View style={styles.searchContainer}>
                     <Feather name="search" size={20} color="#B0BCCB" style={styles.searchIcon} />
@@ -261,7 +295,7 @@ export default function SelectedAgencyHome() {
                                 { backgroundColor: index % 2 === 0 ? '#FF6B6B' : '#949BFF' }
                             ]}
                             onPress={() => router.push({
-                                pathname: `/agency/selected/courses/details`, // Directs to the detail page we built
+                                pathname: `/agency/selected/courses/details`,
                                 params: {
                                     courseId: item._id || item.id,
                                     agencyId: id,
@@ -362,7 +396,7 @@ export default function SelectedAgencyHome() {
                     ItemSeparatorComponent={() => <View style={{ width: GAP }} />}
                 />
 
-                {/* MENTORS SECTION - Keeping original layout but making it consistent */}
+                {/* MENTORS SECTION */}
                 <SectionHeader title="Meet the Mentors" onBtnPress={() => router.push(`/agency/selected/mentors/${id}`)} />
                 <FlatList
                     horizontal
@@ -460,6 +494,33 @@ const styles = StyleSheet.create({
         fontSize: 13,
         color: COLORS.textSecondary,
         marginTop: 2,
+    },
+    notificationButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 10,
+        backgroundColor: COLORS.white,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: COLORS.border,
+    },
+    notificationBadge: {
+        position: 'absolute',
+        top: -4,
+        right: -4,
+        backgroundColor: '#EF4444',
+        borderRadius: 10,
+        minWidth: 18,
+        height: 18,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 4,
+    },
+    notificationBadgeText: {
+        color: COLORS.white,
+        fontSize: 10,
+        fontWeight: '700',
     },
     searchContainer: {
         flexDirection: 'row',
@@ -669,7 +730,6 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: COLORS.primary,
     },
-    // MENTOR CARD - Keeping original style but ensuring consistency
     mentorCard: {
         width: 240,
         backgroundColor: COLORS.white,
@@ -679,7 +739,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         borderWidth: 1,
         borderColor: COLORS.border,
-        // Shadow/Elevation for consistency
         elevation: 1,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 1 },

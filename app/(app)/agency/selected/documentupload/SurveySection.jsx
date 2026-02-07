@@ -22,16 +22,13 @@ export default function SwipeableDocumentUpload({ stage, onStageChange }) {
     const [refreshing, setRefreshing] = useState(true);
 
     const fetchData = useCallback(async () => {
-        console.log(`--- 🛰️ API CALL: Fetching for Stage [${stage.toUpperCase()}] ---`);
+        console.log(`--- 📥 Fetching Stage: [${stage.toUpperCase()}] ---`);
         setRefreshing(true);
         try {
             const res = await fetch(`${Config.API_BASE_URL}/students/documents/status?stage=${stage}`, {
                 headers: { 'Authorization': `Bearer ${userToken}` }
             });
             const json = await res.json();
-            
-            console.log(`📥 [${stage}] Raw Data:`, JSON.stringify(json.data, null, 2));
-
             if (res.ok && json.data) {
                 const formatted = json.data.map(item => ({
                     id: item._id,
@@ -43,18 +40,11 @@ export default function SwipeableDocumentUpload({ stage, onStageChange }) {
                 }));
                 setDocumentSteps(formatted);
             }
-        } catch (e) { 
-            console.error(`❌ Fetch Error at ${stage}:`, e.message); 
-        } finally { 
-            setRefreshing(false); 
-        }
+        } catch (e) { console.error(e); } 
+        finally { setRefreshing(false); }
     }, [userToken, stage]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
-
-    // LOGIC: When are we allowed to move forward?
-    const allApproved = documentSteps.length > 0 && documentSteps.every(doc => doc.status === 'approved');
-    const isEmpty = documentSteps.length === 0;
 
     const handleUpload = async (asset, docItem) => {
         setLoading(true);
@@ -80,16 +70,20 @@ export default function SwipeableDocumentUpload({ stage, onStageChange }) {
         finally { setLoading(false); }
     };
 
+    // LOGIC: Check if all documents in the current list are approved
+    const allApproved = documentSteps.length > 0 && documentSteps.every(doc => doc.status === 'approved');
+
     const renderDocCard = ({ item, index }) => {
         const isApproved = item.status === 'approved';
+        const isUnderReview = item.status === 'under_review';
         const hasFile = !!item.fileUrl;
 
         return (
             <View style={styles.cardContainer}>
                 <View style={styles.instructionBox}>
                     <Text style={styles.docTitle}>{item.label}</Text>
-                    <View style={[styles.statusBadge, isApproved && { backgroundColor: '#DCFCE7' }]}>
-                        <Text style={[styles.statusText, isApproved && { color: COLORS.success }]}>
+                    <View style={[styles.statusBadge, isApproved && { backgroundColor: '#DCFCE7' }, isUnderReview && { backgroundColor: '#E0EBFF' }]}>
+                        <Text style={[styles.statusText, isApproved && { color: COLORS.success }, isUnderReview && { color: COLORS.primary }]}>
                             {item.status?.replace('_', ' ').toUpperCase() || 'PENDING'}
                         </Text>
                     </View>
@@ -98,12 +92,12 @@ export default function SwipeableDocumentUpload({ stage, onStageChange }) {
                 <TouchableOpacity
                     style={[styles.uploadCard, isApproved && styles.approvedCard]}
                     onPress={() => {
-                        if (hasFile) Linking.openURL(item.fileUrl);
+                        if (hasFile && item.status !== 'reupload') Linking.openURL(item.fileUrl);
                         else DocumentPicker.getDocumentAsync({ type: 'application/pdf' }).then(r => !r.canceled && handleUpload(r.assets[0], item));
                     }}
                 >
                     {loading && currentIndex === index ? <ActivityIndicator size="large" /> :
-                        (hasFile) ? (
+                        (hasFile && item.status !== 'reupload') ? (
                             <View style={styles.statusContent}>
                                 <MaterialCommunityIcons name={isApproved ? "check-circle" : "file-eye"} size={80} color={isApproved ? COLORS.success : COLORS.primary} />
                                 <Text style={styles.statusMainText}>{isApproved ? "Verified" : "Under Review"}</Text>
@@ -122,26 +116,11 @@ export default function SwipeableDocumentUpload({ stage, onStageChange }) {
     return (
         <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
             <View style={styles.header}>
-                <Text style={styles.headerTitle}>{stage.toUpperCase()} STAGE</Text>
+                <Text style={styles.headerTitle}>{stage.toUpperCase()} SECTION</Text>
             </View>
 
-            {/* DYNAMIC CONTENT HANDLING */}
-            {stage === 'coe' ? (
-                <View style={styles.center}>
-                    <MaterialCommunityIcons name="clock-outline" size={60} color={COLORS.primary} />
-                    <Text style={styles.waitingTitle}>COE Waitlist</Text>
-                    <Text style={styles.waitingSub}>We are waiting for your Confirmation of Enrollment letter.</Text>
-                </View>
-            ) : isEmpty && !refreshing ? (
-                <View style={styles.center}>
-                    <MaterialCommunityIcons name="account-search" size={60} color={COLORS.secondary} />
-                    <Text style={styles.waitingTitle}>No Documents Found</Text>
-                    <Text style={styles.waitingSub}>
-                        {stage === 'visa' 
-                            ? "Visa officer is yet to be assigned or doc is not uploaded by the visa officer."
-                            : "No admission documents assigned yet."}
-                    </Text>
-                </View>
+            {documentSteps.length === 0 && !refreshing ? (
+                <View style={styles.center}><Text>Waiting for agent to assign {stage} docs...</Text></View>
             ) : (
                 <FlatList
                     data={documentSteps}
@@ -154,14 +133,14 @@ export default function SwipeableDocumentUpload({ stage, onStageChange }) {
                 />
             )}
 
-            {/* NAVIGATION BUTTONS */}
-            {(allApproved || stage === 'coe' || (stage === 'visa' && isEmpty)) && (
+            {/* PROGRESSIVE NAVIGATION BUTTON */}
+            {allApproved && (
                 <TouchableOpacity 
                     style={styles.nextButton} 
                     onPress={() => onStageChange(stage === 'admission' ? 'coe' : 'visa')}
                 >
                     <Text style={styles.nextButtonText}>
-                        {stage === 'admission' ? "Proceed to COE Stage" : "Proceed to Visa Docs"}
+                        {stage === 'admission' ? "Request COE Letter" : "Proceed to Visa Stage"}
                     </Text>
                     <Ionicons name="arrow-forward" size={18} color="white" />
                 </TouchableOpacity>
@@ -194,13 +173,20 @@ const styles = StyleSheet.create({
     footer: { height: 40, paddingHorizontal: 60, justifyContent: 'center' },
     progressBar: { height: 4, backgroundColor: COLORS.border, borderRadius: 2 },
     progressFill: { height: '100%', backgroundColor: COLORS.primary, borderRadius: 2 },
-    center: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
-    waitingTitle: { fontSize: 20, fontWeight: '800', color: COLORS.textDark, marginTop: 15 },
-    waitingSub: { fontSize: 14, color: COLORS.secondary, textAlign: 'center', marginTop: 8 },
+    center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     nextButton: {
-        backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center',
-        justifyContent: 'center', paddingVertical: 15, marginHorizontal: 40,
-        borderRadius: 12, elevation: 4, position: 'absolute', bottom: 80, left: 0, right: 0
+        backgroundColor: COLORS.primary,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 15,
+        marginHorizontal: 40,
+        borderRadius: 12,
+        elevation: 4,
+        position: 'absolute',
+        bottom: 80,
+        left: 0,
+        right: 0
     },
     nextButtonText: { color: 'white', fontWeight: 'bold', fontSize: 16, marginRight: 8 }
 });

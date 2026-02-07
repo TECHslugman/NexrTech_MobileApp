@@ -10,6 +10,7 @@ import {
     ScrollView,
     Dimensions,
     StatusBar,
+    Animated,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -17,6 +18,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { Config } from "../../config";
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// Responsive scaling functions
+const scale = (size) => (SCREEN_WIDTH / 375) * size;
+const verticalScale = (size) => (SCREEN_HEIGHT / 812) * size;
+const moderateScale = (size, factor = 0.5) => size + (scale(size) - size) * factor;
 
 const COLORS = {
     bg: '#F6F9FC',
@@ -30,9 +38,12 @@ const COLORS = {
     textSecondary: '#64748B',
     border: '#E2E8F0',
     lightBg: '#F8FAFC',
+    success: '#57C785',
+    accentLight: '#EDF4FB',
 };
 
 const defaultHero = require('../../../assets/images/agencies/default.png');
+const BANNER_HEIGHT = Math.min(verticalScale(240), SCREEN_HEIGHT * 0.3);
 
 export default function AgencyDetails() {
     const { id, name: paramName, heroUri } = useLocalSearchParams();
@@ -41,6 +52,7 @@ export default function AgencyDetails() {
 
     const [agencyData, setAgencyData] = useState(null);
     const [loading, setLoading] = useState(true);
+    const scrollY = new Animated.Value(0);
 
     useEffect(() => {
         const loadData = async () => {
@@ -132,7 +144,6 @@ export default function AgencyDetails() {
                 return;
             }
 
-  
             Toast.show({
                 type: 'success',
                 text1: 'Agency Selected',
@@ -140,7 +151,7 @@ export default function AgencyDetails() {
             });
 
             setTimeout(() => {
-                router.replace({ // Using replace instead of push prevents "jumping" back
+                router.replace({
                     pathname: `/agency/selected/${id}`,
                     params: { name: agencyData?.name, agencyLogo: agencyData?.imageUri }
                 });
@@ -154,10 +165,10 @@ export default function AgencyDetails() {
                 text2: 'Please check your internet connection.'
             });
         } finally {
-
             setTimeout(() => setLoading(false), 500);
         }
     };
+
     const heroSource = useMemo(() => {
         if (agencyData?.imageUri) return { uri: agencyData.imageUri };
         if (heroUri) return { uri: String(heroUri) };
@@ -170,36 +181,66 @@ export default function AgencyDetails() {
                 <Image source={{ uri: item.logo }} style={styles.partnerLogo} resizeMode="contain" />
             ) : (
                 <View style={styles.partnerPlaceholder}>
-                    <Feather name="university" size={20} color={COLORS.primary} />
+                    <Feather name="briefcase" size={moderateScale(24)} color={COLORS.primary} />
                 </View>
+            )}
+            {item.name && (
+                <Text style={styles.partnerName} numberOfLines={2}>
+                    {item.name}
+                </Text>
             )}
         </TouchableOpacity>
     );
 
+    // Animated header opacity based on scroll
+    const headerOpacity = scrollY.interpolate({
+        inputRange: [0, BANNER_HEIGHT - 100, BANNER_HEIGHT],
+        outputRange: [0, 0, 1],
+        extrapolate: 'clamp',
+    });
+
+    const bannerScale = scrollY.interpolate({
+        inputRange: [-100, 0],
+        outputRange: [1.2, 1],
+        extrapolate: 'clamp',
+    });
+
     const HeaderSection = () => (
         <View style={styles.headerSection}>
-            {/* Banner with full-size logo */}
-            <View style={styles.banner}>
-                <View style={styles.bannerOverlay} />
+            {/* Parallax Banner */}
+            <Animated.View style={[styles.banner, { transform: [{ scale: bannerScale }] }]}>
                 <Image
                     source={heroSource}
                     style={styles.bannerImage}
                     resizeMode="cover"
                 />
+                <View style={styles.bannerGradient} />
+            </Animated.View>
 
-                {/* Agency Info Overlay */}
-                <View style={styles.bannerInfo}>
-                    <View style={styles.bannerContent}>
-                        <Text style={styles.agencyName}>{agencyData.name}</Text>
-                        <View style={styles.bannerDetails}>
-                            <View style={styles.detailItem}>
-                                <Feather name="calendar" size={14} color="#FFFFFF" />
-                                <Text style={styles.detailText}>Est. {agencyData.est}</Text>
+            {/* Agency Card - Overlapping Banner */}
+            <View style={styles.agencyCard}>
+                <View style={styles.agencyCardHeader}>
+                    <View style={styles.agencyLogoContainer}>
+                        <Image
+                            source={heroSource}
+                            style={styles.agencyLogo}
+                            resizeMode="cover"
+                        />
+                    </View>
+                    <View style={styles.agencyInfo}>
+                        <Text style={styles.agencyName} numberOfLines={2}>
+                            {agencyData.name}
+                        </Text>
+                        <View style={styles.agencyMeta}>
+                            <View style={styles.metaItem}>
+                                <Feather name="calendar" size={moderateScale(12)} color={COLORS.textSecondary} />
+                                <Text style={styles.metaText}>Est. {agencyData.est}</Text>
                             </View>
-                            <View style={styles.detailItem}>
-                                <Feather name="map-pin" size={14} color="#FFFFFF" />
-                                <Text style={styles.detailText} numberOfLines={1}>
-                                    {agencyData.address}
+                            <View style={styles.metaDivider} />
+                            <View style={styles.metaItem}>
+                                <Feather name="map-pin" size={moderateScale(12)} color={COLORS.textSecondary} />
+                                <Text style={styles.metaText} numberOfLines={1}>
+                                    {agencyData.address.split(',')[0]}
                                 </Text>
                             </View>
                         </View>
@@ -213,12 +254,15 @@ export default function AgencyDetails() {
         <View style={styles.section}>
             <View style={styles.sectionHeader}>
                 <View style={styles.sectionTitleContainer}>
-                    <Feather name={icon} size={18} color={COLORS.primary} />
+                    <View style={styles.iconBadge}>
+                        <Feather name={icon} size={moderateScale(16)} color={COLORS.primary} />
+                    </View>
                     <Text style={styles.sectionTitle}>{title}</Text>
                 </View>
                 {showViewAll && (
                     <TouchableOpacity style={styles.viewMoreBtn} onPress={onViewAll}>
                         <Text style={styles.viewMoreText}>View All</Text>
+                        <Feather name="arrow-right" size={moderateScale(14)} color={COLORS.primary} />
                     </TouchableOpacity>
                 )}
             </View>
@@ -230,69 +274,100 @@ export default function AgencyDetails() {
 
     if (loading) {
         return (
-            <SafeAreaView style={[styles.safe, { justifyContent: 'center' }]}>
+            <SafeAreaView style={[styles.safe, styles.loadingContainer]}>
+                <StatusBar barStyle="dark-content" />
                 <ActivityIndicator size="large" color={COLORS.primary} />
+                <Text style={styles.loadingText}>Loading agency details...</Text>
             </SafeAreaView>
         );
     }
 
     return (
-        <SafeAreaView style={styles.safe}>
+        <SafeAreaView style={styles.safe} edges={['top']}>
             <StatusBar barStyle="light-content" />
 
-            {/* Header with back button */}
+            {/* Animated Header Background */}
+            <Animated.View style={[styles.animatedHeader, { opacity: headerOpacity }]}>
+                <Text style={styles.animatedHeaderText} numberOfLines={1}>
+                    {agencyData.name}
+                </Text>
+            </Animated.View>
+
+            {/* Back Button */}
             <View style={styles.topBar}>
                 <TouchableOpacity
                     style={styles.backBtn}
                     onPress={() => router.back()}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                    <Feather name="chevron-left" size={24} color="#FFFFFF" />
+                    <Feather name="chevron-left" size={moderateScale(24)} color="#FFFFFF" />
                 </TouchableOpacity>
             </View>
 
             {/* Content */}
-            <ScrollView
+            <Animated.ScrollView
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
+                scrollEventThrottle={16}
+                onScroll={Animated.event(
+                    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+                    { useNativeDriver: true }
+                )}
             >
                 <HeaderSection />
 
                 <View style={styles.contentContainer}>
+                    {/* About Section */}
                     <Section title="About Agency" icon="info">
                         <View style={styles.aboutCard}>
                             <Text style={styles.aboutText}>{agencyData.about}</Text>
                         </View>
                     </Section>
 
-                    <Section title="Services Offered" icon="check-circle">
-                        <View style={styles.servicesGrid}>
-                            {agencyData.services?.map((service, index) => (
-                                <View key={`service-${index}`} style={styles.serviceChip}>
-                                    <Feather name="check" size={14} color="#FFFFFF" />
-                                    <Text style={styles.serviceChipText}>{service}</Text>
-                                </View>
-                            ))}
-                        </View>
-                    </Section>
-
-                    <Section title="Our Process" icon="list">
-                        {agencyData.process?.map((step, index) => (
-                            <View key={`step-${index}`} style={styles.processItem}>
-                                <View style={styles.processNumber}>
-                                    <Text style={styles.processNumberText}>{index + 1}</Text>
-                                </View>
-                                <View style={styles.processContent}>
-                                    <Text style={styles.processStepText}>{step}</Text>
-                                </View>
+                    {/* Services Section */}
+                    {agencyData.services?.length > 0 && (
+                        <Section title="Services Offered" icon="check-circle">
+                            <View style={styles.servicesGrid}>
+                                {agencyData.services.map((service, index) => (
+                                    <View key={`service-${index}`} style={styles.serviceChip}>
+                                        <View style={styles.serviceIcon}>
+                                            <Feather name="check" size={moderateScale(12)} color={COLORS.primary} />
+                                        </View>
+                                        <Text style={styles.serviceChipText}>{service}</Text>
+                                    </View>
+                                ))}
                             </View>
-                        ))}
-                    </Section>
+                        </Section>
+                    )}
 
+                    {/* Process Section */}
+                    {agencyData.process?.length > 0 && (
+                        <Section title="Our Process" icon="list">
+                            <View style={styles.processContainer}>
+                                {agencyData.process.map((step, index) => (
+                                    <View key={`step-${index}`} style={styles.processItem}>
+                                        <View style={styles.processLeft}>
+                                            <View style={styles.processNumber}>
+                                                <Text style={styles.processNumberText}>{index + 1}</Text>
+                                            </View>
+                                            {index < agencyData.process.length - 1 && (
+                                                <View style={styles.processLine} />
+                                            )}
+                                        </View>
+                                        <View style={styles.processRight}>
+                                            <Text style={styles.processStepText}>{step}</Text>
+                                        </View>
+                                    </View>
+                                ))}
+                            </View>
+                        </Section>
+                    )}
+
+                    {/* Partners Section */}
                     <Section
                         title="Partner Universities"
-                        icon="star"
-                        showViewAll={agencyData.partners?.length > 0}
+                        icon="award"
+                        showViewAll={agencyData.partners?.length > 4}
                         onViewAll={() => router.push({
                             pathname: `/agency/partners/${id}`,
                             params: {
@@ -304,24 +379,25 @@ export default function AgencyDetails() {
                     >
                         {agencyData.partners?.length > 0 ? (
                             <FlatList
-                                data={agencyData.partners.slice(0, 4)}
+                                data={agencyData.partners.slice(0, 6)}
                                 renderItem={renderPartner}
                                 keyExtractor={(item, index) => item._id || index.toString()}
                                 horizontal
                                 showsHorizontalScrollIndicator={false}
                                 contentContainerStyle={styles.partnersList}
-                                ItemSeparatorComponent={() => <View style={{ width: 16 }} />}
+                                ItemSeparatorComponent={() => <View style={{ width: moderateScale(12) }} />}
                             />
                         ) : (
-                            <View style={styles.emptyPartners}>
-                                <Text style={styles.emptyPartnersText}>No partner universities available</Text>
+                            <View style={styles.emptyState}>
+                                <Feather name="briefcase" size={moderateScale(32)} color={COLORS.cardBorder} />
+                                <Text style={styles.emptyStateText}>No partner universities available</Text>
                             </View>
                         )}
                     </Section>
                 </View>
 
                 <View style={styles.bottomSpacing} />
-            </ScrollView>
+            </Animated.ScrollView>
 
             {/* Fixed Action Button */}
             <View style={styles.actionBar}>
@@ -329,13 +405,14 @@ export default function AgencyDetails() {
                     style={styles.selectBtn}
                     onPress={handleSelectAgency}
                     disabled={loading}
+                    activeOpacity={0.8}
                 >
                     {loading ? (
                         <ActivityIndicator color="#FFF" />
                     ) : (
                         <>
-                            <Feather name="check-circle" size={20} color="#FFFFFF" />
-                            <Text style={styles.selectText}>Select Agency</Text>
+                            <Feather name="check-circle" size={moderateScale(20)} color="#FFFFFF" />
+                            <Text style={styles.selectText}>Select This Agency</Text>
                         </>
                     )}
                 </TouchableOpacity>
@@ -344,250 +421,355 @@ export default function AgencyDetails() {
     );
 }
 
-const { width } = Dimensions.get('window');
-const BANNER_HEIGHT = 180; // Smaller banner height
-
 const styles = StyleSheet.create({
     safe: {
         flex: 1,
         backgroundColor: COLORS.bg
     },
-    topBar: {
+    loadingContainer: {
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: moderateScale(12),
+    },
+    loadingText: {
+        fontSize: moderateScale(14),
+        color: COLORS.textSecondary,
+        fontWeight: '500',
+    },
+    animatedHeader: {
         position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
+        height: moderateScale(90),
+        backgroundColor: COLORS.cardBg,
+        zIndex: 99,
+        justifyContent: 'flex-end',
+        paddingBottom: moderateScale(12),
+        paddingHorizontal: '15%',
+        borderBottomWidth: 1,
+        borderBottomColor: COLORS.cardBorder,
+        elevation: 4,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+    },
+    animatedHeaderText: {
+        fontSize: moderateScale(16),
+        fontWeight: '700',
+        color: COLORS.heading,
+        textAlign: 'center',
+    },
+    topBar: {
+        position: 'absolute',
+        top: moderateScale(12),
+        left: '4%',
         zIndex: 100,
-        paddingHorizontal: 16,
-        paddingTop: 16,
     },
     backBtn: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+        width: moderateScale(44),
+        height: moderateScale(44),
+        borderRadius: moderateScale(22),
+        backgroundColor: 'rgba(0, 0, 0, 0.4)',
         alignItems: 'center',
         justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.2)',
     },
     scrollContent: {
-        paddingBottom: 100,
+        paddingBottom: moderateScale(120),
     },
     headerSection: {
-        marginBottom: 16,
+        marginBottom: moderateScale(16),
+        position: 'relative',
     },
     banner: {
         height: BANNER_HEIGHT,
         backgroundColor: COLORS.primary,
-        position: 'relative',
         overflow: 'hidden',
     },
     bannerImage: {
         width: '100%',
         height: '100%',
+    },
+    bannerGradient: {
         position: 'absolute',
-        top: 0,
+        bottom: 0,
         left: 0,
         right: 0,
-        bottom: 0,
+        height: '60%',
+        backgroundColor: 'transparent',
+        background: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0.3))',
     },
-    bannerOverlay: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(118, 159, 205, 0.7)',
-        zIndex: 1,
+    agencyCard: {
+        marginHorizontal: '4%',
+        marginTop: -moderateScale(60),
+        backgroundColor: COLORS.cardBg,
+        borderRadius: moderateScale(20),
+        padding: '4%',
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+        elevation: 6,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.12,
+        shadowRadius: 8,
     },
-    bannerInfo: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 2,
-        justifyContent: 'flex-end',
-        padding: 20,
-        backgroundColor: 'rgba(0, 0, 0, 0.2)',
-    },
-    bannerContent: {
+    agencyCardHeader: {
         flexDirection: 'row',
-        alignItems: 'flex-end',
-        justifyContent: 'space-between',
+        gap: moderateScale(14),
+    },
+    agencyLogoContainer: {
+        width: moderateScale(80),
+        height: moderateScale(80),
+        borderRadius: moderateScale(16),
+        backgroundColor: COLORS.lightBg,
+        overflow: 'hidden',
+        borderWidth: 3,
+        borderColor: COLORS.cardBg,
+        elevation: 3,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+    },
+    agencyLogo: {
+        width: '100%',
+        height: '100%',
+    },
+    agencyInfo: {
+        flex: 1,
+        justifyContent: 'center',
     },
     agencyName: {
-        fontSize: 24,
+        fontSize: moderateScale(20),
         fontWeight: '700',
-        color: '#FFFFFF',
-        flex: 1,
-        marginRight: 16,
-        textShadowColor: 'rgba(0, 0, 0, 0.3)',
-        textShadowOffset: { width: 0, height: 1 },
-        textShadowRadius: 3,
+        color: COLORS.heading,
+        marginBottom: moderateScale(6),
+        lineHeight: moderateScale(26),
     },
-    bannerDetails: {
-        backgroundColor: 'rgba(0, 0, 0, 0.25)',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 12,
-        flexShrink: 1,
-    },
-    detailItem: {
+    agencyMeta: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
-        marginVertical: 4,
+        gap: moderateScale(8),
+        flexWrap: 'wrap',
     },
-    detailText: {
-        fontSize: 13,
+    metaItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: moderateScale(4),
+    },
+    metaDivider: {
+        width: 1,
+        height: moderateScale(12),
+        backgroundColor: COLORS.border,
+    },
+    metaText: {
+        fontSize: moderateScale(12),
+        color: COLORS.textSecondary,
         fontWeight: '500',
-        color: '#FFFFFF',
-        flexShrink: 1,
     },
     contentContainer: {
-        paddingHorizontal: 20,
-        marginTop: 8,
+        paddingHorizontal: '4%',
+        marginTop: moderateScale(8),
     },
     section: {
         backgroundColor: COLORS.cardBg,
-        borderRadius: 16,
-        padding: 20,
-        marginBottom: 16,
+        borderRadius: moderateScale(16),
+        padding: '5%',
+        marginBottom: moderateScale(16),
         borderWidth: 1,
         borderColor: COLORS.cardBorder,
+        elevation: 1,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
     },
     sectionHeader: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: 16,
+        marginBottom: moderateScale(16),
     },
     sectionTitleContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12,
+        gap: moderateScale(10),
+        flex: 1,
+    },
+    iconBadge: {
+        width: moderateScale(32),
+        height: moderateScale(32),
+        borderRadius: moderateScale(8),
+        backgroundColor: COLORS.accentLight,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     sectionTitle: {
-        fontSize: 18,
+        fontSize: moderateScale(17),
         fontWeight: '700',
         color: COLORS.heading,
+        flex: 1,
     },
     viewMoreBtn: {
-        paddingVertical: 6,
-        paddingHorizontal: 12,
-        borderRadius: 8,
-        backgroundColor: 'rgba(118, 159, 205, 0.1)',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: moderateScale(4),
+        paddingVertical: moderateScale(6),
+        paddingHorizontal: moderateScale(10),
+        borderRadius: moderateScale(8),
+        backgroundColor: COLORS.accentLight,
     },
     viewMoreText: {
-        fontSize: 14,
+        fontSize: moderateScale(13),
         fontWeight: '600',
         color: COLORS.primary,
     },
     sectionContent: {
-        paddingHorizontal: 4,
+        marginTop: moderateScale(4),
     },
     aboutCard: {
         backgroundColor: COLORS.lightBg,
-        padding: 16,
-        borderRadius: 12,
+        padding: '4%',
+        borderRadius: moderateScale(12),
         borderWidth: 1,
         borderColor: COLORS.cardBorder,
     },
     aboutText: {
-        fontSize: 15,
+        fontSize: moderateScale(14),
         color: COLORS.text,
-        lineHeight: 24,
+        lineHeight: moderateScale(22),
     },
     servicesGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: 10,
+        gap: moderateScale(10),
     },
     serviceChip: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: COLORS.primary,
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        borderRadius: 20,
-        gap: 8,
+        backgroundColor: COLORS.accentLight,
+        paddingHorizontal: '4%',
+        paddingVertical: moderateScale(10),
+        borderRadius: moderateScale(20),
+        gap: moderateScale(8),
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+    },
+    serviceIcon: {
+        width: moderateScale(18),
+        height: moderateScale(18),
+        borderRadius: moderateScale(9),
+        backgroundColor: COLORS.cardBg,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     serviceChipText: {
-        fontSize: 14,
-        color: '#FFFFFF',
-        fontWeight: '500',
+        fontSize: moderateScale(13),
+        color: COLORS.primary,
+        fontWeight: '600',
+    },
+    processContainer: {
+        gap: 0,
     },
     processItem: {
         flexDirection: 'row',
         alignItems: 'flex-start',
-        backgroundColor: COLORS.lightBg,
-        padding: 16,
-        borderRadius: 12,
-        marginBottom: 12,
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
+    },
+    processLeft: {
+        alignItems: 'center',
+        marginRight: moderateScale(14),
     },
     processNumber: {
-        width: 28,
-        height: 28,
-        borderRadius: 14,
+        width: moderateScale(32),
+        height: moderateScale(32),
+        borderRadius: moderateScale(16),
         backgroundColor: COLORS.primary,
         alignItems: 'center',
         justifyContent: 'center',
-        marginTop: 2,
+        elevation: 2,
+        shadowColor: COLORS.primary,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
     },
     processNumberText: {
-        fontSize: 14,
+        fontSize: moderateScale(14),
         fontWeight: '700',
         color: '#FFFFFF',
     },
-    processContent: {
+    processLine: {
+        width: 2,
         flex: 1,
-        marginLeft: 12,
+        minHeight: moderateScale(40),
+        backgroundColor: COLORS.cardBorder,
+        marginVertical: moderateScale(4),
+    },
+    processRight: {
+        flex: 1,
+        backgroundColor: COLORS.lightBg,
+        padding: '4%',
+        borderRadius: moderateScale(12),
+        marginBottom: moderateScale(12),
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+        minHeight: moderateScale(60),
+        justifyContent: 'center',
     },
     processStepText: {
-        fontSize: 15,
+        fontSize: moderateScale(14),
         color: COLORS.text,
-        lineHeight: 22,
+        lineHeight: moderateScale(20),
+        fontWeight: '500',
     },
     partnersList: {
-        paddingVertical: 8,
+        paddingVertical: moderateScale(8),
     },
     partnerTile: {
-        width: 80,
-        height: 80,
-        borderRadius: 16,
+        width: moderateScale(110),
+        minHeight: moderateScale(130),
+        borderRadius: moderateScale(14),
         backgroundColor: COLORS.lightBg,
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 12,
+        padding: '4%',
         borderWidth: 1,
         borderColor: COLORS.cardBorder,
+        gap: moderateScale(8),
     },
     partnerLogo: {
-        width: '100%',
-        height: '100%',
-        borderRadius: 12,
+        width: moderateScale(60),
+        height: moderateScale(60),
+        borderRadius: moderateScale(10),
     },
     partnerPlaceholder: {
-        width: '100%',
-        height: '100%',
-        borderRadius: 12,
-        backgroundColor: '#FFFFFF',
+        width: moderateScale(60),
+        height: moderateScale(60),
+        borderRadius: moderateScale(10),
+        backgroundColor: COLORS.cardBg,
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 1,
         borderColor: COLORS.cardBorder,
     },
-    emptyPartners: {
+    partnerName: {
+        fontSize: moderateScale(11),
+        color: COLORS.text,
+        fontWeight: '600',
+        textAlign: 'center',
+    },
+    emptyState: {
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 24,
+        paddingVertical: '8%',
+        gap: moderateScale(8),
     },
-    emptyPartnersText: {
-        fontSize: 15,
+    emptyStateText: {
+        fontSize: moderateScale(14),
         color: COLORS.textSecondary,
-        fontStyle: 'italic',
+        fontWeight: '500',
     },
     actionBar: {
         position: 'absolute',
@@ -595,26 +777,36 @@ const styles = StyleSheet.create({
         right: 0,
         bottom: 0,
         backgroundColor: COLORS.cardBg,
-        paddingHorizontal: 20,
-        paddingVertical: 16,
+        paddingHorizontal: '5%',
+        paddingVertical: moderateScale(16),
         borderTopWidth: 1,
         borderTopColor: COLORS.border,
+        elevation: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
     },
     selectBtn: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 18,
-        borderRadius: 14,
+        paddingVertical: moderateScale(16),
+        borderRadius: moderateScale(14),
         backgroundColor: COLORS.primary,
-        gap: 12,
+        gap: moderateScale(10),
+        elevation: 4,
+        shadowColor: COLORS.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 6,
     },
     selectText: {
         color: '#FFFFFF',
         fontWeight: '700',
-        fontSize: 16,
+        fontSize: moderateScale(16),
     },
     bottomSpacing: {
-        height: 90,
+        height: moderateScale(20),
     },
 });
