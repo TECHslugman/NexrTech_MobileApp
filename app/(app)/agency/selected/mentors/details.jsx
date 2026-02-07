@@ -10,83 +10,83 @@ import { useAuth } from '../../../../context/AuthContext';
 import { Config } from '../../../../config';
 import Toast from 'react-native-toast-message';
 
-const DEFAULT_IMAGE = 'https://i.pravatar.cc/300';
+const DEFAULT_IMAGE_URL = 'https://ui-avatars.com/api/?background=769FCD&color=fff&name=Mentor';
 
 export default function MentorDetails() {
-    const { id, agencyId } = useLocalSearchParams();
+    const { id } = useLocalSearchParams();
     const router = useRouter();
-    const { userToken, user } = useAuth(); // Ensure AuthContext provides 'user' (the student object)
+    const { userToken } = useAuth(); 
 
     const [mentor, setMentor] = useState(null);
     const [loading, setLoading] = useState(true);
     const [connecting, setConnecting] = useState(false);
-    const [connectionStatus, setConnectionStatus] = useState('connect');
+    
+    // Logic States
+    const [connectionStatus, setConnectionStatus] = useState('connect'); 
+    const [isBlockedByExisting, setIsBlockedByExisting] = useState(false);
 
     useEffect(() => {
-        if (id && agencyId) {
-            fetchMentorDetails();
+        if (id) {
+            fetchAllData();
         }
-    }, [id, agencyId]);
+    }, [id]);
 
-    const fetchMentorDetails = async () => {
+    const fetchAllData = async () => {
         try {
             setLoading(true);
-            const res = await fetch(`${Config.API_BASE_URL}/students/mentors/${agencyId}`, {
+            
+            // 1. Fetch Mentor Details
+            const mentorRes = await fetch(`${Config.API_BASE_URL}/agency/mentors/${id}`, {
                 headers: {
                     'Authorization': `Bearer ${userToken}`,
                     'Content-Type': 'application/json'
                 }
             });
+            const mentorJson = await mentorRes.json();
+            console.log("Fetched Mentor Data:", mentorJson);
+            // 2. Fetch Student Profile
+            const profileRes = await fetch(`${Config.API_BASE_URL}/students/profile`, {
+                headers: {
+                    'Authorization': `Bearer ${userToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            const profileJson = await profileRes.json();
 
-            const json = await res.json();
+            if (mentorRes.ok && mentorJson.mentor) {
+                setMentor(mentorJson.mentor);
 
-            if (res.ok && json.mentors) {
-                const foundMentor = json.mentors.find(m => m._id === id);
-
-                if (foundMentor) {
-                    setMentor(foundMentor);
-
-                    if (user?._id && foundMentor.mentees) {
-                        const connection = foundMentor.mentees.find(m => m.student === user._id);
-                        if (connection) {
-                            setConnectionStatus(connection.status);
+                if (profileRes.ok && profileJson.profile) {
+                    const activeConn = profileJson.profile.connectedMentor;
+                    
+                    // Logic: Block if student has a pending/confirmed mentor elsewhere
+                    if (activeConn && (activeConn.status === 'pending' || activeConn.status === 'confirmed')) {
+                        if (activeConn.mentor === id) {
+                            setConnectionStatus(activeConn.status);
+                            setIsBlockedByExisting(false);
+                        } else {
+                            setConnectionStatus('blocked');
+                            setIsBlockedByExisting(true);
                         }
+                    } else {
+                        setConnectionStatus('connect');
+                        setIsBlockedByExisting(false);
                     }
-                } else {
-                   
-                    Toast.show({
-                        type: 'error',
-                        text1: 'Mentor Not Found',
-                        text2: 'This mentor is no longer listed in this agency.'
-                    });
                 }
             } else {
-               
-                Toast.show({
-                    type: 'error',
-                    text1: 'Fetch Failed',
-                    text2: 'Failed to retrieve data from the server.'
-                });
+                Toast.show({ type: 'error', text1: 'Error', text2: 'Mentor not found' });
             }
         } catch (e) {
             console.error("Fetch Error:", e);
-           
-            Toast.show({
-                type: 'error',
-                text1: 'Connection Error',
-                text2: 'Please check your network connection.'
-            });
         } finally {
             setLoading(false);
         }
     };
 
     const handleConnect = async () => {
-        if (connectionStatus !== 'connect') return;
+        if (connectionStatus !== 'connect' || isBlockedByExisting) return;
 
         setConnecting(true);
-        console.log("--- Connection Request Started ---");
-
         try {
             const res = await fetch(`${Config.API_BASE_URL}/students/mentors/connect/${id}`, {
                 method: 'POST',
@@ -96,20 +96,16 @@ export default function MentorDetails() {
                 }
             });
 
-            console.log("Backend Response Status:", res.status);
             const result = await res.json();
-            console.log("Backend Response Body:", JSON.stringify(result, null, 2));
 
             if (res.ok) {
                 setConnectionStatus('pending');
-               
                 Toast.show({
                     type: 'success',
                     text1: 'Request Sent!',
                     text2: result.message || "Your connection request is now pending."
                 });
             } else {
-               
                 Toast.show({
                     type: 'info',
                     text1: 'Notice',
@@ -117,26 +113,23 @@ export default function MentorDetails() {
                 });
             }
         } catch (error) {
-            console.error("Network/Fetch Error:", error);
-           
-            Toast.show({
-                type: 'error',
-                text1: 'Request Failed',
-                text2: 'Failed to send request. Check your internet.'
-            });
+            Toast.show({ type: 'error', text1: 'Request Failed' });
         } finally {
             setConnecting(false);
-            console.log("--- Connection Request Finished ---");
         }
     };
 
     const getButtonConfig = () => {
+        if (isBlockedByExisting) {
+            return { color: '#94A3B8', text: 'Another Request Active' };
+        }
         switch (connectionStatus) {
             case 'pending':
-                return { color: '#94A3B8', text: 'Request Pending' };
+                return { color: '#F59E0B', text: 'Request Pending' };
+            case 'confirmed':
             case 'accepted':
             case 'connected':
-                return { color: '#10B981', text: 'Connected' };
+                return { color: '#10B981', text: 'Your Mentor' };
             default:
                 return { color: '#769FCD', text: 'Connect with Mentor' };
         }
@@ -156,23 +149,20 @@ export default function MentorDetails() {
         <SafeAreaView style={styles.container}>
             <StatusBar barStyle="light-content" backgroundColor="#769FCD" />
 
-            {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
                     <Ionicons name="chevron-back" size={26} color="#FFF" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Mentor Profile</Text>
-                <TouchableOpacity onPress={fetchMentorDetails} style={styles.iconBtn}>
+                <TouchableOpacity onPress={fetchAllData} style={styles.iconBtn}>
                     <Ionicons name="refresh" size={22} color="#FFF" />
                 </TouchableOpacity>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-
-                {/* Profile Section */}
                 <View style={styles.profileSection}>
                     <Image
-                        source={{ uri: mentor?.profilepic || DEFAULT_IMAGE }}
+                        source={{ uri: mentor?.profilepic || DEFAULT_IMAGE_URL }}
                         style={styles.profileImage}
                     />
                     <Text style={styles.profileName}>{mentor?.name}</Text>
@@ -180,7 +170,6 @@ export default function MentorDetails() {
                         {mentor?.isVerified ? 'Verified Education Mentor' : 'Education Mentor'}
                     </Text>
 
-                    {/* Action Buttons */}
                     <View style={styles.actionRow}>
                         <TouchableOpacity
                             style={styles.actionBtn}
@@ -201,7 +190,7 @@ export default function MentorDetails() {
                 </View>
 
                 {/* Experience Card */}
-                {mentor?.experiences && mentor.experiences.length > 0 && (
+                {mentor?.experiences?.length > 0 && (
                     <View style={styles.infoCard}>
                         <Text style={styles.cardHeader}>Experience</Text>
                         {mentor.experiences.map((exp, i) => (
@@ -214,7 +203,7 @@ export default function MentorDetails() {
                 )}
 
                 {/* Education Card */}
-                {mentor?.education && mentor.education.length > 0 && (
+                {mentor?.education?.length > 0 && (
                     <View style={styles.infoCard}>
                         <Text style={styles.cardHeader}>Education</Text>
                         {mentor.education.map((edu, i) => (
@@ -226,8 +215,8 @@ export default function MentorDetails() {
                     </View>
                 )}
 
-                {/* Availability Card */}
-                {mentor?.availability && mentor.availability.length > 0 && (
+                {/* Availability Card (RE-ADDED) */}
+                {mentor?.availability?.length > 0 && (
                     <View style={styles.infoCard}>
                         <Text style={styles.cardHeader}>Availability</Text>
                         {mentor.availability.map((time, i) => (
@@ -239,11 +228,11 @@ export default function MentorDetails() {
                     </View>
                 )}
 
-                {/* Dynamic Connect Button */}
+                {/* Connect Button */}
                 <TouchableOpacity
                     style={[styles.connectBtn, { backgroundColor: btn.color }]}
                     onPress={handleConnect}
-                    disabled={connecting || connectionStatus !== 'connect'}
+                    disabled={connecting || connectionStatus !== 'connect' || isBlockedByExisting}
                 >
                     {connecting ? (
                         <ActivityIndicator color="#FFF" />
@@ -251,6 +240,12 @@ export default function MentorDetails() {
                         <Text style={styles.connectBtnText}>{btn.text}</Text>
                     )}
                 </TouchableOpacity>
+
+                {isBlockedByExisting && (
+                    <Text style={styles.blockedText}>
+                        You already have an active or pending mentor request.
+                    </Text>
+                )}
 
                 <View style={{ height: 40 }} />
             </ScrollView>
@@ -311,5 +306,6 @@ const styles = StyleSheet.create({
     listText: { fontSize: 14, color: '#475569', flex: 1, marginLeft: 10, lineHeight: 20 },
     bullet: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#769FCD', marginTop: 8 },
     connectBtn: { height: 52, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginTop: 8 },
-    connectBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' }
+    connectBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
+    blockedText: { textAlign: 'center', color: '#64748B', marginTop: 10, fontSize: 12, paddingHorizontal: 20 }
 });

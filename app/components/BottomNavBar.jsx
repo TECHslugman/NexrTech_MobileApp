@@ -26,15 +26,14 @@ export default function BottomNavBar() {
         const selectedIndex = segments.indexOf('selected');
         const potentialId = segments[selectedIndex + 1];
         
-        // Static routes to ignore when extracting ID
-        const staticRoutes = ['profile', 'messages', 'events', 'courses', 'uploads'];
+        const staticRoutes = ['profile', 'messages', 'events', 'courses', 'documentupload'];
         if (potentialId && !staticRoutes.includes(potentialId)) {
           foundAgencyId = potentialId;
         }
       }
     }
 
-    if (foundAgencyId !== agencyId) {
+    if (foundAgencyId && foundAgencyId !== agencyId) {
       setAgencyId(foundAgencyId);
     }
   }, [pathname, params]);
@@ -54,9 +53,9 @@ export default function BottomNavBar() {
     },
     {
       name: 'Documents',
-      route: 'uploads', 
+      route: 'upload', 
       icon: 'document-text-outline',
-      getScreen: () => '/agency/selected/documentupload/uploads',
+      getScreen: () => '/agency/selected/documentupload', 
     },
     {
       name: 'Profile',
@@ -73,22 +72,18 @@ export default function BottomNavBar() {
     if (route === 'home') {
       return agencyId && currentRoute === agencyId;
     }
-    return currentRoute === route;
+    // Returns true if the route name (e.g., 'documentupload') is in the URL path
+    return segments.includes(route);
   };
 
-  const handleNavigation = (screen, itemName) => {
+  const handleNavigation = (screen) => {
     if (!screen) return;
 
-    const needsAgencyId = ['Profile', 'Messages', 'Documents'].includes(itemName);
-
-    if (needsAgencyId && agencyId) {
-      router.push({
-        pathname: screen,
-        params: { agencyId, refresh: Date.now() } 
-      });
-    } else {
-      router.push(screen);
-    }
+    // Always pass agencyId to keep the context consistent
+    router.push({
+      pathname: screen,
+      params: { agencyId, refresh: Date.now() } 
+    });
   };
 
   return (
@@ -102,7 +97,7 @@ export default function BottomNavBar() {
           <TouchableOpacity
             key={item.name}
             style={styles.navItem}
-            onPress={() => handleNavigation(screen, item.name)}
+            onPress={() => handleNavigation(screen)}
             disabled={!canNavigate}
           >
             {active ? (
@@ -116,13 +111,7 @@ export default function BottomNavBar() {
                 color={canNavigate ? COLORS.textInactive : COLORS.disabled}
               />
             )}
-            <Text
-              style={[
-                styles.navLabel,
-                active && styles.navLabelActive,
-                !canNavigate && { color: COLORS.disabled }
-              ]}
-            >
+            <Text style={[styles.navLabel, active && styles.navLabelActive]}>
               {item.name}
             </Text>
           </TouchableOpacity>
@@ -133,43 +122,9 @@ export default function BottomNavBar() {
 }
 
 const styles = StyleSheet.create({
-  navBar: {
-    height: 85,
-    backgroundColor: COLORS.white,
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    paddingBottom: 25,
-    paddingHorizontal: 10,
-  },
-  navItem: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  navIconActive: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 2,
-    // Add a slight shadow for the active state
-    elevation: 3,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-  },
-  navLabel: {
-    fontSize: 11,
-    color: COLORS.textInactive,
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  navLabelActive: {
-    color: COLORS.primary,
-    fontWeight: '700',
-  },
+  navBar: { height: 85, backgroundColor: COLORS.white, flexDirection: 'row', borderTopWidth: 1, borderTopColor: COLORS.border, paddingBottom: 25, paddingHorizontal: 10 },
+  navItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  navIconActive: { width: 48, height: 48, borderRadius: 24, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', marginBottom: 2, elevation: 3 },
+  navLabel: { fontSize: 11, color: COLORS.textInactive, fontWeight: '500', marginTop: 2 },
+  navLabelActive: { color: COLORS.primary, fontWeight: '700' },
 });

@@ -6,10 +6,10 @@ class SocketService {
     constructor() {
         this.socket = null;
         this.token = null;
-        this.currentAgencyId = null; // Track current agency
+        this.currentAgencyId = null; 
         this.isConnecting = false;
         this.connectionCallbacks = [];
-        this.activeListeners = new Set(); // Track active listeners
+        this.activeListeners = new Set(); 
     }
 
     connect(token, agencyId = null) {
@@ -123,7 +123,6 @@ class SocketService {
         return true;
     }
 
-    // Listener methods - IMPROVED: Allow multiple listeners for same event
     onConversationList(callback) {
         console.log("📊 Setting up conversation list listener");
         this.socket?.on("conversation_list", callback);

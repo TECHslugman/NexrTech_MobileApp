@@ -72,7 +72,7 @@ function RootLayoutNav() {
   const savePushTokenToBackend = async (token: string) => {
     if (!userToken) return;
     try {
-      await fetch(`${Config.API_BASE_URL}/students/update-push-token`, {
+      await fetch(`${Config.API_BASE_URL}/students/students/update-push-token`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${userToken}`,
