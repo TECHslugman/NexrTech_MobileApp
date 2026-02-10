@@ -39,6 +39,12 @@ const formatDate = (dateString) => {
     return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
+const formatYearRange = (startYear, endYear) => {
+    if (!startYear) return "Not Set";
+    if (!endYear) return `${startYear} - Present`;
+    return `${startYear} - ${endYear}`;
+};
+
 export default function UserProfile() {
     const router = useRouter();
     const params = useLocalSearchParams();
@@ -57,8 +63,21 @@ export default function UserProfile() {
     const [loading, setLoading] = useState(true);
     const [userData, setUserData] = useState(null);
     const [isModalVisible, setModalVisible] = useState(false);
+    const [isEducationModalVisible, setEducationModalVisible] = useState(false);
     const [editField, setEditField] = useState({ name: '', value: '', key: '' });
     const [imageKey, setImageKey] = useState(Date.now());
+    
+    // Education form state
+    const [educationForm, setEducationForm] = useState({
+        institution: '',
+        degree: '',
+        fieldOfStudy: '',
+        startYear: '',
+        endYear: '',
+        grade: '',
+        isEditing: false,
+        editIndex: null
+    });
 
     useEffect(() => {
         if (userToken) fetchProfile();
@@ -162,7 +181,7 @@ export default function UserProfile() {
 
             setUserData(prev => ({
                 ...prev,
-                profileUrl: newImageUrl
+                profile: newImageUrl
             }));
             setImageKey(Date.now());
 
@@ -173,7 +192,7 @@ export default function UserProfile() {
                     'Authorization': `Bearer ${userToken}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ profileUrl: newImageUrl })
+                body: JSON.stringify({ profile: newImageUrl })
             });
 
             if (patchRes.ok) {
@@ -235,10 +254,131 @@ export default function UserProfile() {
         }
     };
 
+    // Education CRUD Operations
+    const handleAddEducation = () => {
+        setEducationForm({
+            institution: '',
+            degree: '',
+            fieldOfStudy: '',
+            startYear: '',
+            endYear: '',
+            grade: '',
+            isEditing: false,
+            editIndex: null
+        });
+        setEducationModalVisible(true);
+    };
+
+    const handleEditEducation = (education, index) => {
+        setEducationForm({
+            institution: education.institution || '',
+            degree: education.degree || '',
+            fieldOfStudy: education.fieldOfStudy || '',
+            startYear: education.startYear?.toString() || '',
+            endYear: education.endYear?.toString() || '',
+            grade: education.grade || '',
+            isEditing: true,
+            editIndex: index
+        });
+        setEducationModalVisible(true);
+    };
+
+    const handleSaveEducation = async () => {
+        // Validate required fields
+        if (!educationForm.institution || !educationForm.degree) {
+            Alert.alert("Validation Error", "Please fill in institution and degree");
+            return;
+        }
+
+        try {
+            setLoading(true);
+            
+            let updatedEducation = [...(userData?.education || [])];
+            
+            const educationEntry = {
+                institution: educationForm.institution,
+                degree: educationForm.degree,
+                fieldOfStudy: educationForm.fieldOfStudy,
+                startYear: educationForm.startYear ? parseInt(educationForm.startYear) : null,
+                endYear: educationForm.endYear ? parseInt(educationForm.endYear) : null,
+                grade: educationForm.grade
+            };
+
+            if (educationForm.isEditing) {
+                // Update existing education
+                updatedEducation[educationForm.editIndex] = educationEntry;
+            } else {
+                // Add new education
+                updatedEducation.push(educationEntry);
+            }
+
+            const response = await fetch(`${Config.API_BASE_URL}/students/profile`, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `Bearer ${userToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ education: updatedEducation })
+            });
+
+            if (response.ok) {
+                setEducationModalVisible(false);
+                fetchProfile();
+                Alert.alert("Success", educationForm.isEditing ? "Education updated" : "Education added");
+            } else {
+                Alert.alert("Error", "Failed to save education");
+            }
+        } catch (error) {
+            console.error(error);
+            Alert.alert("Error", "An error occurred while saving education");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleDeleteEducation = async (index) => {
+        Alert.alert(
+            "Delete Education",
+            "Are you sure you want to delete this education entry?",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            setLoading(true);
+                            let updatedEducation = [...(userData?.education || [])];
+                            updatedEducation.splice(index, 1);
+
+                            const response = await fetch(`${Config.API_BASE_URL}/students/profile`, {
+                                method: 'PATCH',
+                                headers: {
+                                    'Authorization': `Bearer ${userToken}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({ education: updatedEducation })
+                            });
+
+                            if (response.ok) {
+                                fetchProfile();
+                                Alert.alert("Success", "Education deleted");
+                            }
+                        } catch (error) {
+                            console.error(error);
+                        } finally {
+                            setLoading(false);
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
     // Get image URL with cache busting
    const getImageUrl = () => {
-    if (!userData?.profileUrl) return null;
-    return userData.profileUrl; 
+    if (!userData?.profile) return null;
+    return userData.profile; 
 };
 
     const profileImageUri = getImageUrl();
@@ -297,11 +437,11 @@ export default function UserProfile() {
                     <View style={styles.profileImageContainer}>
                         <Image
                             style={styles.profileImage}
-                            source={profileImageUri} // Remove the manual {uri: ...} object if using expo-image
+                            source={profileImageUri}
                             placeholder={DEFAULT_IMAGE}
                             contentFit="cover"
-                            transition={300} // Fades from placeholder to real image smoothly
-                            cachePolicy="disk" // This is key: it keeps the image on the phone
+                            transition={300}
+                            cachePolicy="disk"
                             onLoadStart={() => console.log('Loading started')}
                             onLoad={() => console.log('Loading finished')}
                         />
@@ -433,10 +573,77 @@ export default function UserProfile() {
                     </TouchableOpacity>
                 </View>
 
+                {/* Education Section */}
+                <View style={styles.section}>
+                    <View style={styles.sectionHeader}>
+                        <Ionicons name="school-outline" size={22} color={COLORS.primary} />
+                        <Text style={styles.sectionTitle}>Education</Text>
+                        <TouchableOpacity
+                            style={styles.addButton}
+                            onPress={handleAddEducation}
+                        >
+                            <Ionicons name="add-circle" size={24} color={COLORS.primary} />
+                        </TouchableOpacity>
+                    </View>
+
+                    {userData?.education && userData.education.length > 0 ? (
+                        userData.education.map((edu, index) => (
+                            <View key={index} style={styles.educationCard}>
+                                <View style={styles.educationHeader}>
+                                    <View style={[styles.educationIcon, { backgroundColor: COLORS.primaryLight }]}>
+                                        <FontAwesome5 name="graduation-cap" size={20} color={COLORS.primary} />
+                                    </View>
+                                    <View style={styles.educationContent}>
+                                        <Text style={styles.educationDegree}>{edu.degree}</Text>
+                                        <Text style={styles.educationInstitution}>{edu.institution}</Text>
+                                        {edu.fieldOfStudy && (
+                                            <Text style={styles.educationField}>{edu.fieldOfStudy}</Text>
+                                        )}
+                                        <View style={styles.educationMeta}>
+                                            <Feather name="calendar" size={12} color={COLORS.textSecondary} />
+                                            <Text style={styles.educationYear}>
+                                                {formatYearRange(edu.startYear, edu.endYear)}
+                                            </Text>
+                                            {edu.grade && (
+                                                <>
+                                                    <View style={styles.educationDot} />
+                                                    <Text style={styles.educationGrade}>Grade: {edu.grade}</Text>
+                                                </>
+                                            )}
+                                        </View>
+                                    </View>
+                                </View>
+                                <View style={styles.educationActions}>
+                                    <TouchableOpacity
+                                        style={styles.educationActionButton}
+                                        onPress={() => handleEditEducation(edu, index)}
+                                    >
+                                        <Feather name="edit-2" size={16} color={COLORS.primary} />
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[styles.educationActionButton, styles.deleteButton]}
+                                        onPress={() => handleDeleteEducation(index)}
+                                    >
+                                        <Feather name="trash-2" size={16} color={COLORS.danger} />
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        ))
+                    ) : (
+                        <View style={styles.emptyState}>
+                            <Ionicons name="school-outline" size={48} color={COLORS.textSecondary} />
+                            <Text style={styles.emptyStateText}>No education added yet</Text>
+                            <Text style={styles.emptyStateSubtext}>
+                                Tap the + button to add your educational background
+                            </Text>
+                        </View>
+                    )}
+                </View>
+
                 <View style={{ height: 40 }} />
             </ScrollView>
 
-            {/* Edit Modal */}
+            {/* Edit Modal for Basic Info */}
             <Modal
                 visible={isModalVisible}
                 transparent
@@ -481,6 +688,125 @@ export default function UserProfile() {
                     </View>
                 </View>
             </Modal>
+
+            {/* Education Modal */}
+            <Modal
+                visible={isEducationModalVisible}
+                transparent
+                animationType="slide"
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContainer}>
+                        <View style={styles.modalContent}>
+                            <View style={styles.modalHeader}>
+                                <Text style={styles.modalTitle}>
+                                    {educationForm.isEditing ? 'Edit Education' : 'Add Education'}
+                                </Text>
+                                <TouchableOpacity onPress={() => setEducationModalVisible(false)}>
+                                    <Ionicons name="close" size={24} color={COLORS.textSecondary} />
+                                </TouchableOpacity>
+                            </View>
+
+                            <ScrollView style={styles.educationFormScroll}>
+                                <View style={styles.formGroup}>
+                                    <Text style={styles.formLabel}>Institution Name *</Text>
+                                    <TextInput
+                                        style={styles.modalInput}
+                                        value={educationForm.institution}
+                                        onChangeText={(text) => setEducationForm({ ...educationForm, institution: text })}
+                                        placeholder="e.g., Harvard University"
+                                        placeholderTextColor={COLORS.textSecondary}
+                                    />
+                                </View>
+
+                                <View style={styles.formGroup}>
+                                    <Text style={styles.formLabel}>Degree *</Text>
+                                    <TextInput
+                                        style={styles.modalInput}
+                                        value={educationForm.degree}
+                                        onChangeText={(text) => setEducationForm({ ...educationForm, degree: text })}
+                                        placeholder="e.g., Bachelor's, Master's, PhD"
+                                        placeholderTextColor={COLORS.textSecondary}
+                                    />
+                                </View>
+
+                                <View style={styles.formGroup}>
+                                    <Text style={styles.formLabel}>Field of Study</Text>
+                                    <TextInput
+                                        style={styles.modalInput}
+                                        value={educationForm.fieldOfStudy}
+                                        onChangeText={(text) => setEducationForm({ ...educationForm, fieldOfStudy: text })}
+                                        placeholder="e.g., Computer Science"
+                                        placeholderTextColor={COLORS.textSecondary}
+                                    />
+                                </View>
+
+                                <View style={styles.formRow}>
+                                    <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+                                        <Text style={styles.formLabel}>Start Year</Text>
+                                        <TextInput
+                                            style={styles.modalInput}
+                                            value={educationForm.startYear}
+                                            onChangeText={(text) => setEducationForm({ ...educationForm, startYear: text })}
+                                            placeholder="2020"
+                                            keyboardType="numeric"
+                                            placeholderTextColor={COLORS.textSecondary}
+                                        />
+                                    </View>
+
+                                    <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
+                                        <Text style={styles.formLabel}>End Year</Text>
+                                        <TextInput
+                                            style={styles.modalInput}
+                                            value={educationForm.endYear}
+                                            onChangeText={(text) => setEducationForm({ ...educationForm, endYear: text })}
+                                            placeholder="2024"
+                                            keyboardType="numeric"
+                                            placeholderTextColor={COLORS.textSecondary}
+                                        />
+                                    </View>
+                                </View>
+
+                                <View style={styles.formGroup}>
+                                    <Text style={styles.formLabel}>Grade/GPA</Text>
+                                    <TextInput
+                                        style={styles.modalInput}
+                                        value={educationForm.grade}
+                                        onChangeText={(text) => setEducationForm({ ...educationForm, grade: text })}
+                                        placeholder="e.g., 3.8 GPA, First Class"
+                                        placeholderTextColor={COLORS.textSecondary}
+                                    />
+                                </View>
+                            </ScrollView>
+
+                            <View style={styles.modalButtons}>
+                                <TouchableOpacity
+                                    style={styles.modalButtonSecondary}
+                                    onPress={() => setEducationModalVisible(false)}
+                                >
+                                    <Text style={styles.modalButtonTextSecondary}>Cancel</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    style={styles.modalButtonPrimary}
+                                    onPress={handleSaveEducation}
+                                >
+                                    <Text style={styles.modalButtonTextPrimary}>
+                                        {educationForm.isEditing ? 'Update' : 'Add'}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Loading Overlay */}
+            {loading && (
+                <View style={styles.loadingOverlay}>
+                    <ActivityIndicator size="large" color={COLORS.primary} />
+                </View>
+            )}
         </SafeAreaView>
     );
 }
@@ -614,6 +940,10 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: COLORS.textPrimary,
         marginLeft: 10,
+        flex: 1,
+    },
+    addButton: {
+        padding: 4,
     },
     // Info Cards
     infoCard: {
@@ -664,6 +994,115 @@ const styles = StyleSheet.create({
         fontStyle: 'italic',
         fontWeight: '400',
     },
+    // Education Cards
+    educationCard: {
+        backgroundColor: COLORS.white,
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        marginBottom: 12,
+        elevation: 1,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.02,
+        shadowRadius: 4,
+    },
+    educationHeader: {
+        flexDirection: 'row',
+        marginBottom: 12,
+    },
+    educationIcon: {
+        width: 48,
+        height: 48,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 14,
+    },
+    educationContent: {
+        flex: 1,
+    },
+    educationDegree: {
+        fontSize: 17,
+        fontWeight: '700',
+        color: COLORS.textPrimary,
+        marginBottom: 4,
+    },
+    educationInstitution: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: COLORS.primary,
+        marginBottom: 4,
+    },
+    educationField: {
+        fontSize: 14,
+        color: COLORS.textSecondary,
+        marginBottom: 6,
+    },
+    educationMeta: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 4,
+    },
+    educationYear: {
+        fontSize: 13,
+        color: COLORS.textSecondary,
+        marginLeft: 6,
+    },
+    educationDot: {
+        width: 4,
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: COLORS.textSecondary,
+        marginHorizontal: 8,
+    },
+    educationGrade: {
+        fontSize: 13,
+        color: COLORS.textSecondary,
+    },
+    educationActions: {
+        flexDirection: 'row',
+        justifyContent: 'flex-end',
+        gap: 12,
+        marginTop: 8,
+        paddingTop: 12,
+        borderTopWidth: 1,
+        borderTopColor: COLORS.border,
+    },
+    educationActionButton: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        backgroundColor: COLORS.primaryLight,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    deleteButton: {
+        backgroundColor: COLORS.dangerLight,
+    },
+    // Empty State
+    emptyState: {
+        backgroundColor: COLORS.white,
+        borderRadius: 16,
+        padding: 40,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        borderStyle: 'dashed',
+    },
+    emptyStateText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+        marginTop: 16,
+        marginBottom: 8,
+    },
+    emptyStateSubtext: {
+        fontSize: 14,
+        color: COLORS.textSecondary,
+        textAlign: 'center',
+    },
     // Modal
     modalOverlay: {
         flex: 1,
@@ -679,7 +1118,7 @@ const styles = StyleSheet.create({
     modalContent: {
         backgroundColor: COLORS.white,
         borderRadius: 24,
-        padding: 0,
+        maxHeight: '80%',
         overflow: 'hidden',
     },
     modalHeader: {
@@ -703,14 +1142,14 @@ const styles = StyleSheet.create({
         fontSize: 16,
         borderWidth: 1,
         borderColor: COLORS.border,
-        margin: 24,
-        marginTop: 16,
+        marginHorizontal: 24,
+        marginVertical: 8,
         color: COLORS.textPrimary,
     },
     modalButtons: {
         flexDirection: 'row',
         padding: 24,
-        paddingTop: 8,
+        paddingTop: 16,
         gap: 12,
     },
     modalButtonSecondary: {
@@ -738,5 +1177,34 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600',
         color: COLORS.white,
+    },
+    // Education Form
+    educationFormScroll: {
+        maxHeight: 400,
+    },
+    formGroup: {
+        marginBottom: 8,
+    },
+    formLabel: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+        marginLeft: 24,
+        marginBottom: 4,
+    },
+    formRow: {
+        flexDirection: 'row',
+        paddingHorizontal: 16,
+    },
+    // Loading Overlay
+    loadingOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
 });

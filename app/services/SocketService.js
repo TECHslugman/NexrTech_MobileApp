@@ -17,7 +17,7 @@ class SocketService {
         if ((this.socket?.connected || this.isConnecting) && 
             this.token === token && 
             this.currentAgencyId === agencyId) {
-            console.log("♻️ Using existing socket connection for agency:", agencyId); // FIXED: removed extra "66"
+            console.log("♻️ Using existing socket connection for agency:", agencyId);
             return this.socket;
         }
 
@@ -54,7 +54,7 @@ class SocketService {
             this.isConnecting = false;
             this.notifyConnectionChange(true);
             
-            // Request conversation list on connect (backend already sends it automatically)
+            // Backend automatically sends conversation list on connect
             console.log("📋 Socket connected, ready to receive conversation list");
         });
 
@@ -79,11 +79,6 @@ class SocketService {
             }
         });
 
-        // Listen for error events from backend
-        this.socket.on("error", (error) => {
-            console.error("❌ Socket error from server:", error);
-        });
-
         return this.socket;
     }
 
@@ -97,7 +92,14 @@ class SocketService {
         }
     }
 
-    // Simple emitter methods
+    // ====== BACKEND EVENT EMITTERS ======
+    
+    /**
+     * Send a message to a recipient
+     * @param {string} receiverId - ID of the recipient
+     * @param {string} content - Message content
+     * @param {string} receiverModel - Model type (default: "Agency")
+     */
     sendMessage(receiverId, content, receiverModel = "Agency") {
         if (!this.socket?.connected) {
             console.error("❌ Send failed: Socket not connected");
@@ -113,64 +115,85 @@ class SocketService {
         return true;
     }
 
-    getConversations() {
-        if (!this.socket?.connected) {
-            console.error("❌ Not connected, cannot get conversations");
-            return false;
-        }
-        console.log("📋 Requesting conversation list");
-        this.socket.emit("get_conversations");
-        return true;
-    }
+    // ====== BACKEND EVENT LISTENERS ======
 
+    /**
+     * Listen for conversation list (automatically sent by backend on connect)
+     * Backend sends full chat history and chat list
+     * @param {Function} callback - Callback function to handle conversation list
+     * @returns {Function} Cleanup function
+     */
     onConversationList(callback) {
-        console.log("📊 Setting up conversation list listener");
-        this.socket?.on("conversation_list", callback);
+        if (!this.socket) {
+            console.error("❌ Socket not initialized");
+            return () => {};
+        }
+
+        console.log("📊 Setting up conversation_list listener");
+        this.socket.on("conversation_list", callback);
         this.activeListeners.add('conversation_list');
+        
         return () => {
             this.socket?.off("conversation_list", callback);
+            this.activeListeners.delete('conversation_list');
         };
     }
 
-    onNewMessage(callback) {
-        console.log("📨 Setting up new message listener");
-        this.socket?.on("receive_message", callback);
+    /**
+     * Listen for incoming messages from other users
+     * @param {Function} callback - Callback function to handle received messages
+     * @returns {Function} Cleanup function
+     */
+    onReceiveMessage(callback) {
+        if (!this.socket) {
+            console.error("❌ Socket not initialized");
+            return () => {};
+        }
+
+        console.log("📨 Setting up receive_message listener");
+        this.socket.on("receive_message", callback);
         this.activeListeners.add('receive_message');
+        
         return () => {
             this.socket?.off("receive_message", callback);
+            this.activeListeners.delete('receive_message');
         };
     }
 
+    /**
+     * Listen for sent message confirmation (delivery status)
+     * Shows if message is delivered
+     * @param {Function} callback - Callback function to handle sent message status
+     * @returns {Function} Cleanup function
+     */
     onSentMessage(callback) {
-        console.log("✅ Setting up sent message listener");
-        this.socket?.on("sent_message", callback);
+        if (!this.socket) {
+            console.error("❌ Socket not initialized");
+            return () => {};
+        }
+
+        console.log("✅ Setting up sent_message listener");
+        this.socket.on("sent_message", callback);
         this.activeListeners.add('sent_message');
+        
         return () => {
             this.socket?.off("sent_message", callback);
+            this.activeListeners.delete('sent_message');
         };
     }
 
-    onConversationUpdate(callback) {
-        console.log("🔄 Setting up conversation update listener");
-        this.socket?.on("conversation_updated", callback);
-        this.activeListeners.add('conversation_updated');
-        return () => {
-            this.socket?.off("conversation_updated", callback);
-        };
-    }
+    // ====== CONNECTION STATE METHODS ======
 
-    onError(callback) {
-        console.log("🚨 Setting up error listener");
-        this.socket?.on("error", callback);
-        this.activeListeners.add('error');
-        return () => {
-            this.socket?.off("error", callback);
-        };
-    }
-
-    // Connection state methods
+    /**
+     * Listen for connection state changes
+     * @param {Function} callback - Callback with isConnected boolean
+     * @returns {Function} Cleanup function
+     */
     onConnectionChange(callback) {
         this.connectionCallbacks.push(callback);
+        // Immediately notify of current state
+        callback(this.socket?.connected || false);
+        
         return () => {
             this.connectionCallbacks = this.connectionCallbacks.filter(cb => cb !== callback);
         };
@@ -194,7 +217,13 @@ class SocketService {
         return this.currentAgencyId;
     }
 
-    // Cleanup methods - IMPROVED
+    // ====== CLEANUP METHODS ======
+
+    /**
+     * Remove a specific listener
+     * @param {string} event - Event name
+     * @param {Function} callback - Specific callback to remove (optional)
+     */
     removeListener(event, callback = null) {
         if (callback) {
             this.socket?.off(event, callback);
@@ -205,6 +234,9 @@ class SocketService {
         console.log(`🗑️ Removed listener for ${event}`);
     }
 
+    /**
+     * Remove all event listeners
+     */
     removeAllListeners() {
         this.socket?.removeAllListeners();
         this.activeListeners.clear();
@@ -212,20 +244,26 @@ class SocketService {
         console.log("🗑️ Removed all listeners");
     }
 
+    /**
+     * Disconnect socket and cleanup
+     */
     disconnect() {
         if (this.socket) {
             console.log("🔌 Disconnecting socket");
+            this.removeAllListeners();
             this.socket.disconnect();
             this.socket = null;
             this.token = null;
             this.currentAgencyId = null;
             this.isConnecting = false;
-            this.connectionCallbacks = [];
-            this.activeListeners.clear();
         }
     }
    
-    // Helper to check if listeners are active
+    /**
+     * Check if a specific listener is active
+     * @param {string} event - Event name to check
+     * @returns {boolean}
+     */
     hasListener(event) {
         return this.activeListeners.has(event);
     }

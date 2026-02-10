@@ -54,7 +54,7 @@ function ProgressBar({ value, height = 5, color = COLORS.success }) {
       width: '100%',
       height,
       backgroundColor: '#E9F3ED',
-      borderRadius: height / 2,
+      borderRadius: '50%',
       overflow: 'hidden',
       borderWidth: 1,
       borderColor: '#DAE9E1'
@@ -89,73 +89,29 @@ function StatVisaFull({ percent, rate }) {
         </View>
         <Text style={[styles.statValue, { fontSize: moderateScale(15) }]}>{percent}%</Text>
       </View>
-      <View style={{ marginTop: moderateScale(6) }}>
+      <View style={{ marginTop: moderateScale(8) }}>
         <ProgressBar value={rate || 0} />
       </View>
     </View>
   );
 }
 
-function DropSection({ icon, title, children, open, onToggle }) {
-  const anim = useRef(new Animated.Value(open ? 1 : 0)).current;
-  const [contentH, setContentH] = useState(0);
-
-  useEffect(() => {
-    Animated.timing(anim, {
-      toValue: open ? 1 : 0,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [open]);
-
-  const height = anim.interpolate({ inputRange: [0, 1], outputRange: [0, contentH] });
-  const rotate = anim.interpolate({ inputRange: [0, 1], outputRange: ['-90deg', '0deg'] });
-
+function CityButton({ label, selected, onPress }) {
   return (
-    <View style={{ marginBottom: moderateScale(10) }}>
-      <TouchableOpacity onPress={onToggle} style={styles.filterRow} activeOpacity={0.85}>
-        <View style={styles.filterRowLeft}>
-          <Feather name={icon} size={moderateScale(16)} color={COLORS.accent} />
-          <Text style={styles.filterRowText}>{title}</Text>
-        </View>
-        <Animated.View style={{ transform: [{ rotate }] }}>
-          <Feather name="chevron-down" size={moderateScale(18)} color="#6B7280" />
-        </Animated.View>
-      </TouchableOpacity>
-
-      <Animated.View
-        style={{
-          height,
-          overflow: 'hidden',
-          backgroundColor: COLORS.listBg,
-          borderRadius: moderateScale(10),
-          borderWidth: 1,
-          borderColor: COLORS.cardBorder,
-        }}
-      >
-        <View
-          style={{ paddingVertical: moderateScale(6) }}
-          onLayout={(e) => setContentH(e.nativeEvent.layout.height)}
-        >
-          {children}
-        </View>
-      </Animated.View>
-    </View>
-  );
-}
-
-function OptionRow({ label, selected, onPress }) {
-  return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={styles.optionRow}>
-      <View style={styles.optionRowContent}>
-        <Feather
-          name={selected ? 'check-circle' : 'circle'}
-          size={moderateScale(18)}
-          color={selected ? COLORS.accent : '#C6CFDA'}
-        />
-        <Text style={styles.optionRowText}>{label}</Text>
-      </View>
+    <TouchableOpacity 
+      onPress={onPress} 
+      activeOpacity={0.7} 
+      style={[
+        styles.cityButton,
+        selected && styles.cityButtonSelected
+      ]}
+    >
+      <Text style={[
+        styles.cityButtonText,
+        selected && styles.cityButtonTextSelected
+      ]}>
+        {label}
+      </Text>
     </TouchableOpacity>
   );
 }
@@ -175,15 +131,8 @@ export default function Dashboard() {
   const slideAnimRefs = useRef({});
 
   // Filter States
-  const [selectedCountries, setSelectedCountries] = useState([]);
-  const [selectedLevels, setSelectedLevels] = useState([]);
   const [selectedCities, setSelectedCities] = useState([]);
   const [minRating, setMinRating] = useState(0);
-
-  // Dropdown States
-  const [openCountry, setOpenCountry] = useState(true);
-  const [openLevel, setOpenLevel] = useState(false);
-  const [openCity, setOpenCity] = useState(false);
 
   // Sheet States
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -252,14 +201,11 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (agencies.length > 0) {
-      const uniqueCountries = [...new Set(agencies.map(a => a.country).filter(Boolean))];
       const uniqueCities = [...new Set(agencies.map(a => a.city).filter(Boolean))];
-      const uniqueLevels = [...new Set(agencies.flatMap(a => a.levels || []).filter(Boolean))];
-
       setDynamicOptions({
-        countries: uniqueCountries.sort(),
+        countries: [],
         cities: uniqueCities.sort(),
-        levels: uniqueLevels.sort(),
+        levels: [],
       });
     }
   }, [agencies]);
@@ -283,21 +229,21 @@ export default function Dashboard() {
     }).start(({ finished }) => finished && setSheetOpen(false));
   };
 
-  const toggleIn = (arr, setArr, value) => {
-    setArr((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
+  const toggleCity = (city) => {
+    setSelectedCities((prev) => 
+      prev.includes(city) ? prev.filter((v) => v !== city) : [...prev, city]
+    );
   };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return agencies.filter((a) => {
       const matchesText = !q || a.name.toLowerCase().includes(q) || (a.subtitle || '').toLowerCase().includes(q);
-      const matchesCountry = selectedCountries.length === 0 || selectedCountries.includes(a.country);
-      const matchesLevel = selectedLevels.length === 0 || selectedLevels.some((lvl) => (a.levels || []).includes(lvl));
       const matchesCity = selectedCities.length === 0 || selectedCities.includes(a.city);
       const matchesRating = (a.rating || 0) >= (minRating || 0);
-      return matchesText && matchesCountry && matchesLevel && matchesCity && matchesRating;
+      return matchesText && matchesCity && matchesRating;
     });
-  }, [agencies, query, selectedCountries, selectedLevels, selectedCities, minRating]);
+  }, [agencies, query, selectedCities, minRating]);
 
   const handleLearnMore = (item) => {
     router.push({
@@ -497,8 +443,8 @@ export default function Dashboard() {
           style={[
             styles.sheet,
             {
-              paddingTop: moderateScale(16),
-              paddingBottom: Math.max(insets.bottom + moderateScale(8), moderateScale(16)),
+              paddingTop: moderateScale(20),
+              paddingBottom: Math.max(insets.bottom + moderateScale(12), moderateScale(20)),
               transform: [{ translateY: sheetTranslateY }]
             }
           ]}
@@ -544,8 +490,6 @@ export default function Dashboard() {
           {/* Clear All Button */}
           <TouchableOpacity
             onPress={() => {
-              setSelectedCountries([]);
-              setSelectedLevels([]);
               setSelectedCities([]);
               setMinRating(0);
               closeAllCards();
@@ -557,55 +501,19 @@ export default function Dashboard() {
             <Text style={styles.clearAll}>Clear all filters</Text>
           </TouchableOpacity>
 
-          {/* Scrollable Filter Content */}
-          <View style={styles.sheetScrollContent}>
-            <DropSection
-              icon="globe"
-              title="Country"
-              open={openCountry}
-              onToggle={() => setOpenCountry(!openCountry)}
-            >
-              {dynamicOptions.countries.map((c, index) => (
-                <OptionRow
-                  key={`country-${c}-${index}`}
-                  label={c}
-                  selected={selectedCountries.includes(c)}
-                  onPress={() => toggleIn(selectedCountries, setSelectedCountries, c)}
+          {/* City Filter */}
+          <View style={styles.cityFilterSection}>
+            <Text style={styles.filterSectionTitle}>City</Text>
+            <View style={styles.cityButtonsContainer}>
+              {dynamicOptions.cities.map((city, index) => (
+                <CityButton
+                  key={`city-${city}-${index}`}
+                  label={city}
+                  selected={selectedCities.includes(city)}
+                  onPress={() => toggleCity(city)}
                 />
               ))}
-            </DropSection>
-
-            <DropSection
-              icon="book-open"
-              title="Level"
-              open={openLevel}
-              onToggle={() => setOpenLevel(!openLevel)}
-            >
-              {dynamicOptions.levels.map((lv) => (
-                <OptionRow
-                  key={lv}
-                  label={lv}
-                  selected={selectedLevels.includes(lv)}
-                  onPress={() => toggleIn(selectedLevels, setSelectedLevels, lv)}
-                />
-              ))}
-            </DropSection>
-
-            <DropSection
-              icon="map-pin"
-              title="City"
-              open={openCity}
-              onToggle={() => setOpenCity(!openCity)}
-            >
-              {dynamicOptions.cities.map((ct) => (
-                <OptionRow
-                  key={ct}
-                  label={ct}
-                  selected={selectedCities.includes(ct)}
-                  onPress={() => toggleIn(selectedCities, setSelectedCities, ct)}
-                />
-              ))}
-            </DropSection>
+            </View>
           </View>
 
           {/* Apply Button */}
@@ -627,8 +535,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.bg
   },
   header: {
-    paddingHorizontal: '4%',
-    paddingBottom: moderateScale(8)
+    paddingHorizontal: '5%',
+    paddingBottom: moderateScale(12)
   },
   headerTitle: {
     textAlign: 'center',
@@ -637,12 +545,12 @@ const styles = StyleSheet.create({
     lineHeight: moderateScale(26),
     fontWeight: '700',
     letterSpacing: 0.2,
-    marginBottom: moderateScale(12),
+    marginBottom: moderateScale(16),
   },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: moderateScale(8),
+    gap: moderateScale(12),
   },
   searchBox: {
     flex: 1,
@@ -652,9 +560,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.inputBorder,
     borderRadius: moderateScale(21),
-    paddingHorizontal: '3%',
-    height: moderateScale(42),
-    gap: moderateScale(8),
+    paddingHorizontal: '4%',
+    height: moderateScale(44),
+    gap: moderateScale(10),
   },
   searchInput: {
     flex: 1,
@@ -662,9 +570,9 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(14),
   },
   filterBtn: {
-    height: moderateScale(42),
-    width: moderateScale(42),
-    borderRadius: moderateScale(21),
+    height: moderateScale(44),
+    width: moderateScale(44),
+    borderRadius: moderateScale(22),
     borderWidth: 1,
     borderColor: COLORS.inputBorder,
     backgroundColor: COLORS.cardBg,
@@ -687,7 +595,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: '20%',
-    gap: moderateScale(8),
+    gap: moderateScale(12),
   },
   emptyText: {
     color: COLORS.text,
@@ -700,7 +608,7 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(13),
   },
   cardContainer: {
-    marginBottom: moderateScale(14),
+    marginBottom: moderateScale(16),
     position: 'relative',
   },
   card: {
@@ -710,11 +618,6 @@ const styles = StyleSheet.create({
     borderColor: COLORS.cardBorder,
     overflow: 'hidden',
     height: CARD_HEIGHT,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
   },
   statsOverlay: {
     position: 'absolute',
@@ -726,13 +629,9 @@ const styles = StyleSheet.create({
     borderRadius: moderateScale(14),
     borderWidth: 1,
     borderColor: COLORS.cardBorder,
-    padding: '3%',
+    paddingVertical: moderateScale(12),
+    paddingHorizontal: moderateScale(12),
     zIndex: 10,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
   },
   backContainer: {
     width: '100%',
@@ -761,6 +660,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: moderateScale(8),
+    marginBottom: moderateScale(8),
   },
   statTile: {
     width: '48%',
@@ -768,8 +668,8 @@ const styles = StyleSheet.create({
     borderColor: COLORS.cardBorder,
     backgroundColor: COLORS.listBg,
     borderRadius: moderateScale(10),
-    paddingVertical: '4%',
-    paddingHorizontal: '3%',
+    paddingVertical: moderateScale(8),
+    paddingHorizontal: moderateScale(8),
   },
   statTileHeader: {
     flexDirection: 'row',
@@ -782,8 +682,8 @@ const styles = StyleSheet.create({
     borderColor: COLORS.cardBorder,
     backgroundColor: COLORS.cardBg,
     borderRadius: moderateScale(10),
-    paddingVertical: '4%',
-    paddingHorizontal: '3%',
+    paddingVertical: moderateScale(8),
+    paddingHorizontal: moderateScale(8),
   },
   statCardFullHeader: {
     flexDirection: 'row',
@@ -800,14 +700,14 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontWeight: '700',
     fontSize: moderateScale(16),
-    marginTop: moderateScale(4),
+    marginTop: moderateScale(6),
   },
   viewProfileButton: {
     alignSelf: 'flex-end',
-    marginTop: moderateScale(8),
+    marginTop: moderateScale(4),
     flexDirection: 'row',
     alignItems: 'center',
-    gap: moderateScale(4),
+    gap: moderateScale(6),
   },
   viewProfileText: {
     color: COLORS.link,
@@ -815,9 +715,9 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(14),
   },
   listContent: {
-    paddingHorizontal: '4%',
+    paddingHorizontal: '5%',
     paddingTop: moderateScale(12),
-    paddingBottom: moderateScale(18),
+    paddingBottom: moderateScale(20),
   },
   overlay: {
     position: 'absolute',
@@ -832,16 +732,11 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    maxHeight: SCREEN_HEIGHT * 0.85,
+    maxHeight: SCREEN_HEIGHT * 0.75,
     backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: moderateScale(24),
-    borderTopRightRadius: moderateScale(24),
+    borderTopLeftRadius: moderateScale(20),
+    borderTopRightRadius: moderateScale(20),
     paddingHorizontal: '5%',
-    elevation: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
   },
   sheetHandle: {
     width: moderateScale(40),
@@ -849,13 +744,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#E5E7EB',
     borderRadius: moderateScale(2),
     alignSelf: 'center',
-    marginBottom: moderateScale(16),
+    marginBottom: moderateScale(20),
   },
   sheetHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    marginBottom: moderateScale(16),
+    marginBottom: moderateScale(20),
   },
   closeBtn: {
     height: moderateScale(36),
@@ -869,7 +764,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontWeight: '700',
     fontSize: moderateScale(20),
-    marginBottom: moderateScale(2),
+    marginBottom: moderateScale(4),
   },
   sheetSubtitle: {
     color: COLORS.textMuted,
@@ -877,16 +772,13 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   sheetSearchContainer: {
-    marginBottom: moderateScale(12),
-  },
-  sheetScrollContent: {
-    flex: 1,
-    marginBottom: moderateScale(12),
+    marginBottom: moderateScale(16),
   },
   sheetFooter: {
-    paddingTop: moderateScale(12),
-    borderTopWidth: 1,
+    paddingTop: moderateScale(16),
+    borderTopWidth: 1.5,
     borderTopColor: COLORS.cardBorder,
+    marginTop: moderateScale(16),
   },
   applyButton: {
     flexDirection: 'row',
@@ -896,11 +788,6 @@ const styles = StyleSheet.create({
     borderRadius: moderateScale(12),
     paddingVertical: moderateScale(16),
     gap: moderateScale(8),
-    elevation: 3,
-    shadowColor: COLORS.accent,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
   },
   applyButtonText: {
     color: '#FFFFFF',
@@ -911,7 +798,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-end',
-    marginBottom: moderateScale(12),
+    marginBottom: moderateScale(16),
     gap: moderateScale(6),
   },
   clearAll: {
@@ -919,40 +806,38 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: moderateScale(13),
   },
-  filterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: COLORS.cardBg,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    borderRadius: moderateScale(12),
-    paddingVertical: '3.5%',
-    paddingHorizontal: '3%',
+  cityFilterSection: {
+    marginBottom: moderateScale(16),
   },
-  filterRowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: moderateScale(8),
-  },
-  filterRowText: {
+  filterSectionTitle: {
     color: COLORS.text,
-    fontSize: moderateScale(13),
-    fontWeight: '600',
+    fontSize: moderateScale(15),
+    fontWeight: '700',
+    marginBottom: moderateScale(12),
   },
-  optionRow: {
-    paddingVertical: '2.5%',
-    paddingHorizontal: '3%',
-  },
-  optionRowContent: {
+  cityButtonsContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: moderateScale(10),
   },
-  optionRowText: {
+  cityButton: {
+    paddingVertical: moderateScale(10),
+    paddingHorizontal: moderateScale(16),
+    borderRadius: moderateScale(20),
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    backgroundColor: COLORS.cardBg,
+  },
+  cityButtonSelected: {
+    backgroundColor: COLORS.accent,
+    borderColor: COLORS.accent,
+  },
+  cityButtonText: {
     color: COLORS.text,
-    fontWeight: '600',
     fontSize: moderateScale(13),
-    flexShrink: 1,
+    fontWeight: '600',
+  },
+  cityButtonTextSelected: {
+    color: '#FFFFFF',
   },
 });

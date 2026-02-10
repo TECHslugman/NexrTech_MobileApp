@@ -11,6 +11,7 @@ import {
     Dimensions,
     StatusBar,
     Animated,
+    Platform,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -283,7 +284,7 @@ export default function AgencyDetails() {
     }
 
     return (
-        <SafeAreaView style={styles.safe} edges={['top']}>
+        <SafeAreaView style={styles.safe} edges={['bottom']}>
             <StatusBar barStyle="light-content" />
 
             {/* Animated Header Background */}
@@ -292,17 +293,6 @@ export default function AgencyDetails() {
                     {agencyData.name}
                 </Text>
             </Animated.View>
-
-            {/* Back Button */}
-            <View style={styles.topBar}>
-                <TouchableOpacity
-                    style={styles.backBtn}
-                    onPress={() => router.back()}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                    <Feather name="chevron-left" size={moderateScale(24)} color="#FFFFFF" />
-                </TouchableOpacity>
-            </View>
 
             {/* Content */}
             <Animated.ScrollView
@@ -410,10 +400,7 @@ export default function AgencyDetails() {
                     {loading ? (
                         <ActivityIndicator color="#FFF" />
                     ) : (
-                        <>
-                            <Feather name="check-circle" size={moderateScale(20)} color="#FFFFFF" />
-                            <Text style={styles.selectText}>Select This Agency</Text>
-                        </>
+                        <Text style={styles.selectText}>Select This Agency</Text>
                     )}
                 </TouchableOpacity>
             </View>
@@ -441,41 +428,20 @@ const styles = StyleSheet.create({
         top: 0,
         left: 0,
         right: 0,
-        height: moderateScale(90),
+        height: Platform.OS === 'ios' ? moderateScale(100) : moderateScale(80),
         backgroundColor: COLORS.cardBg,
         zIndex: 99,
         justifyContent: 'flex-end',
         paddingBottom: moderateScale(12),
-        paddingHorizontal: '15%',
+        paddingHorizontal: moderateScale(60),
         borderBottomWidth: 1,
         borderBottomColor: COLORS.cardBorder,
-        elevation: 4,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
     },
     animatedHeaderText: {
         fontSize: moderateScale(16),
         fontWeight: '700',
         color: COLORS.heading,
         textAlign: 'center',
-    },
-    topBar: {
-        position: 'absolute',
-        top: moderateScale(12),
-        left: '4%',
-        zIndex: 100,
-    },
-    backBtn: {
-        width: moderateScale(44),
-        height: moderateScale(44),
-        borderRadius: moderateScale(22),
-        backgroundColor: 'rgba(0, 0, 0, 0.4)',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.2)',
     },
     scrollContent: {
         paddingBottom: moderateScale(120),
@@ -500,21 +466,15 @@ const styles = StyleSheet.create({
         right: 0,
         height: '60%',
         backgroundColor: 'transparent',
-        background: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0.3))',
     },
     agencyCard: {
-        marginHorizontal: '4%',
+        marginHorizontal: moderateScale(16),
         marginTop: -moderateScale(60),
         backgroundColor: COLORS.cardBg,
         borderRadius: moderateScale(20),
-        padding: '4%',
+        padding: moderateScale(16),
         borderWidth: 1,
         borderColor: COLORS.cardBorder,
-        elevation: 6,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.12,
-        shadowRadius: 8,
     },
     agencyCardHeader: {
         flexDirection: 'row',
@@ -528,11 +488,6 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         borderWidth: 3,
         borderColor: COLORS.cardBg,
-        elevation: 3,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
     },
     agencyLogo: {
         width: '100%',
@@ -571,21 +526,16 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
     contentContainer: {
-        paddingHorizontal: '4%',
+        paddingHorizontal: moderateScale(16),
         marginTop: moderateScale(8),
     },
     section: {
         backgroundColor: COLORS.cardBg,
         borderRadius: moderateScale(16),
-        padding: '5%',
+        padding: moderateScale(16),
         marginBottom: moderateScale(16),
         borderWidth: 1,
         borderColor: COLORS.cardBorder,
-        elevation: 1,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 2,
     },
     sectionHeader: {
         flexDirection: 'row',
@@ -632,7 +582,7 @@ const styles = StyleSheet.create({
     },
     aboutCard: {
         backgroundColor: COLORS.lightBg,
-        padding: '4%',
+        padding: moderateScale(14),
         borderRadius: moderateScale(12),
         borderWidth: 1,
         borderColor: COLORS.cardBorder,
@@ -651,7 +601,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: COLORS.accentLight,
-        paddingHorizontal: '4%',
+        paddingHorizontal: moderateScale(14),
         paddingVertical: moderateScale(10),
         borderRadius: moderateScale(20),
         gap: moderateScale(8),
@@ -689,11 +639,6 @@ const styles = StyleSheet.create({
         backgroundColor: COLORS.primary,
         alignItems: 'center',
         justifyContent: 'center',
-        elevation: 2,
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.3,
-        shadowRadius: 4,
     },
     processNumberText: {
         fontSize: moderateScale(14),
@@ -710,7 +655,7 @@ const styles = StyleSheet.create({
     processRight: {
         flex: 1,
         backgroundColor: COLORS.lightBg,
-        padding: '4%',
+        padding: moderateScale(14),
         borderRadius: moderateScale(12),
         marginBottom: moderateScale(12),
         borderWidth: 1,
@@ -734,7 +679,7 @@ const styles = StyleSheet.create({
         backgroundColor: COLORS.lightBg,
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '4%',
+        padding: moderateScale(12),
         borderWidth: 1,
         borderColor: COLORS.cardBorder,
         gap: moderateScale(8),
@@ -763,7 +708,7 @@ const styles = StyleSheet.create({
     emptyState: {
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: '8%',
+        paddingVertical: moderateScale(32),
         gap: moderateScale(8),
     },
     emptyStateText: {
@@ -777,34 +722,24 @@ const styles = StyleSheet.create({
         right: 0,
         bottom: 0,
         backgroundColor: COLORS.cardBg,
-        paddingHorizontal: '5%',
-        paddingVertical: moderateScale(16),
+        paddingHorizontal: moderateScale(20),
+        paddingVertical: moderateScale(20),
         borderTopWidth: 1,
         borderTopColor: COLORS.border,
-        elevation: 8,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 6,
     },
     selectBtn: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: moderateScale(16),
+        paddingVertical: moderateScale(18),
         borderRadius: moderateScale(14),
         backgroundColor: COLORS.primary,
-        gap: moderateScale(10),
-        elevation: 4,
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 6,
     },
     selectText: {
         color: '#FFFFFF',
         fontWeight: '700',
         fontSize: moderateScale(16),
+        letterSpacing: 0.5,
     },
     bottomSpacing: {
         height: moderateScale(20),

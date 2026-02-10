@@ -53,7 +53,7 @@ export default function BottomNavBar() {
     },
     {
       name: 'Documents',
-      route: 'upload', 
+      route: 'documentupload', 
       icon: 'document-text-outline',
       getScreen: () => '/agency/selected/documentupload', 
     },
@@ -72,14 +72,12 @@ export default function BottomNavBar() {
     if (route === 'home') {
       return agencyId && currentRoute === agencyId;
     }
-    // Returns true if the route name (e.g., 'documentupload') is in the URL path
     return segments.includes(route);
   };
 
   const handleNavigation = (screen) => {
     if (!screen) return;
 
-    // Always pass agencyId to keep the context consistent
     router.push({
       pathname: screen,
       params: { agencyId, refresh: Date.now() } 
@@ -100,18 +98,16 @@ export default function BottomNavBar() {
             onPress={() => handleNavigation(screen)}
             disabled={!canNavigate}
           >
-            {active ? (
-              <View style={styles.navIconActive}>
-                <Ionicons name={item.icon.replace('-outline', '')} size={24} color={COLORS.white} />
-              </View>
-            ) : (
-              <Ionicons
-                name={item.icon}
-                size={24}
-                color={canNavigate ? COLORS.textInactive : COLORS.disabled}
-              />
-            )}
-            <Text style={[styles.navLabel, active && styles.navLabelActive]}>
+            <Ionicons
+              name={active ? item.icon.replace('-outline', '') : item.icon}
+              size={24}
+              color={active ? COLORS.primary : (canNavigate ? COLORS.textInactive : COLORS.disabled)}
+            />
+            <Text style={[
+              styles.navLabel,
+              active && styles.navLabelActive,
+              !canNavigate && styles.navLabelDisabled
+            ]}>
               {item.name}
             </Text>
           </TouchableOpacity>
@@ -122,9 +118,31 @@ export default function BottomNavBar() {
 }
 
 const styles = StyleSheet.create({
-  navBar: { height: 85, backgroundColor: COLORS.white, flexDirection: 'row', borderTopWidth: 1, borderTopColor: COLORS.border, paddingBottom: 25, paddingHorizontal: 10 },
-  navItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  navIconActive: { width: 48, height: 48, borderRadius: 24, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', marginBottom: 2, elevation: 3 },
-  navLabel: { fontSize: 11, color: COLORS.textInactive, fontWeight: '500', marginTop: 2 },
-  navLabelActive: { color: COLORS.primary, fontWeight: '700' },
+  navBar: {
+    height: 85,
+    backgroundColor: COLORS.white,
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    paddingBottom: 25,
+    paddingHorizontal: 10
+  },
+  navItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  navLabel: {
+    fontSize: 11,
+    color: COLORS.textInactive,
+    fontWeight: '500',
+    marginTop: 4
+  },
+  navLabelActive: {
+    color: COLORS.primary,
+    fontWeight: '600'
+  },
+  navLabelDisabled: {
+    color: COLORS.disabled
+  }
 });

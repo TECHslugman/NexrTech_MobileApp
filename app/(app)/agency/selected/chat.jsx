@@ -42,12 +42,61 @@ export default function ChatScreen() {
     const [isConnected, setIsConnected] = useState(false);
     const [socketReady, setSocketReady] = useState(false);
     const [conversationId, setConversationId] = useState(initialConversationId || null);
+    
+    // Ref to track if we've loaded initial messages
+    const hasLoadedMessages = useRef(false);
+    const pendingMessages = useRef([]);
 
-    // --- 1. FETCH HISTORY ---
+    // --- 1. LOAD MESSAGES FROM CONVERSATION_LIST EVENT ---
+    const loadMessagesFromConversationList = useCallback((conversationList) => {
+        if (!Array.isArray(conversationList)) {
+            console.log("⚠️ Invalid conversation list format");
+            return;
+        }
+
+        // Find the conversation with this recipient
+        const conversation = conversationList.find(conv => 
+            conv.recipient?.id === recipientId || 
+            conv._id === initialConversationId
+        );
+
+        if (!conversation) {
+            console.log("📭 No existing conversation found for recipient:", recipientId);
+            setIsLoading(false);
+            hasLoadedMessages.current = true;
+            return;
+        }
+
+        console.log(`📥 Found conversation with ${conversation.messages?.length || 0} messages`);
+
+        // Update conversation ID if found
+        if (conversation._id && !conversationId) {
+            setConversationId(conversation._id);
+        }
+
+        // Format and set messages
+        const rawMessages = conversation.messages || [];
+        const formatted = rawMessages.map(msg => ({
+            _id: msg._id,
+            text: msg.content,
+            createdAt: new Date(msg.createdAt),
+            user: {
+                _id: msg.senderModel === 'Student' ? currentUserId : 'other_user',
+                name: msg.senderModel === 'Student' ? 'You' : (name || 'Support'),
+                avatar: msg.senderModel === 'Student' ? null : logo,
+            },
+        })).reverse(); // GiftedChat needs newest first
+
+        setMessages(formatted);
+        console.log(`✅ Loaded ${formatted.length} messages from conversation_list`);
+        setIsLoading(false);
+        hasLoadedMessages.current = true;
+    }, [recipientId, initialConversationId, conversationId, currentUserId, name, logo]);
+
     const fetchChatHistory = useCallback(async (id) => {
         if (!id || !userToken) return;
         try {
-            console.log(`📜 Fetching history for conversation: ${id}`);
+            console.log(`📡 Fetching history via API for conversation: ${id}`);
             const response = await fetch(`${Config.API_BASE_URL}/students/conversation/${id}/messages`, {
                 headers: { 'Authorization': `Bearer ${userToken}` }
             });
@@ -55,6 +104,7 @@ export default function ChatScreen() {
             if (!response.ok) throw new Error("Failed to fetch messages");
 
             const data = await response.json();
+            
             const rawMessages = data.messages || data;
 
             const formatted = Array.isArray(rawMessages) ? rawMessages.map(msg => ({
@@ -69,114 +119,192 @@ export default function ChatScreen() {
             })).reverse() : [];
 
             setMessages(formatted);
+            console.log(`✅ Loaded ${formatted.length} messages from API`);
         } catch (error) {
-            console.error("Fetch Error:", error);
+            console.error("❌ API Fetch Error:", error);
         } finally {
             setIsLoading(false);
+            hasLoadedMessages.current = true;
         }
     }, [userToken, name, logo, currentUserId]);
 
-    // --- 2. MESSAGE HANDLERS ---
+    // --- 3. MESSAGE HANDLERS ---
+    
+    /**
+     * Handle incoming messages from other users (backend event: receive_message)
+     */
     const handleReceiveMessage = useCallback((message) => {
+        console.log("📩 Received message:", message);
+
+        // Check if message is for this conversation
+        const isForThisChat = 
+            message.sender === recipientId || 
+            message.receiver === recipientId ||
+            (message.conversationId && message.conversationId === conversationId);
+
+        if (!isForThisChat) {
+            console.log("📭 Message not for this conversation, ignoring");
+            return;
+        }
+
         setMessages(prev => {
-            if (prev.some(m => m._id === message._id)) return prev;
+            // Prevent duplicates
+            if (prev.some(m => m._id === message._id)) {
+                console.log("⚠️ Duplicate message, skipping");
+                return prev;
+            }
 
             const isMe = message.senderModel === 'Student';
             const formatted = {
                 _id: message._id,
                 text: message.content,
-                createdAt: new Date(message.createdAt),
+                createdAt: new Date(message.createdAt || new Date()),
                 user: {
                     _id: isMe ? currentUserId : 'other_user',
                     name: isMe ? 'You' : (name || 'Support'),
                     avatar: isMe ? null : logo,
                 },
             };
+
+            console.log("✅ Adding received message to chat");
             return GiftedChat.append(prev, [formatted]);
         });
-    }, [name, logo, currentUserId]);
 
-    const handleSentMessage = useCallback((message) => {
+        // Update conversation ID if this is a new conversation
         if (message.conversationId && !conversationId) {
-            console.log("🆕 Conversation ID assigned:", message.conversationId);
+            console.log("🆕 Conversation ID received:", message.conversationId);
             setConversationId(message.conversationId);
         }
-    }, [conversationId]);
+    }, [recipientId, conversationId, name, logo, currentUserId]);
 
-    // --- 3. LIFECYCLE ---
+    // --- 4. LIFECYCLE & SOCKET CONNECTION ---
     useEffect(() => {
-        if (!userToken || !currentAgencyId) return;
+        console.log("🚀 Initializing ChatScreen for recipient:", recipientId);
 
-        setMessages([]);
+        if (!userToken || !currentAgencyId) {
+            console.log("⏳ Waiting for userToken and agencyId...");
+            return;
+        }
 
+        // Reset state for new chat
+        hasLoadedMessages.current = false;
+        pendingMessages.current = [];
+        setIsLoading(true);
+
+        // Connect socket
         const socket = socketService.connect(userToken, currentAgencyId);
 
         if (socket?.connected) {
+            console.log("✅ Socket already connected");
             setIsConnected(true);
             setSocketReady(true);
         }
 
+        // Listen for connection state changes
         const unsubStatus = socketService.onConnectionChange((connected) => {
+            console.log("🔌 Connection state changed:", connected);
             setIsConnected(connected);
             setSocketReady(connected);
         });
 
-        const unsubNewMsg = socketService.onNewMessage(handleReceiveMessage);
-        const unsubSentMsg = socketService.onSentMessage(handleSentMessage);
+        // ====== BACKEND EVENT: conversation_list ======
+        // This automatically fires when socket connects - contains full history
+        const unsubConversationList = socketService.onConversationList((conversationList) => {
+            console.log("📋 Received conversation_list with", conversationList?.length, "conversations");
+                console.log("RAW conversation_list DATA:", JSON.stringify(conversationList, null, 2));
+            if (!hasLoadedMessages.current) {
+                loadMessagesFromConversationList(conversationList);
+            }
+        });
 
-        if (initialConversationId) {
-            fetchChatHistory(initialConversationId);
-        } else {
-            setIsLoading(false);
-        }
+        // ====== BACKEND EVENT: receive_message ======
+        const unsubReceive = socketService.onReceiveMessage(handleReceiveMessage);
+
+        // Fallback: If conversation_list doesn't arrive in 3 seconds, try API
+        const fallbackTimer = setTimeout(() => {
+            if (!hasLoadedMessages.current && initialConversationId) {
+                console.log("⏰ Conversation list timeout, fetching via API");
+                fetchChatHistory(initialConversationId);
+            } else if (!hasLoadedMessages.current) {
+                console.log("📭 No conversation ID, starting fresh chat");
+                setIsLoading(false);
+                hasLoadedMessages.current = true;
+            }
+        }, 3000);
 
         return () => {
+            console.log("🧹 Cleaning up ChatScreen listeners");
+            clearTimeout(fallbackTimer);
             unsubStatus();
-            unsubNewMsg();
-            unsubSentMsg();
+            unsubConversationList();
+            unsubReceive();
         };
-    }, [userToken, currentAgencyId, initialConversationId, handleReceiveMessage, handleSentMessage]);
+    }, [userToken, currentAgencyId, recipientId, initialConversationId, handleReceiveMessage, loadMessagesFromConversationList, fetchChatHistory]);
 
-    // --- 4. SEND ACTION ---
+    // --- 5. SEND ACTION ---
     const onSend = useCallback(async (newMessages = []) => {
-        const isActuallyConnected = socketService.socket?.connected;
-
-        if (!socketReady && isActuallyConnected) {
-            setSocketReady(true);
-        } else if (!socketReady && !isActuallyConnected) {
-            Toast.show({
-                type: 'info',
-                text1: 'Connecting...',
-                text2: 'Wait a moment while we establish a secure connection.',
-            });
-            return;
-        }
-
         const message = newMessages[0];
 
         if (!message.text || message.text.trim().length === 0) {
+            console.log("⚠️ Empty message, skipping send");
             return;
         }
 
+        // Check socket connection
+        const isActuallyConnected = socketService.socket?.connected;
+
+        if (!isActuallyConnected) {
+            Toast.show({
+                type: 'info',
+                text1: 'Connecting...',
+                text2: 'Establishing connection, please wait.',
+                position: 'top',
+            });
+            console.log("⏳ Socket not connected, cannot send");
+            return;
+        }
+
+        // Optimistically add message to UI
         setMessages(prev => GiftedChat.append(prev, newMessages));
 
         try {
-            socketService.sendMessage(
+            console.log("📤 Sending message via socket to:", recipientId);
+            
+            const success = socketService.sendMessage(
                 recipientId,
                 message.text.trim(),
                 recipientType || "Agency"
             );
+
+            if (!success) {
+                console.error("❌ Socket send failed");
+                Toast.show({
+                    type: 'error',
+                    text1: 'Failed to Send',
+                    text2: 'Could not send message. Please try again.',
+                    position: 'top',
+                });
+                
+                // Remove optimistically added message on failure
+                setMessages(prev => prev.filter(m => m._id !== message._id));
+            } else {
+                console.log("✅ Message sent successfully");
+            }
         } catch (error) {
-            console.error("Socket Send Error:", error);
+            console.error("❌ Socket Send Error:", error);
             Toast.show({
                 type: 'error',
-                text1: 'Message Not Sent',
-                text2: 'Please check your internet connection.',
+                text1: 'Error',
+                text2: 'Failed to send message. Check your connection.',
+                position: 'top',
             });
+            
+            // Remove optimistically added message on error
+            setMessages(prev => prev.filter(m => m._id !== message._id));
         }
-    }, [recipientId, socketReady, recipientType]);
+    }, [recipientId, recipientType]);
 
-    // --- 5. CUSTOM UI COMPONENTS ---
+    // --- 6. CUSTOM UI COMPONENTS ---
     const renderBubble = (props) => (
         <Bubble
             {...props}
@@ -214,9 +342,16 @@ export default function ChatScreen() {
     );
 
     const renderSend = (props) => (
-        <Send {...props}>
-            <View style={styles.sendButton}>
-                <Ionicons name="arrow-up" size={22} color={COLORS.white} />
+        <Send {...props} disabled={!socketReady}>
+            <View style={[
+                styles.sendButton,
+                !socketReady && styles.sendButtonDisabled
+            ]}>
+                <Ionicons 
+                    name="arrow-up" 
+                    size={22} 
+                    color={socketReady ? COLORS.white : COLORS.textSecondary} 
+                />
             </View>
         </Send>
     );
@@ -233,7 +368,7 @@ export default function ChatScreen() {
         <Composer
             {...props}
             textInputStyle={styles.composer}
-            placeholder="Message..."
+            placeholder={socketReady ? "Message..." : "Connecting..."}
             placeholderTextColor={COLORS.textSecondary}
         />
     );
@@ -325,11 +460,11 @@ export default function ChatScreen() {
                                 <Ionicons name="chevron-down" size={20} color={COLORS.primary} />
                             </View>
                         )}
-                        placeholder="Message..."
                         textInputProps={{
                             autoCorrect: true,
                             autoCapitalize: 'sentences',
                             keyboardAppearance: 'light',
+                            editable: socketReady,
                         }}
                         bottomOffset={Platform.OS === 'ios' ? insets.bottom : 0}
                         minInputToolbarHeight={56}
@@ -455,7 +590,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         paddingHorizontal: 40,
-        transform: [{ scaleY: -1 }], // Flip it because GiftedChat renders upside down
+        transform: [{ scaleY: -1 }],
     },
     emptyIconContainer: {
         marginBottom: 16,
@@ -505,6 +640,9 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginRight: 4,
         marginBottom: 6,
+    },
+    sendButtonDisabled: {
+        backgroundColor: COLORS.border,
     },
     scrollToBottomButton: {
         width: 32,

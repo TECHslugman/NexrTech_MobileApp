@@ -184,7 +184,8 @@ export default function MessagesScreen() {
 
         socketService.connect(userToken, agencyId);
 
-        const handleIncoming = (message) => {
+        // ====== BACKEND EVENT: receive_message ======
+        const handleReceiveMessage = (message) => {
             console.log("📩 New message received:", message);
 
             const isFromCurrentAgency = checkIfFromCurrentAgency(message.sender, message);
@@ -217,8 +218,9 @@ export default function MessagesScreen() {
             }
         };
 
+        // ====== BACKEND EVENT: sent_message ======
         const handleSentMessage = async (message) => {
-            console.log('✅ Message sent received in MessagesScreen:', message);
+            console.log('✅ Message sent confirmation received:', message);
 
             if (message?.conversationId && message?.receiver) {
                 const recipientId = message.receiver;
@@ -250,21 +252,66 @@ export default function MessagesScreen() {
             }
         };
 
-        socketService.onNewMessage(handleIncoming);
-        socketService.onSentMessage(handleSentMessage);
-
-        const handleConversationList = (conversations) => {
-            console.log('📋 Received conversation list:', conversations?.length);
-            refreshChats();
+        // ====== BACKEND EVENT: conversation_list ======
+        const handleConversationList = (data) => {
+            console.log('📋 Received conversation list from backend');
+            
+            // Backend automatically sends this on connect with full chat history
+            if (data && Array.isArray(data)) {
+                console.log('📋 Processing', data.length, 'conversations');
+                
+                // Process each conversation from the list
+                data.forEach(conversation => {
+                    if (conversation.conversationId && conversation.participants) {
+                        // Find the other participant (not the current user)
+                        const otherParticipant = conversation.participants.find(
+                            p => p.id !== user?.id
+                        );
+                        
+                        if (otherParticipant) {
+                            const participantId = otherParticipant.id;
+                            
+                            // Save conversation ID
+                            conversationsRef.current[participantId] = conversation.conversationId;
+                            
+                            // Save metadata
+                            const metadata = {
+                                id: participantId,
+                                name: otherParticipant.name || getRecipientName(participantId),
+                                logo: otherParticipant.avatar || getRecipientLogo(participantId),
+                                type: otherParticipant.model || getRecipientType(participantId),
+                                lastMessage: conversation.lastMessage?.content || '',
+                                timestamp: conversation.lastMessage?.createdAt 
+                                    ? new Date(conversation.lastMessage.createdAt) 
+                                    : new Date(),
+                                unreadCount: conversation.unreadCount || 0,
+                                agencyId: agencyId
+                            };
+                            
+                            saveChatMetadata(participantId, metadata);
+                            saveConversationToStorage(participantId, conversation.conversationId);
+                        }
+                    }
+                });
+                
+                refreshChats();
+            } else {
+                console.log('📋 Conversation list received (will refresh chats)');
+                refreshChats();
+            }
         };
 
-        socketService.onConversationList(handleConversationList);
+        // Set up listeners using the cleaned SocketService methods
+        const unsubscribeReceive = socketService.onReceiveMessage(handleReceiveMessage);
+        const unsubscribeSent = socketService.onSentMessage(handleSentMessage);
+        const unsubscribeList = socketService.onConversationList(handleConversationList);
 
         return () => {
             console.log("🧹 Cleaning up MessagesScreen listeners");
-            socketService.removeListener('receive_message');
-            socketService.removeListener('sent_message');
-            socketService.removeListener('conversation_list');
+            // Use the cleanup functions returned by the listeners
+            unsubscribeReceive();
+            unsubscribeSent();
+            unsubscribeList();
         };
     }, [userToken, agencyId, refreshKey]);
 
@@ -305,6 +352,7 @@ export default function MessagesScreen() {
             console.error("❌ Error fetching agent details:", error);
         }
     };
+
     const fetchStudentProfile = async () => {
         try {
             const response = await fetch(`${Config.API_BASE_URL}/students/profile`, {
@@ -375,7 +423,7 @@ export default function MessagesScreen() {
             }
         }
 
-        // 3.  Assigned Agent Option
+        // 3. Assigned Agent Option
         if (assignedAgentData) {
             const agentId = assignedAgentData._id;
 
@@ -758,6 +806,7 @@ export default function MessagesScreen() {
             </TouchableOpacity>
         );
     };
+
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
