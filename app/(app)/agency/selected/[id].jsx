@@ -73,7 +73,7 @@ export default function SelectedAgencyHome() {
                     const endpoints = [
                         `${Config.API_BASE_URL}/agency/profile/${id}`,
                         `${Config.API_BASE_URL}/agency/universities/agency/${id}`,
-                        `${Config.API_BASE_URL}/agency/courses/agency/${id}`,
+                        `${Config.API_BASE_URL}/students/courses/`,
                         `${Config.API_BASE_URL}/agency/events/student/${id}`,
                         `${Config.API_BASE_URL}/agency/scholarships/agency/${id}`,
                         `${Config.API_BASE_URL}/students/mentors/${id}`,
@@ -96,7 +96,7 @@ export default function SelectedAgencyHome() {
                         eventsRes,
                         scholarRes,
                         mentorRes,
-                        countRes 
+                        countRes
                     ] = responses;
 
                     let completeAgencyData = {
@@ -134,6 +134,7 @@ export default function SelectedAgencyHome() {
                         }));
                         setCourses(courseList);
                         completeAgencyData.courses = courseList;
+                        console.log(`✅ Fetched ${courseList.length} courses`);
                     }
 
                     // 4. Events
@@ -208,9 +209,9 @@ export default function SelectedAgencyHome() {
             };
 
             fetchAllData();
-        
-            return () => {}; 
-        }, [id, userToken]) 
+
+            return () => { };
+        }, [id, userToken])
     );
 
     if (loading) {
@@ -394,20 +395,40 @@ export default function SelectedAgencyHome() {
                 )}
 
                 {/* SCHOLARSHIPS */}
-                <SectionHeader title="Available Scholarships" onBtnPress={() => router.push({ pathname: `/agency/selected/scholarships/${id}`, params: { initialData: JSON.stringify(scholarships), agencyName: agencyData?.organizationName } })} />
+                <SectionHeader title="Available Scholarships" onBtnPress={() => router.push({
+                    pathname: `/agency/selected/scholarships/${id}`,
+                    params: {
+                        initialData: JSON.stringify(scholarships),
+                        agencyName: agencyData?.organizationName
+                    }
+                })} />
                 {scholarships.length > 0 ? (
                     <FlatList
                         horizontal
                         data={scholarships}
-                        keyExtractor={(item) => item.id}
+                        keyExtractor={(item) => item._id || item.id || index.toString()}
                         showsHorizontalScrollIndicator={false}
                         contentContainerStyle={styles.listContent}
                         renderItem={({ item }) => (
-                            <TouchableOpacity 
-                                style={styles.scholarshipCard} 
-                                onPress={() => router.push({ pathname: `/agency/selected/scholarships/details`, params: { id: item.id, title: item.title } })}
+                            <TouchableOpacity
+                                style={styles.scholarshipCard}
+                                onPress={() => {
+                                    const scholarshipId = item._id || item.id;
+                                    const scholarshipTitle = item.title || item.name || "Scholarship Program";
+
+                                    router.push({
+                                        pathname: '/agency/selected/scholarships/details',
+                                        params: {
+                                            id: scholarshipId,
+                                            agencyId: id,
+                                            scholarshipName: scholarshipTitle
+                                        }
+                                    });
+                                }}
                             >
-                                <Text style={styles.scholarshipText} numberOfLines={3}>{item.title}</Text>
+                                <Text style={styles.scholarshipText} numberOfLines={3}>
+                                    {item.title || item.name || "Scholarship Program"}
+                                </Text>
                             </TouchableOpacity>
                         )}
                         ItemSeparatorComponent={() => <View style={{ width: SPACING.md }} />}
@@ -426,8 +447,8 @@ export default function SelectedAgencyHome() {
                         showsHorizontalScrollIndicator={false}
                         contentContainerStyle={styles.listContent}
                         renderItem={({ item }) => (
-                            <TouchableOpacity 
-                                style={styles.uniTile} 
+                            <TouchableOpacity
+                                style={styles.uniTile}
                                 onPress={() => router.push({ pathname: `/agency/selected/universities/details`, params: { id: item._id, name: item.name, logo: item.logo, website: item.websiteUrl } })}
                             >
                                 {item.logo ? (

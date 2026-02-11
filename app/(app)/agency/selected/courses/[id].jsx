@@ -39,8 +39,8 @@ export default function AgencyCourseList() {
 
             // Toggle URL based on search input
             const url = query.trim().length > 0
-                ? `${Config.API_BASE_URL}/students/courses/query/${id}/search?q=${query}`
-                : `${Config.API_BASE_URL}/agency/courses/agency/${id}`;
+                ? `${Config.API_BASE_URL}/students/courses/query/search?q=${query}`
+                : `${Config.API_BASE_URL}/students/courses/` ;
 
             const res = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${userToken}` }

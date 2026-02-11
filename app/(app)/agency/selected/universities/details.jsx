@@ -31,7 +31,7 @@ const COLORS = {
 
 export default function UniversityDetail() {
     const router = useRouter();
-    const { id, uniName, uniLogo, uniCountry } = useLocalSearchParams();
+    const { id, uniName, uniLogo } = useLocalSearchParams();
     const { userToken } = useAuth();
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState(null);
@@ -46,18 +46,16 @@ export default function UniversityDetail() {
                 if (response.ok) {
                     const json = await response.json();
                     const uni = json.unversity || json.university || {};
-                    console.log(response.status, json);
 
                     setData({
                         name: uni?.name || uniName || "University",
                         logo: uni?.logo || uniLogo || null,
                         website: uni?.websiteURL || "No website provided",
-                        country: uni?.country || uniCountry || "Country not specified",
+                        country: uni?.country || "Country not specified",
                         about: uni?.about || "No description available",
                         mission: uni?.mission || "No mission statement available",
                         courses: uni?.courses || [],
                         ranking: uni?.ranking || "Top 100",
-                        type: uni?.type || "Public University"
                     });
                 } else {
                     throw new Error("No data");
@@ -69,7 +67,7 @@ export default function UniversityDetail() {
                     name: uniName || "University of Technology",
                     logo: uniLogo || null,
                     website: "https://www.university.edu",
-                    country: uniCountry || "United States",
+                    country: "United States",
                     about: "A prestigious research university known for innovation and academic excellence. Founded in 1868, it has produced numerous Nobel laureates and industry leaders.",
                     mission: "To advance knowledge and educate students in science, technology, and other areas of scholarship that will best serve the nation and the world.",
                     courses: [
@@ -80,14 +78,13 @@ export default function UniversityDetail() {
                         { _id: '5', title: "Architecture" }
                     ],
                     ranking: "Top 50 Worldwide",
-                    type: "Public Research University"
                 });
             } finally {
                 setLoading(false);
             }
         };
         fetchDetail();
-    }, [id, userToken, uniName, uniLogo, uniCountry]);
+    }, [id, userToken, uniName, uniLogo]);
 
     const handleWebsitePress = () => {
         if (data?.website) {
@@ -114,7 +111,7 @@ export default function UniversityDetail() {
         <SafeAreaView style={styles.container} edges={['top']}>
             <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
 
-            {/* Header with consistent blue design */}
+            {/* Header - No bottom radius, clean edge */}
             <View style={styles.header}>
                 <View style={styles.headerContent}>
                     <TouchableOpacity
@@ -128,29 +125,28 @@ export default function UniversityDetail() {
                 </View>
             </View>
 
+            {/* University Logo Banner - No radius, full width */}
+            <View style={styles.bannerContainer}>
+                {data.logo ? (
+                    <Image
+                        source={{ uri: data.logo }}
+                        style={styles.universityLogo}
+                        resizeMode="contain"
+                    />
+                ) : (
+                    <View style={styles.logoPlaceholder}>
+                        <Text style={styles.logoPlaceholderText}>
+                            {data.name ? data.name.charAt(0).toUpperCase() : 'U'}
+                        </Text>
+                    </View>
+                )}
+            </View>
+
             <ScrollView
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
             >
-                {/* University Logo Banner */}
-                <View style={styles.bannerContainer}>
-                    <View style={styles.bannerOverlay} />
-                    {data.logo ? (
-                        <Image
-                            source={{ uri: data.logo }}
-                            style={styles.universityLogo}
-                            resizeMode="contain"
-                        />
-                    ) : (
-                        <View style={styles.logoPlaceholder}>
-                            <Text style={styles.logoPlaceholderText}>
-                                {data.name ? data.name.charAt(0).toUpperCase() : 'U'}
-                            </Text>
-                        </View>
-                    )}
-                </View>
-
-                {/* Main Content Card */}
+                {/* Main Content Card - Starts immediately after banner */}
                 <View style={styles.contentCard}>
                     {/* University Name */}
                     <Text style={styles.universityName}>{data.name}</Text>
@@ -225,20 +221,13 @@ export default function UniversityDetail() {
                                 data={data.courses}
                                 horizontal
                                 showsHorizontalScrollIndicator={false}
-                                keyExtractor={(item) => item._id || item.id}
+                                keyExtractor={(item) => item._id || item.id || Math.random().toString()}
                                 contentContainerStyle={styles.coursesList}
                                 renderItem={({ item, index }) => (
                                     <TouchableOpacity
                                         style={[
                                             styles.courseCard,
-                                            {
-                                                backgroundColor: getCourseColor(index),
-                                                elevation: 2,
-                                                shadowColor: '#000',
-                                                shadowOffset: { width: 0, height: 2 },
-                                                shadowOpacity: 0.1,
-                                                shadowRadius: 4,
-                                            }
+                                            { backgroundColor: getCourseColor(index) }
                                         ]}
                                         activeOpacity={0.85}
                                     >
@@ -254,21 +243,11 @@ export default function UniversityDetail() {
                             </View>
                         )}
                     </View>
-
-                    {/* University Type Card */}
-                    <View style={styles.typeCard}>
-                        <View style={styles.typeHeader}>
-                            <MaterialIcons name="school" size={20} color={COLORS.white} />
-                            <Text style={styles.typeTitle}>University Type</Text>
-                        </View>
-                        <Text style={styles.typeValue}>{data.type}</Text>
-                    </View>
                 </View>
-
                 <View style={{ height: 100 }} />
             </ScrollView>
 
-            {/* Fixed Apply Button in UniversityDetail.jsx */}
+            {/* Fixed Apply Button */}
             <View style={styles.bottomBar}>
                 <TouchableOpacity
                     style={styles.applyButton}
@@ -316,19 +295,12 @@ const styles = StyleSheet.create({
         color: COLORS.textSecondary,
         marginTop: 12,
     },
-    // Header with consistent blue design
+    // Header - No border radius, clean edge
     header: {
         backgroundColor: COLORS.primary,
         paddingHorizontal: 20,
         paddingTop: 15,
         paddingBottom: 20,
-        borderBottomLeftRadius: 25,
-        borderBottomRightRadius: 25,
-        elevation: 4,
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
     },
     headerContent: {
         flexDirection: 'row',
@@ -338,42 +310,32 @@ const styles = StyleSheet.create({
     backButton: {
         width: 40,
         height: 40,
-        borderRadius: 20,
+        borderRadius: 12,
         backgroundColor: 'rgba(255, 255, 255, 0.2)',
         justifyContent: 'center',
         alignItems: 'center',
     },
     headerTitle: {
-        fontSize: 22,
+        fontSize: 20,
         fontWeight: '700',
         color: COLORS.white,
         textAlign: 'center',
         flex: 1,
     },
     scrollContent: {
-        paddingBottom: 20,
+        paddingBottom: 0,
     },
-    // Banner
+    // Banner - No radius, full width
     bannerContainer: {
         height: 200,
         backgroundColor: COLORS.primary,
         justifyContent: 'center',
         alignItems: 'center',
-        position: 'relative',
-    },
-    bannerOverlay: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.2)',
+        width: '100%',
     },
     universityLogo: {
-        width: '70%',
-        height: '70%',
-        position: 'relative',
-        zIndex: 1,
+        width: '60%',
+        height: '60%',
     },
     logoPlaceholder: {
         width: 100,
@@ -382,28 +344,18 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(255, 255, 255, 0.2)',
         justifyContent: 'center',
         alignItems: 'center',
-        position: 'relative',
-        zIndex: 1,
     },
     logoPlaceholderText: {
         fontSize: 36,
         fontWeight: '700',
         color: '#FFFFFF',
     },
-    // Main Content Card
+    // Main Content Card - Flush with banner
     contentCard: {
         backgroundColor: COLORS.white,
-        borderTopLeftRadius: 30,
-        borderTopRightRadius: 30,
-        marginTop: -30,
         paddingHorizontal: 24,
-        paddingTop: 30,
+        paddingTop: 28,
         paddingBottom: 20,
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
     },
     universityName: {
         fontSize: 26,
@@ -455,7 +407,7 @@ const styles = StyleSheet.create({
         backgroundColor: COLORS.bg,
         borderRadius: 16,
         padding: 16,
-        marginBottom: 24,
+        marginBottom: 28,
         borderWidth: 1,
         borderColor: COLORS.border,
     },
@@ -531,33 +483,6 @@ const styles = StyleSheet.create({
         color: COLORS.textSecondary,
         textAlign: 'center',
     },
-    typeCard: {
-        backgroundColor: COLORS.primary,
-        borderRadius: 20,
-        padding: 20,
-        marginTop: 10,
-        elevation: 3,
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-    },
-    typeHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 8,
-    },
-    typeTitle: {
-        fontSize: 16,
-        fontWeight: '700',
-        color: COLORS.white,
-        marginLeft: 10,
-    },
-    typeValue: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: COLORS.white,
-    },
     // Bottom Bar with Apply Button
     bottomBar: {
         position: 'absolute',
@@ -566,28 +491,18 @@ const styles = StyleSheet.create({
         right: 0,
         backgroundColor: COLORS.white,
         paddingHorizontal: 24,
-        paddingVertical: 20,
+        paddingVertical: 16,
         borderTopWidth: 1,
         borderTopColor: COLORS.border,
-        elevation: 8,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
     },
     applyButton: {
         backgroundColor: COLORS.primary,
         borderRadius: 16,
-        paddingVertical: 18,
+        paddingVertical: 16,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 10,
-        elevation: 2,
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
     },
     applyButtonText: {
         fontSize: 17,

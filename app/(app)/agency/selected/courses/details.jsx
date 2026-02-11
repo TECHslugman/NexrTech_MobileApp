@@ -97,6 +97,7 @@ export default function CourseDetail() {
                         'Content-Type': 'application/json'
                     }
                 }
+                
             );
 
             if (response.ok) {
@@ -146,16 +147,16 @@ export default function CourseDetail() {
         description: "No data",
         level: "No data",
         duration: "No data",
-        tuitionFee: { totalfee: "No data", currency: "null" },
+        tuitionFees: { totalfee: "No data", currency: "null" },
         entryRequirements: ["No data"],
         status: "null",
         intakes: null,
         providedBy: { _id: "695e06c57a990e549f30053f", logo: DEFAULT_UNI_LOGO }
     });
 
-    const formatTuitionFee = () => {
-        if (!courseData?.tuitionFee?.totalfee) return "Contact for details";
-        const { totalfee, currency } = courseData.tuitionFee;
+    const formatTuitionFees = () => {
+        if (!courseData?.tuitionFees?.totalfee) return "Contact for details";
+        const { totalfee, currency } = courseData.tuitionFees;
         try {
             const feeNumber = parseInt(totalfee);
             if (isNaN(feeNumber)) return `${currency} ${totalfee}`;
@@ -252,7 +253,7 @@ export default function CourseDetail() {
                     </View>
                     <View style={styles.card}>
                         <View style={styles.feeContainer}>
-                            <Text style={styles.feeAmount}>{formatTuitionFee()}</Text>
+                            <Text style={styles.feeAmount}>{formatTuitionFees()}</Text>
                             <Text style={styles.feeNote}>Tuition fee per year</Text>
                         </View>
                     </View>

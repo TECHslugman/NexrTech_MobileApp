@@ -28,7 +28,7 @@ const toastConfig = {
   success: ({ text1, text2 }: any) => (
     <View style={[styles.toastContainer, styles.successBg]}>
       <View style={[styles.iconContainer, styles.successIconBg]}>
-        <Ionicons name="checkmark-circle" size={22} color="#FFFFFF" />
+        <Ionicons name="checkmark-circle" size={20} color="#10B981" />
       </View>
       <View style={styles.textContainer}>
         <Text style={styles.titleText}>{text1}</Text>
@@ -39,7 +39,7 @@ const toastConfig = {
   error: ({ text1, text2 }: any) => (
     <View style={[styles.toastContainer, styles.errorBg]}>
       <View style={[styles.iconContainer, styles.errorIconBg]}>
-        <Ionicons name="close-circle" size={22} color="#FFFFFF" />
+        <Ionicons name="close-circle" size={20} color="#EF4444" />
       </View>
       <View style={styles.textContainer}>
         <Text style={styles.titleText}>{text1}</Text>
@@ -50,7 +50,7 @@ const toastConfig = {
   info: ({ text1, text2 }: any) => (
     <View style={[styles.toastContainer, styles.infoBg]}>
       <View style={[styles.iconContainer, styles.infoIconBg]}>
-        <Ionicons name="information-circle" size={22} color="#FFFFFF" />
+        <Ionicons name="information-circle" size={20} color="#769FCD" />
       </View>
       <View style={styles.textContainer}>
         <Text style={styles.titleText}>{text1}</Text>
@@ -212,35 +212,58 @@ const styles = StyleSheet.create({
   toastContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    width: '90%',
+    width: '85%',
+    maxWidth: 340,
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 16,
+    borderRadius: 24,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     marginTop: Platform.OS === 'ios' ? 0 : 10,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: '#EEF2F7',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 4,
+    borderWidth: 0,
   },
-  successBg: { backgroundColor: '#F0F9F5', borderLeftWidth: 4, borderLeftColor: '#10B981' },
-  errorBg: { backgroundColor: '#FEF2F2', borderLeftWidth: 4, borderLeftColor: '#EF4444' },
-  infoBg: { backgroundColor: '#E8F1FF', borderLeftWidth: 4, borderLeftColor: '#769FCD' },
+  successBg: { 
+    backgroundColor: '#FAFFFE', 
+    borderWidth: 1,
+    borderColor: '#D1FAE5',
+  },
+  errorBg: { 
+    backgroundColor: '#FFFBFB', 
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+  },
+  infoBg: { 
+    backgroundColor: '#FAFCFF', 
+    borderWidth: 1,
+    borderColor: '#E0EDFF',
+  },
   iconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 14,
-    elevation: 3,
+    marginRight: 10,
   },
-  successIconBg: { backgroundColor: '#10B981' },
-  errorIconBg: { backgroundColor: '#EF4444' },
-  infoIconBg: { backgroundColor: '#769FCD' },
+  successIconBg: { backgroundColor: '#ECFDF5' },
+  errorIconBg: { backgroundColor: '#FEF2F2' },
+  infoIconBg: { backgroundColor: '#EFF6FF' },
   textContainer: { flex: 1, justifyContent: 'center' },
-  titleText: { fontSize: 15, fontWeight: '600', color: '#2D3748' },
-  subText: { fontSize: 13, color: '#718096', marginTop: 4, lineHeight: 18 }
+  titleText: { 
+    fontSize: 14, 
+    fontWeight: '600', 
+    color: '#1F2937',
+    letterSpacing: -0.2,
+  },
+  subText: { 
+    fontSize: 12, 
+    color: '#6B7280', 
+    marginTop: 2, 
+    lineHeight: 16,
+    letterSpacing: -0.1,
+  }
 });

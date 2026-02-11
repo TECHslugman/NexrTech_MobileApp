@@ -17,7 +17,8 @@ const COLORS = {
     textSecondary: '#718096',
     online: '#48BB78',
     venue: '#769FCD',
-    dateBg: 'rgba(255, 255, 255, 0.92)'
+    dateBg: 'rgba(255, 255, 255, 0.92)',
+    border: '#EDF2F7'
 };
 
 export default function AllEvents() {
@@ -73,7 +74,7 @@ export default function AllEvents() {
         return (
             <TouchableOpacity
                 style={[styles.eventCard, { width: cardWidth }]}
-                activeOpacity={0.9}
+                activeOpacity={0.7}
                 onPress={() => router.push({
                     pathname: '/agency/selected/events/details',
                     params: { id: item.id, eventTitle: item.title, eventImage: displayImage, eventDate: item.fullDate, eventMode: item.mode }
@@ -82,14 +83,11 @@ export default function AllEvents() {
                 <View style={styles.imageContainer}>
                     <Image source={{ uri: displayImage }} style={styles.eventImage} resizeMode="cover" />
                     
-                    {/* TOP BAR CONTAINER - Forces spacing between Mode and Date */}
                     <View style={styles.cardOverlayHeader}>
-                        {/* Mode Badge (Left) */}
                         <View style={[styles.modeBadge, { backgroundColor: item.mode === 'online' ? COLORS.online : COLORS.venue }]}>
                             <Text style={styles.modeBadgeText}>{item.mode}</Text>
                         </View>
 
-                        {/* Date Badge (Right) */}
                         <View style={styles.dateBadge}>
                             <Text style={styles.dateDay}>{item.displayDay}</Text>
                             <Text style={styles.dateMonth}>{item.displayMonth}</Text>
@@ -142,29 +140,82 @@ export default function AllEvents() {
 }
 
 const styles = StyleSheet.create({
-    safe: { flex: 1, backgroundColor: COLORS.bg },
-    center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    header: { backgroundColor: COLORS.primary, paddingBottom: 25, borderBottomLeftRadius: 30, borderBottomRightRadius: 30, paddingHorizontal: 20 },
-    headerContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 },
-    headerTitle: { color: COLORS.white, fontSize: 18, fontWeight: '700', flex: 1, textAlign: 'center' },
-    headerSubtitle: { color: 'rgba(255,255,255,0.9)', textAlign: 'center', marginTop: 4, fontSize: 14 },
-    backButton: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
-    listContainer: { padding: 16 },
-    columnWrapper: { justifyContent: 'space-between', marginBottom: 16 },
+    safe: { 
+        flex: 1, 
+        backgroundColor: COLORS.bg 
+    },
+    center: { 
+        flex: 1, 
+        justifyContent: 'center', 
+        alignItems: 'center' 
+    },
+    header: { 
+        backgroundColor: COLORS.primary, 
+        paddingBottom: 25, 
+        borderBottomLeftRadius: 30, 
+        borderBottomRightRadius: 30, 
+        paddingHorizontal: 20 
+    },
+    headerContent: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        justifyContent: 'space-between', 
+        marginTop: 10 
+    },
+    headerTitle: { 
+        color: COLORS.white, 
+        fontSize: 18, 
+        fontWeight: '700', 
+        flex: 1, 
+        textAlign: 'center' 
+    },
+    headerSubtitle: { 
+        color: 'rgba(255,255,255,0.9)', 
+        textAlign: 'center', 
+        marginTop: 4, 
+        fontSize: 14 
+    },
+    backButton: { 
+        width: 40, 
+        height: 40, 
+        borderRadius: 12, 
+        backgroundColor: 'rgba(255,255,255,0.2)', 
+        justifyContent: 'center', 
+        alignItems: 'center' 
+    },
+    listContainer: { 
+        padding: 16 
+    },
+    columnWrapper: { 
+        justifyContent: 'space-between', 
+        marginBottom: 16 
+    },
     
-    // Card Styles
-    eventCard: { backgroundColor: COLORS.white, borderRadius: 20, overflow: 'hidden', elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
-    imageContainer: { height: 125, width: '100%' },
-    eventImage: { width: '100%', height: '100%' },
+    // Card Styles - No shadows, clean borders
+    eventCard: { 
+        backgroundColor: COLORS.white, 
+        borderRadius: 20, 
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: COLORS.border,
+    },
+    imageContainer: { 
+        height: 125, 
+        width: '100%' 
+    },
+    eventImage: { 
+        width: '100%', 
+        height: '100%' 
+    },
     
-    // Header overlay to prevent overlap
+    // Header overlay
     cardOverlayHeader: {
         position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
         flexDirection: 'row',
-        justifyContent: 'space-between', // Forces items to opposite ends
+        justifyContent: 'space-between',
         alignItems: 'flex-start',
         padding: 8,
     },
@@ -173,9 +224,14 @@ const styles = StyleSheet.create({
         paddingHorizontal: 8, 
         paddingVertical: 4, 
         borderRadius: 8,
-        maxWidth: '60%' // Prevents long text from hitting the date
+        maxWidth: '60%'
     },
-    modeBadgeText: { color: COLORS.white, fontSize: 9, fontWeight: '800', textTransform: 'uppercase' },
+    modeBadgeText: { 
+        color: COLORS.white, 
+        fontSize: 9, 
+        fontWeight: '800', 
+        textTransform: 'uppercase' 
+    },
     
     dateBadge: { 
         backgroundColor: COLORS.dateBg, 
@@ -185,13 +241,39 @@ const styles = StyleSheet.create({
         alignItems: 'center', 
         justifyContent: 'center',
         borderWidth: 1,
-        borderColor: 'rgba(0,0,0,0.05)'
+        borderColor: COLORS.border
     },
-    dateDay: { fontSize: 13, fontWeight: '800', color: '#2D3748', lineHeight: 14 },
-    dateMonth: { fontSize: 8, fontWeight: '700', color: '#769FCD', textTransform: 'uppercase' },
+    dateDay: { 
+        fontSize: 13, 
+        fontWeight: '800', 
+        color: '#2D3748', 
+        lineHeight: 14 
+    },
+    dateMonth: { 
+        fontSize: 8, 
+        fontWeight: '700', 
+        color: '#769FCD', 
+        textTransform: 'uppercase' 
+    },
     
-    cardContent: { padding: 12 },
-    eventTitle: { fontSize: 13, fontWeight: '700', color: '#2D3748', marginBottom: 6, height: 38 },
-    locationRow: { flexDirection: 'row', alignItems: 'center' },
-    locationText: { fontSize: 10, color: '#718096', marginLeft: 4, flex: 1 }
+    cardContent: { 
+        padding: 12 
+    },
+    eventTitle: { 
+        fontSize: 13, 
+        fontWeight: '700', 
+        color: '#2D3748', 
+        marginBottom: 6, 
+        height: 38 
+    },
+    locationRow: { 
+        flexDirection: 'row', 
+        alignItems: 'center' 
+    },
+    locationText: { 
+        fontSize: 10, 
+        color: '#718096', 
+        marginLeft: 4, 
+        flex: 1 
+    }
 });
