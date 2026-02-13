@@ -35,6 +35,7 @@ export default function UniversityDetail() {
     const { userToken } = useAuth();
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState(null);
+    const [imageError, setImageError] = useState(false);
 
     useEffect(() => {
         const fetchDetail = async () => {
@@ -55,7 +56,6 @@ export default function UniversityDetail() {
                         about: uni?.about || "No description available",
                         mission: uni?.mission || "No mission statement available",
                         courses: uni?.courses || [],
-                        ranking: uni?.ranking || "Top 100",
                     });
                 } else {
                     throw new Error("No data");
@@ -77,7 +77,6 @@ export default function UniversityDetail() {
                         { _id: '4', title: "Biotechnology" },
                         { _id: '5', title: "Architecture" }
                     ],
-                    ranking: "Top 50 Worldwide",
                 });
             } finally {
                 setLoading(false);
@@ -125,17 +124,18 @@ export default function UniversityDetail() {
                 </View>
             </View>
 
-            {/* University Logo Banner - No radius, full width */}
+            {/* University Image Banner - Full width, filled properly */}
             <View style={styles.bannerContainer}>
-                {data.logo ? (
+                {data.logo && !imageError ? (
                     <Image
                         source={{ uri: data.logo }}
-                        style={styles.universityLogo}
-                        resizeMode="contain"
+                        style={styles.universityBannerImage}
+                        resizeMode="cover"
+                        onError={() => setImageError(true)}
                     />
                 ) : (
-                    <View style={styles.logoPlaceholder}>
-                        <Text style={styles.logoPlaceholderText}>
+                    <View style={styles.bannerPlaceholder}>
+                        <Text style={styles.bannerPlaceholderText}>
                             {data.name ? data.name.charAt(0).toUpperCase() : 'U'}
                         </Text>
                     </View>
@@ -151,7 +151,7 @@ export default function UniversityDetail() {
                     {/* University Name */}
                     <Text style={styles.universityName}>{data.name}</Text>
 
-                    {/* Quick Info Grid */}
+                    {/* Quick Info Grid - Only Location */}
                     <View style={styles.infoGrid}>
                         <View style={styles.infoCard}>
                             <View style={[styles.infoIcon, { backgroundColor: COLORS.primaryLight }]}>
@@ -160,16 +160,6 @@ export default function UniversityDetail() {
                             <View style={styles.infoContent}>
                                 <Text style={styles.infoLabel}>Location</Text>
                                 <Text style={styles.infoValue}>{data.country}</Text>
-                            </View>
-                        </View>
-
-                        <View style={styles.infoCard}>
-                            <View style={[styles.infoIcon, { backgroundColor: COLORS.primaryLight }]}>
-                                <Feather name="award" size={18} color={COLORS.primary} />
-                            </View>
-                            <View style={styles.infoContent}>
-                                <Text style={styles.infoLabel}>Global Ranking</Text>
-                                <Text style={styles.infoValue}>{data.ranking}</Text>
                             </View>
                         </View>
                     </View>
@@ -325,30 +315,28 @@ const styles = StyleSheet.create({
     scrollContent: {
         paddingBottom: 0,
     },
-    // Banner - No radius, full width
+    // Banner - Full width, image fills container
     bannerContainer: {
-        height: 200,
+        height: 220,
+        width: '100%',
+        backgroundColor: COLORS.primary,
+        overflow: 'hidden',
+    },
+    universityBannerImage: {
+        width: '100%',
+        height: '100%',
+    },
+    bannerPlaceholder: {
+        width: '100%',
+        height: '100%',
         backgroundColor: COLORS.primary,
         justifyContent: 'center',
         alignItems: 'center',
-        width: '100%',
     },
-    universityLogo: {
-        width: '60%',
-        height: '60%',
-    },
-    logoPlaceholder: {
-        width: 100,
-        height: 100,
-        borderRadius: 50,
-        backgroundColor: 'rgba(255, 255, 255, 0.2)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    logoPlaceholderText: {
-        fontSize: 36,
+    bannerPlaceholderText: {
+        fontSize: 80,
         fontWeight: '700',
-        color: '#FFFFFF',
+        color: 'rgba(255, 255, 255, 0.3)',
     },
     // Main Content Card - Flush with banner
     contentCard: {
@@ -356,6 +344,9 @@ const styles = StyleSheet.create({
         paddingHorizontal: 24,
         paddingTop: 28,
         paddingBottom: 20,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        marginTop: -20,
     },
     universityName: {
         fontSize: 26,
@@ -367,7 +358,6 @@ const styles = StyleSheet.create({
     },
     infoGrid: {
         flexDirection: 'row',
-        gap: 15,
         marginBottom: 20,
     },
     infoCard: {

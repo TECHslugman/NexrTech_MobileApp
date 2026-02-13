@@ -101,14 +101,45 @@ const STATUS_CONFIG = {
     },
 };
 
+// ========================================
+// DOCUMENT CATEGORY CONFIGURATION
+// ========================================
+const DOCUMENT_CATEGORIES = {
+    COE: {
+        key: 'COE',
+        label: 'Confirmation of Enrollment',
+        icon: 'school-outline',
+        color: COLORS.primary,
+    },
+    offer_letter: {
+        key: 'offer_letter',
+        label: 'Offer Letter',
+        icon: 'mail-outline',
+        color: '#48BB78',
+    },
+    other: {
+        key: 'other',
+        label: 'Other Documents',
+        icon: 'document-text-outline',
+        color: '#F6AD55',
+    },
+};
+
 export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
     const insets = useSafeAreaInsets();
     const router = useRouter();
     const { userToken } = useAuth();
 
+    // State for admission/visa stage documents (checklist)
     const [documents, setDocuments] = useState([]);
-    const [coeDocument, setCoeDocument] = useState(null);
-    const [agentDocuments, setAgentDocuments] = useState([]);
+    
+    // State for document waitlist stage (COE, offer_letter, other)
+    const [agencyDocuments, setAgencyDocuments] = useState({
+        COE: [],
+        offer_letter: [],
+        other: [],
+    });
+    
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(true);
     const [uploadingDocId, setUploadingDocId] = useState(null);
@@ -119,8 +150,8 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
         setRefreshing(true);
 
         try {
-            if (stage === 'coe') {
-                // COE stage - fetch ALL documents and filter for COE
+            if (stage === 'document_waitlist') {
+                // DOCUMENT WAITLIST STAGE - fetch agency documents categorized by type
                 const res = await fetch(
                     `${Config.API_BASE_URL}/students/documents`,
                     {
@@ -129,63 +160,54 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
                 );
 
                 const json = await res.json();
-                console.log(`📥 [COE] All Documents Response:`, JSON.stringify(json, null, 2));
-
+                
                 if (res.ok && json.data && json.data.length > 0) {
-                    // Find COE document by documentCategory
-                    const coeDoc = json.data.find(doc =>
-                        doc.documentCategory?.toLowerCase() === 'coe' ||
-                        doc.type?.toLowerCase() === 'coe'
-                    );
+                    // Filter for agency-uploaded documents only
+                    const agencyUploads = json.data.filter(doc => {
+                        const uploaderModel = doc.uploaderModel?.toLowerCase();
+                        return uploaderModel === 'agent' || 
+                               uploaderModel === 'agency' ||
+                               uploaderModel === 'admin';
+                    });
 
-                    console.log('🔍 Found COE Document:', coeDoc);
+                    // Categorize documents by type
+                    const categorized = {
+                        COE: [],
+                        offer_letter: [],
+                        other: [],
+                    };
 
-                    if (coeDoc) {
-                        setCoeDocument({
-                            id: coeDoc._id,
-                            requiredDocumentId: coeDoc.requiredDocumentId,
-                            name: coeDoc.requiredDocument?.name || 'Confirmation of Enrollment',
-                            description: coeDoc.requiredDocument?.description || 'COE Letter from University',
-                            fileUrl: coeDoc.fileURL,
-                            uploadedAt: coeDoc.createdAt || coeDoc.uploadedAt,
-                            fileName: coeDoc.fileName,
-                            fileSize: coeDoc.fileSize,
-                            uploadedBy: coeDoc.uploaderModel || coeDoc.uploadedBy,
-                            type: coeDoc.type,
-                            status: coeDoc.status
-                        });
-                        console.log('✅ COE Document Set Successfully');
-                    } else {
-                        console.log('⚠️ No COE document found in response');
-                        setCoeDocument(null);
-                    }
-                    
-                    // Also store all agent-uploaded documents for display
-                    const agentUploads = json.data.filter(doc => 
-                        doc.uploaderModel === 'Agent' || 
-                        doc.uploaderModel === 'Agency' ||
-                        doc.uploadedBy === 'Agent'
-                    );
-                    
-                    setAgentDocuments(agentUploads.map(doc => ({
-                        id: doc._id,
-                        name: doc.requiredDocument?.name || doc.documentName || 'Document',
-                        description: doc.requiredDocument?.description || 'Uploaded by agent',
-                        fileUrl: doc.fileURL,
-                        uploadedAt: doc.createdAt,
-                        fileName: doc.fileName,
-                        fileSize: doc.fileSize,
-                        type: doc.documentCategory || doc.type,
-                        uploadedBy: doc.uploaderModel || 'Agent'
-                    })));
-                    
+                    agencyUploads.forEach(doc => {
+                        const category = doc.documentCategory || doc.type;
+                        const normalizedCategory = category?.toLowerCase();
+                        
+                        const formattedDoc = {
+                            id: doc._id,
+                            name: doc.requiredDocument?.name || doc.documentName || 'Document',
+                            uploadedAt: doc.createdAt,
+                            fileUrl: doc.fileURL,
+                            category: category,
+                        };
+
+                        if (normalizedCategory === 'coe') {
+                            categorized.COE.push(formattedDoc);
+                        } else if (normalizedCategory === 'offer_letter' || normalizedCategory === 'offerletter') {
+                            categorized.offer_letter.push(formattedDoc);
+                        } else if (normalizedCategory === 'other') {
+                            categorized.other.push(formattedDoc);
+                        }
+                    });
+
+                    setAgencyDocuments(categorized);
                 } else {
-                    console.log('⚠️ No documents in response');
-                    setCoeDocument(null);
-                    setAgentDocuments([]);
+                    setAgencyDocuments({
+                        COE: [],
+                        offer_letter: [],
+                        other: [],
+                    });
                 }
-            } else {
-                // Admission or Visa stage - document checklist
+            } else if (stage === 'admission' || stage === 'visa') {
+                // ADMISSION/VISA STAGE - document checklist
                 const res = await fetch(
                     `${Config.API_BASE_URL}/students/documents/status?stage=${stage}`,
                     {
@@ -194,8 +216,6 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
                 );
 
                 const json = await res.json();
-                console.log(' API Response status:', JSON.stringify(json, null, 2)); 
-                
 
                 if (res.ok && json.data) {
                     const formattedDocs = json.data.map(item => ({
@@ -208,44 +228,14 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
                         status: item.status || 'pending',
                         fileUrl: item.uploadedDocument?.fileURL || item.fileURL,
                         fileName: item.uploadedDocument?.fileName,
-                        fileSize: item.uploadedDocument?.fileSize,
                         rejectionReason: item.rejectionReason,
                         uploadedAt: item.uploadedAt || item.createdAt,
                         id: item.uploadedDocument?._id || item.requiredDocument?._id || item._id
                     }));
 
                     setDocuments(formattedDocs);
-                    console.log(`✅ Formatted ${formattedDocs.length} documents for ${stage}`);
                 } else {
                     setDocuments([]);
-                }
-                
-                // Also fetch agent documents for admission/visa stage
-                const agentRes = await fetch(
-                    `${Config.API_BASE_URL}/students/documents`,
-                    { headers: { 'Authorization': `Bearer ${userToken}` } }
-                );
-                const agentJson = await agentRes.json();
-                console.log(' Response documents:', JSON.stringify(agentJson, null, 2)); 
-                
-                if (agentRes.ok && agentJson.data) {
-                    const agentUploads = agentJson.data.filter(doc => 
-                        doc.uploaderModel === 'Agent' || 
-                        doc.uploaderModel === 'Agency' ||
-                        doc.uploadedBy === 'Agent'
-                    );
-                    
-                    setAgentDocuments(agentUploads.map(doc => ({
-                        id: doc._id,
-                        name: doc.requiredDocument?.name || doc.documentName || 'Document',
-                        description: doc.requiredDocument?.description || 'Uploaded by agent',
-                        fileUrl: doc.fileURL,
-                        uploadedAt: doc.createdAt,
-                        fileName: doc.fileName,
-                        fileSize: doc.fileSize,
-                        type: doc.documentCategory || doc.type,
-                        uploadedBy: doc.uploaderModel || 'Agent'
-                    })));
                 }
             }
         } catch (error) {
@@ -255,9 +245,13 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
                 text1: 'Failed to load documents',
                 text2: error.message || 'Please try again'
             });
-            if (stage === 'coe') {
-                setCoeDocument(null);
-                setAgentDocuments([]);
+            
+            if (stage === 'document_waitlist') {
+                setAgencyDocuments({
+                    COE: [],
+                    offer_letter: [],
+                    other: [],
+                });
             } else {
                 setDocuments([]);
             }
@@ -270,16 +264,9 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
         fetchDocuments();
     }, [fetchDocuments]);
 
-    // Handle document upload
+    // Handle document upload for admission/visa stages
     const handleUpload = async (document) => {
         try {
-            console.log('📤 Starting upload for:', {
-                documentName: document.name,
-                requiredDocumentId: document.requiredDocumentId,
-                checklistId: document.checklistId,
-                type: document.type
-            });
-
             setUploadingDocId(document.checklistId || document.id);
 
             const result = await DocumentPicker.getDocumentAsync({
@@ -388,7 +375,7 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
         if (onRefresh) onRefresh();
     };
 
-    // Check if all documents are approved
+    // Check if all documents are approved (for admission/visa stages)
     const allApproved = documents.length > 0 && documents.every(doc => doc.status === 'approved');
     const hasDocuments = documents.length > 0;
 
@@ -405,42 +392,72 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
         return doc.checklistId || doc.id;
     };
 
+    // Calculate total documents in waitlist
+    const getTotalWaitlistDocuments = () => {
+        return agencyDocuments.COE.length + 
+               agencyDocuments.offer_letter.length + 
+               agencyDocuments.other.length;
+    };
+
     // ========================================
-    // RENDER AGENT DOCUMENTS SECTION
+    // RENDER DOCUMENT CATEGORY SECTION - CLEAN & PROFESSIONAL
     // ========================================
-    const renderAgentDocuments = () => {
-        if (agentDocuments.length === 0) return null;
+    const renderDocumentCategory = (categoryKey) => {
+        const categoryConfig = DOCUMENT_CATEGORIES[categoryKey];
+        const documents = agencyDocuments[categoryKey];
+        const hasDocuments = documents && documents.length > 0;
 
         return (
-            <View style={styles.agentSection}>
-                <View style={styles.sectionHeader}>
-                    <Ionicons name="briefcase-outline" size={18} color={COLORS.textSecondary} />
-                    <Text style={styles.sectionTitle}>Documents from Agent</Text>
+            <View style={styles.categorySection} key={categoryKey}>
+                <View style={styles.categoryHeader}>
+                    <View style={[styles.categoryIcon, { backgroundColor: `${categoryConfig.color}10` }]}>
+                        <Ionicons name={categoryConfig.icon} size={18} color={categoryConfig.color} />
+                    </View>
+                    <View style={styles.categoryHeaderText}>
+                        <Text style={styles.categoryTitle}>{categoryConfig.label}</Text>
+                        <Text style={styles.categoryBadge}>
+                            {documents.length} {documents.length === 1 ? 'document' : 'documents'}
+                        </Text>
+                    </View>
                 </View>
-                
-                {agentDocuments.map((doc) => (
-                    <TouchableOpacity
-                        key={doc.id}
-                        style={styles.agentDocumentCard}
-                        onPress={() => doc.fileUrl && Linking.openURL(doc.fileUrl)}
-                        activeOpacity={0.7}
-                    >
-                        <View style={styles.agentDocIcon}>
-                            <MaterialCommunityIcons name="file-document-outline" size={20} color={COLORS.primary} />
-                        </View>
-                        <View style={styles.agentDocContent}>
-                            <Text style={styles.agentDocName}>{doc.name}</Text>
-                            <Text style={styles.agentDocMeta}>
-                                {doc.uploadedBy} • {new Date(doc.uploadedAt).toLocaleDateString('en-US', {
-                                    month: 'short',
-                                    day: 'numeric',
-                                    year: 'numeric'
-                                })}
-                            </Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={20} color={COLORS.textTertiary} />
-                    </TouchableOpacity>
-                ))}
+
+                {hasDocuments ? (
+                    <View style={styles.categoryDocuments}>
+                        {documents.map((doc) => (
+                            <TouchableOpacity
+                                key={doc.id}
+                                style={styles.categoryDocumentCard}
+                                onPress={() => doc.fileUrl && Linking.openURL(doc.fileUrl)}
+                                activeOpacity={0.7}
+                            >
+                                <View style={styles.categoryDocIcon}>
+                                    <MaterialCommunityIcons 
+                                        name="file-pdf-box" 
+                                        size={20} 
+                                        color={categoryConfig.color} 
+                                    />
+                                </View>
+                                <View style={styles.categoryDocContent}>
+                                    <Text style={styles.categoryDocName} numberOfLines={1}>
+                                        {doc.name}
+                                    </Text>
+                                    <Text style={styles.categoryDocMeta}>
+                                        {new Date(doc.uploadedAt).toLocaleDateString('en-US', {
+                                            day: 'numeric',
+                                            month: 'short',
+                                            year: 'numeric'
+                                        })}
+                                    </Text>
+                                </View>
+                                <Ionicons name="open-outline" size={18} color={COLORS.textTertiary} />
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                ) : (
+                    <View style={styles.categoryEmptyState}>
+                        <Text style={styles.categoryEmptyText}>No documents yet</Text>
+                    </View>
+                )}
             </View>
         );
     };
@@ -449,7 +466,7 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
     // RENDER ADMISSION/VISA STAGE
     // ========================================
     const renderDocumentStage = () => {
-        if (!hasDocuments && !refreshing && agentDocuments.length === 0) {
+        if (!hasDocuments && !refreshing) {
             return (
                 <ScrollView
                     style={styles.scrollView}
@@ -476,7 +493,7 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
                         <Text style={styles.emptyStateDescription}>
                             {stage === 'admission'
                                 ? 'Waiting for admission officer to assign document checklist'
-                                : 'Waiting for visa officer to be assigned and upload visa document checklist'
+                                : 'Waiting for visa officer to assign visa document checklist'
                             }
                         </Text>
                         <View style={styles.emptyBadge}>
@@ -503,9 +520,6 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
                     />
                 }
             >
-                {/* Agent Documents Section */}
-                {renderAgentDocuments()}
-
                 {/* Progress Card */}
                 {hasDocuments && (
                     <View style={styles.progressCard}>
@@ -632,13 +646,13 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
                     </View>
                 )}
 
-                {/* Continue Button - Updated with applyButton style */}
+                {/* Continue Button */}
                 {allApproved && (
                     <TouchableOpacity
                         style={styles.applyButton}
                         onPress={() => {
                             if (stage === 'admission') {
-                                onStageChange('coe');
+                                onStageChange('document_waitlist');
                             } else if (stage === 'visa') {
                                 onStageChange('complete');
                                 Toast.show({
@@ -651,7 +665,7 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
                         activeOpacity={0.8}
                     >
                         <Text style={styles.applyButtonText}>
-                            {stage === 'admission' ? 'Proceed to COE Stage' : 'Complete Visa Stage'}
+                            {stage === 'admission' ? 'Proceed to Document Waitlist' : 'Complete Visa Stage'}
                         </Text>
                         <Ionicons name="arrow-forward" size={20} color={COLORS.white} />
                     </TouchableOpacity>
@@ -661,13 +675,15 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
     };
 
     // ========================================
-    // RENDER COE STAGE
+    // RENDER DOCUMENT WAITLIST STAGE - REDESIGNED
     // ========================================
-    const renderCOEStage = () => {
+    const renderDocumentWaitlist = () => {
+        const totalDocuments = getTotalWaitlistDocuments();
+
         return (
             <ScrollView
                 style={styles.scrollView}
-                contentContainerStyle={styles.centerContent}
+                contentContainerStyle={styles.scrollContent}
                 refreshControl={
                     <RefreshControl
                         refreshing={refreshing}
@@ -676,159 +692,28 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
                     />
                 }
             >
-                {coeDocument ? (
-                    // COE is available
-                    <View style={styles.coeAvailableCard}>
-                        <View style={styles.coeIconSuccess}>
-                            <Ionicons
-                                name="mail-open-outline"
-                                size={48}
-                                color={COLORS.primary}
-                            />
-                        </View>
+                {/* Simple Header */}
+                <View style={styles.waitlistHeader}>
+                    <Text style={styles.waitlistTitle}>Documents from Your Agency</Text>
+                    <Text style={styles.waitlistDescription}>
+                        Your agency will upload required documents here. You can view them once available.
+                    </Text>
+                </View>
 
-                        <Text style={styles.coeTitle}>COE Letter Received</Text>
-                        <Text style={styles.coeDescription}>
-                            Your Confirmation of Enrollment has been uploaded by your admission officer.
-                        </Text>
+                {/* Document Categories */}
+                {renderDocumentCategory('COE')}
+                {renderDocumentCategory('offer_letter')}
+                {renderDocumentCategory('other')}
 
-                        <View style={styles.coeDocumentBox}>
-                            <View style={styles.coeDocHeader}>
-                                <View style={styles.coeDocIcon}>
-                                    <MaterialCommunityIcons name="file-pdf-box" size={24} color={COLORS.primary} />
-                                </View>
-                                <View style={styles.coeDocHeaderText}>
-                                    <Text style={styles.coeDocName}>{coeDocument.name}</Text>
-                                    {coeDocument.fileName && (
-                                        <Text style={styles.coeFileName}>{coeDocument.fileName}</Text>
-                                    )}
-                                </View>
-                            </View>
-                            <Text style={styles.coeDocDescription}>{coeDocument.description}</Text>
-
-                            <View style={styles.coeMetaRow}>
-                                {coeDocument.uploadedAt && (
-                                    <View style={styles.coeMetaItem}>
-                                        <Ionicons name="calendar-outline" size={14} color={COLORS.textSecondary} />
-                                        <Text style={styles.coeMetaText}>
-                                            {new Date(coeDocument.uploadedAt).toLocaleDateString('en-US', {
-                                                year: 'numeric',
-                                                month: 'short',
-                                                day: 'numeric'
-                                            })}
-                                        </Text>
-                                    </View>
-                                )}
-                                {coeDocument.fileSize && (
-                                    <View style={styles.coeMetaItem}>
-                                        <Ionicons name="document-outline" size={14} color={COLORS.textSecondary} />
-                                        <Text style={styles.coeMetaText}>
-                                            {(coeDocument.fileSize / 1024).toFixed(1)} KB
-                                        </Text>
-                                    </View>
-                                )}
-                            </View>
-
-                            {coeDocument.uploadedBy && (
-                                <View style={styles.uploadedByBadge}>
-                                    <Ionicons name="person-outline" size={12} color={COLORS.primary} />
-                                    <Text style={styles.uploadedByText}>
-                                        Uploaded by {coeDocument.uploadedBy}
-                                    </Text>
-                                </View>
-                            )}
-                        </View>
-
-                        <TouchableOpacity
-                            style={styles.viewCoeButton}
-                            onPress={() => {
-                                if (coeDocument.fileUrl) {
-                                    Linking.openURL(coeDocument.fileUrl);
-                                } else {
-                                    Alert.alert('Error', 'Document URL not available');
-                                }
-                            }}
-                            activeOpacity={0.8}
-                        >
-                            <Ionicons name="eye-outline" size={20} color={COLORS.white} />
-                            <Text style={styles.viewCoeButtonText}>View COE Document</Text>
-                        </TouchableOpacity>
-
-                        {/* Proceed to Visa - Using applyButton style */}
-                        <TouchableOpacity
-                            style={styles.applyButton}
-                            onPress={() => onStageChange('visa')}
-                            activeOpacity={0.8}
-                        >
-                            <Text style={styles.applyButtonText}>Proceed to Visa Stage</Text>
-                            <Ionicons name="arrow-forward" size={20} color={COLORS.white} />
-                        </TouchableOpacity>
-                    </View>
-                ) : (
-                    // Waiting for COE
-                    <View style={styles.coeWaitingCard}>
-                        <View style={styles.coeIconWaiting}>
-                            <Ionicons
-                                name="mail-outline"
-                                size={48}
-                                color={COLORS.primary}
-                            />
-                        </View>
-
-                        <Text style={styles.coeTitle}>Awaiting COE</Text>
-                        <Text style={styles.coeDescription}>
-                            We are waiting for the university to issue your Confirmation of Enrollment letter.
-                            Your admission officer will upload it once received.
-                        </Text>
-
-                        {/* Info Cards */}
-                        <View style={styles.infoCardsContainer}>
-                            <View style={styles.infoCard}>
-                                <Ionicons name="time-outline" size={24} color={COLORS.primary} />
-                                <Text style={styles.infoCardLabel}>Typical Timeline</Text>
-                                <Text style={styles.infoCardValue}>3-5 business days</Text>
-                            </View>
-
-                            <View style={styles.infoCard}>
-                                <Ionicons name="notifications-outline" size={24} color={COLORS.primary} />
-                                <Text style={styles.infoCardLabel}>Notification</Text>
-                                <Text style={styles.infoCardValue}>Via email & app</Text>
-                            </View>
-                        </View>
-
-                        {/* Timeline */}
-                        <View style={styles.timelineContainer}>
-                            <Text style={styles.timelineTitle}>What's Next</Text>
-                            {[
-                                'University reviews your application',
-                                'COE letter is generated',
-                                'Officer uploads COE to your account',
-                                'Proceed to visa application'
-                            ].map((step, index) => (
-                                <View key={index} style={styles.timelineStep}>
-                                    <View style={styles.timelineDot}>
-                                        <Text style={styles.timelineDotText}>{index + 1}</Text>
-                                    </View>
-                                    <Text style={styles.timelineStepText}>{step}</Text>
-                                </View>
-                            ))}
-                        </View>
-
-                        {/* Proceed to Visa - Using applyButton style */}
-                        <TouchableOpacity
-                            style={styles.applyButton}
-                            onPress={() => onStageChange('visa')}
-                            activeOpacity={0.8}
-                        >
-                            <Text style={styles.applyButtonText}>Proceed to Visa Stage</Text>
-                            <Ionicons name="arrow-forward" size={20} color={COLORS.white} />
-                        </TouchableOpacity>
-
-                        <Text style={styles.proceedNote}>
-                            You can proceed while waiting for COE
-                        </Text>
-                    </View>
-                )}
+                {/* Proceed Button */}
+                <TouchableOpacity
+                    style={styles.proceedButton}
+                    onPress={() => onStageChange('visa')}
+                    activeOpacity={0.8}
+                >
+                    <Text style={styles.proceedButtonText}>Continue to Visa Stage</Text>
+                    <Ionicons name="arrow-forward" size={18} color={COLORS.white} />
+                </TouchableOpacity>
             </ScrollView>
         );
     };
@@ -838,7 +723,7 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
     // ========================================
     return (
         <View style={[styles.container, { paddingTop: insets.top }]}>
-            {/* Consistent Blue Header - Matching Settings Page */}
+            {/* Consistent Blue Header */}
             <View style={styles.header}>
                 <View style={styles.headerContent}>
                     <TouchableOpacity
@@ -849,7 +734,7 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>
                         {stage === 'admission' && 'Admission Documents'}
-                        {stage === 'coe' && 'COE Confirmation'}
+                        {stage === 'document_waitlist' && 'Document Waitlist'}
                         {stage === 'visa' && 'Visa Documents'}
                     </Text>
                     <View style={{ width: 40 }} />
@@ -857,13 +742,13 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
             </View>
 
             {/* Content */}
-            {stage === 'coe' ? renderCOEStage() : renderDocumentStage()}
+            {stage === 'document_waitlist' ? renderDocumentWaitlist() : renderDocumentStage()}
         </View>
     );
 }
 
 // ========================================
-// STYLES - Consistent with Settings Page
+// STYLES
 // ========================================
 const styles = StyleSheet.create({
     container: {
@@ -871,7 +756,7 @@ const styles = StyleSheet.create({
         backgroundColor: COLORS.background,
     },
 
-    // Consistent Blue Header - Matches Settings
+    // Header
     header: {
         backgroundColor: COLORS.primary,
         paddingHorizontal: 20,
@@ -923,45 +808,6 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: COLORS.textPrimary,
         marginLeft: 8,
-    },
-
-    // Agent Documents Section
-    agentSection: {
-        marginBottom: 24,
-        backgroundColor: COLORS.surface,
-        borderRadius: 16,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-    },
-    agentDocumentCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: COLORS.border,
-    },
-    agentDocIcon: {
-        width: 40,
-        height: 40,
-        borderRadius: 8,
-        backgroundColor: COLORS.primaryLight,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 12,
-    },
-    agentDocContent: {
-        flex: 1,
-    },
-    agentDocName: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-        marginBottom: 2,
-    },
-    agentDocMeta: {
-        fontSize: 12,
-        color: COLORS.textSecondary,
     },
 
     // Progress Card
@@ -1134,7 +980,7 @@ const styles = StyleSheet.create({
         marginLeft: 6,
     },
 
-    // Apply Button - Matching your style
+    // Apply Button
     applyButton: {
         backgroundColor: COLORS.primary,
         borderRadius: 16,
@@ -1202,218 +1048,128 @@ const styles = StyleSheet.create({
     },
 
     // ========================================
-    // COE STAGE STYLES
+    // DOCUMENT WAITLIST STYLES - CLEAN & MINIMAL
     // ========================================
-    coeAvailableCard: {
-        backgroundColor: COLORS.surface,
-        borderRadius: 20,
-        padding: 24,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-        maxWidth: 500,
-        width: '100%',
-        alignSelf: 'center',
+    waitlistHeader: {
+        marginBottom: 24,
+        paddingHorizontal: 4,
     },
-    coeIconSuccess: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        backgroundColor: COLORS.primaryLight,
-        justifyContent: 'center',
-        alignItems: 'center',
-        alignSelf: 'center',
-        marginBottom: 20,
-    },
-    coeTitle: {
-        fontSize: 22,
+    waitlistTitle: {
+        fontSize: 20,
         fontWeight: '700',
         color: COLORS.textPrimary,
-        textAlign: 'center',
         marginBottom: 8,
     },
-    coeDescription: {
+    waitlistDescription: {
         fontSize: 14,
         color: COLORS.textSecondary,
-        textAlign: 'center',
         lineHeight: 20,
-        marginBottom: 24,
     },
-    coeDocumentBox: {
-        backgroundColor: COLORS.background,
+
+    // Category Section - Clean
+    categorySection: {
+        backgroundColor: COLORS.surface,
         borderRadius: 16,
         padding: 16,
-        marginBottom: 20,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: COLORS.border,
     },
-    coeDocHeader: {
+    categoryHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 8,
+        marginBottom: 16,
     },
-    coeDocIcon: {
-        width: 48,
-        height: 48,
-        borderRadius: 8,
-        backgroundColor: COLORS.primaryLight,
+    categoryIcon: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 12,
     },
-    coeDocHeaderText: {
+    categoryHeaderText: {
         flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
     },
-    coeDocName: {
+    categoryTitle: {
         fontSize: 16,
         fontWeight: '600',
         color: COLORS.textPrimary,
-        marginBottom: 2,
     },
-    coeFileName: {
-        fontSize: 12,
-        color: COLORS.textTertiary,
-    },
-    coeDocDescription: {
-        fontSize: 13,
+    categoryBadge: {
+        fontSize: 14,
         color: COLORS.textSecondary,
-        marginBottom: 12,
-    },
-    coeMetaRow: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 16,
-        marginBottom: 12,
-    },
-    coeMetaItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-    },
-    coeMetaText: {
-        fontSize: 12,
-        color: COLORS.textSecondary,
-    },
-    uploadedByBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: COLORS.primaryLight,
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-        borderRadius: 20,
-        alignSelf: 'flex-start',
-    },
-    uploadedByText: {
-        fontSize: 12,
         fontWeight: '500',
-        color: COLORS.primary,
-        marginLeft: 4,
     },
-    viewCoeButton: {
+
+    // Document Cards - Minimal
+    categoryDocuments: {
+        gap: 8,
+    },
+    categoryDocumentCard: {
         flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 12,
+        backgroundColor: COLORS.background,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+    },
+    categoryDocIcon: {
+        width: 36,
+        height: 36,
+        borderRadius: 8,
+        backgroundColor: COLORS.surface,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: COLORS.primary,
-        paddingVertical: 16,
-        borderRadius: 16,
-        marginBottom: 12,
-        elevation: 2,
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
+        marginRight: 12,
     },
-    viewCoeButtonText: {
+    categoryDocContent: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    categoryDocName: {
+        fontSize: 14,
+        fontWeight: '500',
+        color: COLORS.textPrimary,
+        flex: 1,
+        marginRight: 12,
+    },
+    categoryDocMeta: {
+        fontSize: 12,
+        color: COLORS.textSecondary,
+    },
+
+    // Empty State - Minimal
+    categoryEmptyState: {
+        alignItems: 'center',
+        paddingVertical: 20,
+    },
+    categoryEmptyText: {
+        fontSize: 14,
+        color: COLORS.textSecondary,
+    },
+
+    // Proceed Button
+    proceedButton: {
+        backgroundColor: COLORS.primary,
+        borderRadius: 14,
+        paddingVertical: 16,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        marginTop: 8,
+    },
+    proceedButtonText: {
         fontSize: 16,
         fontWeight: '600',
         color: COLORS.white,
-        marginLeft: 8,
-    },
-
-    // COE Waiting Card
-    coeWaitingCard: {
-        backgroundColor: COLORS.surface,
-        borderRadius: 20,
-        padding: 24,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-        maxWidth: 500,
-        width: '100%',
-        alignSelf: 'center',
-    },
-    coeIconWaiting: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        backgroundColor: COLORS.primaryLight,
-        justifyContent: 'center',
-        alignItems: 'center',
-        alignSelf: 'center',
-        marginBottom: 20,
-    },
-    infoCardsContainer: {
-        flexDirection: 'row',
-        gap: 12,
-        marginBottom: 24,
-    },
-    infoCard: {
-        flex: 1,
-        backgroundColor: COLORS.background,
-        borderRadius: 16,
-        padding: 16,
-        alignItems: 'center',
-    },
-    infoCardLabel: {
-        fontSize: 12,
-        color: COLORS.textSecondary,
-        marginTop: 8,
-        marginBottom: 4,
-        textAlign: 'center',
-    },
-    infoCardValue: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-        textAlign: 'center',
-    },
-    timelineContainer: {
-        backgroundColor: COLORS.background,
-        borderRadius: 16,
-        padding: 16,
-        marginBottom: 20,
-    },
-    timelineTitle: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-        marginBottom: 16,
-    },
-    timelineStep: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-    timelineDot: {
-        width: 28,
-        height: 28,
-        borderRadius: 14,
-        backgroundColor: COLORS.primaryLight,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 12,
-    },
-    timelineDotText: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: COLORS.primary,
-    },
-    timelineStepText: {
-        flex: 1,
-        fontSize: 13,
-        color: COLORS.textSecondary,
-        lineHeight: 18,
-    },
-    proceedNote: {
-        fontSize: 12,
-        color: COLORS.textTertiary,
-        textAlign: 'center',
-        marginTop: 12,
     },
 });

@@ -164,18 +164,20 @@ export default function Dashboard() {
       }
 
       const jsonResponse = await response.json();
-      const rawData = jsonResponse.agency;
+      const rawData = jsonResponse.agencies || jsonResponse.agency;
       const agenciesArray = Array.isArray(rawData) ? rawData : [rawData];
 
       const formattedData = agenciesArray.map((item) => ({
         ...item,
         id: item._id,
-        name: item.organizationName || "Unknown Agency",
+        name: item.organizationName || item.name || "Unknown Agency",
+        // Use the logo field from API
         imageUri: item.logo || null,
         stats: {
-          placed: item.studentsPlaced || 0,
-          visaRate: item.visaRate || 0.90,
-          partners: item.partnerUniversities?.length || 0,
+          // Map to the correct API fields
+          students: item.studentCount || 0,
+          courses: item.courseCount || 0,
+          universities: item.uniCount || 0,
         },
         city: item.address ? item.address.split(',')[0].trim() : 'Bhutan',
         country: item.country || 'Bhutan',
@@ -301,7 +303,7 @@ export default function Dashboard() {
   };
 
   const Front = ({ item }) => {
-    const source = item.imageUri ? { uri: item.imageUri } : item.image;
+    const source = item.imageUri ? { uri: item.imageUri } : null;
 
     return (
       <View style={styles.frontFill}>
@@ -321,29 +323,33 @@ export default function Dashboard() {
   };
 
   const Back = ({ item }) => {
-    const s = item.stats || { placed: 0, visaRate: 0, partners: 0 };
-    const visaPct = s.visaRate <= 1
-      ? Math.round(s.visaRate * 100)
-      : Math.round(s.visaRate);
-    const barRate = s.visaRate > 1 ? s.visaRate / 100 : s.visaRate;
+    const s = item.stats || { students: 0, courses: 0, universities: 0 };
 
     return (
       <Pressable style={styles.backContainer} onPress={() => handleCardPress(item)}>
         <View style={styles.statsContent}>
-          <View style={styles.statsGrid}>
+          <View style={styles.statsGridBalanced}>
             <StatTile
-              label="Students Placed"
-              value={s.placed || 0}
+              label="Students"
+              value={s.students || 0}
               icon={<Feather name="users" size={moderateScale(14)} color={COLORS.accent} />}
             />
 
             <StatTile
-              label="Partner Unis"
-              value={s.partners || 0}
-              icon={<Feather name="award" size={moderateScale(14)} color={COLORS.accent} />}
+              label="Courses"
+              value={s.courses || 0}
+              icon={<Feather name="book-open" size={moderateScale(14)} color={COLORS.accent} />}
             />
+          </View>
 
-            <StatVisaFull percent={visaPct} rate={barRate} />
+          <View style={styles.universitiesTile}>
+            <View style={styles.statTileHeader}>
+              <Feather name="award" size={moderateScale(14)} color={COLORS.accent} />
+              <Text style={styles.statLabel}>Universities</Text>
+            </View>
+            <Text style={styles.statValue}>
+              {s.universities || 0}
+            </Text>
           </View>
 
           <TouchableOpacity
@@ -662,8 +668,23 @@ const styles = StyleSheet.create({
     gap: moderateScale(8),
     marginBottom: moderateScale(8),
   },
+  statsGridBalanced: {
+    flexDirection: 'row',
+    gap: moderateScale(8),
+    marginBottom: moderateScale(8),
+  },
+  universitiesTile: {
+    width: '100%',
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    backgroundColor: COLORS.listBg,
+    borderRadius: moderateScale(10),
+    paddingVertical: moderateScale(8),
+    paddingHorizontal: moderateScale(8),
+    marginBottom: moderateScale(8),
+  },
   statTile: {
-    width: '48%',
+    flex: 1,
     borderWidth: 1,
     borderColor: COLORS.cardBorder,
     backgroundColor: COLORS.listBg,

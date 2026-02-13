@@ -90,8 +90,10 @@ export default function UserProfile() {
             const json = await response.json();
             if (response.ok) {
                 setUserData(json.profile);
+                console.log("✅ Profile fetched successfully - Image URL:", json.profile.profileUrl);
+            } else {
+                console.error("❌ Failed to fetch profile", json);
             }
-            console.log(response.ok ? "✅ Profile fetched successfully" : "❌ Failed to fetch profile", json);
         } catch (error) {
             console.error("Profile Fetch Error:", error);
         } finally {
@@ -113,6 +115,7 @@ export default function UserProfile() {
             let mimeType = asset.mimeType || 'image/jpeg';
             if (mimeType === 'image/jpg') mimeType = 'image/jpeg';
 
+            // Step 1: Get SAS URL
             const sasRes = await fetch(`${Config.API_BASE_URL}/students/uploads/sas`, {
                 method: 'POST',
                 headers: {
@@ -126,9 +129,16 @@ export default function UserProfile() {
                 })
             });
 
-            if (!sasRes.ok) throw new Error("SAS generation failed");
+            if (!sasRes.ok) {
+                const errorData = await sasRes.json();
+                console.error("SAS Error:", errorData);
+                throw new Error("SAS generation failed");
+            }
+            
             const { sasUrl, blobName } = await sasRes.json();
+            console.log("✅ SAS URL generated:", blobName);
 
+            // Step 2: Upload to Azure
             const blobRes = await fetch(asset.uri);
             const blob = await blobRes.blob();
 
@@ -141,9 +151,14 @@ export default function UserProfile() {
                 }
             });
 
-            if (!azureRes.ok) throw new Error("Azure storage upload failed");
+            if (!azureRes.ok) {
+                console.error("Azure Upload Error:", await azureRes.text());
+                throw new Error("Azure storage upload failed");
+            }
+            console.log("✅ File uploaded to Azure");
 
-            await fetch(`${Config.API_BASE_URL}/students/uploads/confirm`, {
+            // Step 3: Confirm upload
+            const confirmRes = await fetch(`${Config.API_BASE_URL}/students/uploads/confirm`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${userToken}`,
@@ -157,28 +172,41 @@ export default function UserProfile() {
                 })
             });
 
-            const newImageUrl = sasUrl.split('?')[0];
-            setUserData(prev => ({ ...prev, profile: newImageUrl }));
+            if (!confirmRes.ok) {
+                console.error("Confirm Error:", await confirmRes.json());
+            }
+            console.log("✅ Upload confirmed");
 
+            // Step 4: Update profile with new image URL
+            const newImageUrl = sasUrl.split('?')[0];
+            
             const patchRes = await fetch(`${Config.API_BASE_URL}/students/profile`, {
                 method: 'PATCH',
                 headers: {
                     'Authorization': `Bearer ${userToken}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ profile: newImageUrl })
+                body: JSON.stringify({ profileUrl: newImageUrl })
             });
 
+            const patchData = await patchRes.json();
+            console.log("Patch Response:", patchData);
+
             if (patchRes.ok) {
-                Alert.alert("Success", "Profile picture updated");
+                // Update local state with new image - use profileUrl field
+                setUserData(prev => ({ ...prev, profileUrl: newImageUrl }));
+                Alert.alert("Success", "Profile picture updated successfully");
+                console.log("✅ Profile picture updated:", newImageUrl);
             } else {
-                fetchProfile();
+                console.error("❌ Failed to update profile in database");
+                throw new Error("Failed to save profile picture");
             }
 
         } catch (err) {
             console.error('Upload Error:', err);
-            fetchProfile();
-            Alert.alert("Upload Error", "Failed to update photo. Please try again.");
+            Alert.alert("Upload Error", err.message || "Failed to update photo. Please try again.");
+            // Refresh to get the correct current state
+            await fetchProfile();
         } finally {
             setLoading(false);
         }
@@ -412,10 +440,11 @@ export default function UserProfile() {
                     <View style={styles.avatarContainer}>
                         <Image
                             style={styles.avatar}
-                            source={userData?.profile || DEFAULT_IMAGE}
+                            source={userData?.profileUrl || DEFAULT_IMAGE}
                             placeholder={DEFAULT_IMAGE}
                             contentFit="cover"
                             transition={200}
+                            cachePolicy="memory-disk"
                         />
                         <TouchableOpacity style={styles.editAvatarButton} onPress={pickImage}>
                             <Ionicons name="camera" size={18} color={COLORS.white} />
@@ -645,7 +674,7 @@ export default function UserProfile() {
                 </View>
             </Modal>
 
-            {/* FIXED: Education Modal - ONLY THIS PART CHANGED */}
+            {/* Education Modal */}
             <Modal visible={isEducationModalVisible} transparent animationType="slide">
                 <View style={styles.modalOverlay}>
                     <View style={[styles.modalContent, styles.educationModalContent]}>
@@ -658,7 +687,7 @@ export default function UserProfile() {
                             </TouchableOpacity>
                         </View>
 
-                        {/* Preview Section - Shows live preview of what you're adding */}
+                        {/* Preview Section */}
                         {(educationForm.institution || educationForm.degree) && (
                             <View style={styles.previewSection}>
                                 <Text style={styles.previewTitle}>Preview</Text>
@@ -1016,7 +1045,6 @@ const styles = StyleSheet.create({
         width: '100%',
         maxWidth: 400,
     },
-    // New style specifically for education modal
     educationModalContent: {
         padding: 0,
         maxHeight: '90%',
@@ -1188,15 +1216,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    emptyState: {
-        backgroundColor: COLORS.white,
-        borderRadius: 16,
-        padding: 32,
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: COLORS.border,
-        borderStyle: 'dashed',
-    },
     emptyIconContainer: {
         width: 80,
         height: 80,
@@ -1218,7 +1237,6 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         lineHeight: 20,
     },
-    // NEW STYLES FOR EDUCATION MODAL - FIXED SPACING
     formScroll: {
         paddingHorizontal: 20,
         maxHeight: 400,
@@ -1259,7 +1277,6 @@ const styles = StyleSheet.create({
     formHalf: {
         flex: 1,
     },
-    // NEW STYLES FOR PREVIEW SECTION
     previewSection: {
         paddingHorizontal: 20,
         paddingTop: 16,

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, FlatList,
-    Image, ActivityIndicator, StatusBar, useWindowDimensions
+    Image, ActivityIndicator, StatusBar, useWindowDimensions, TextInput
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -29,42 +29,55 @@ export default function AllEvents() {
 
     const [loading, setLoading] = useState(true);
     const [events, setEvents] = useState([]);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [isSearching, setIsSearching] = useState(false);
+
+    // Unified Load Function
+    const loadEvents = async (query = '') => {
+        try {
+            if (query.length > 0) setIsSearching(true);
+            else setLoading(true);
+
+            // Toggle URL based on search input
+            const url = query.trim().length > 0
+                ? `${Config.API_BASE_URL}/agency/events/student/${id}?search=${query}`
+                : `${Config.API_BASE_URL}/agency/events/student/${id}`;
+
+            const response = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${userToken}` }
+            });
+
+            const json = await response.json();
+            if (response.ok) {
+                const rawEvents = Array.isArray(json.events) ? json.events : (Array.isArray(json) ? json : []);
+
+                const formattedEvents = rawEvents.map(event => {
+                    const startDate = new Date(event.startAt || event.date || event.createdAt);
+                    const eventMode = event.meetings && event.meetings.length > 0 
+                        ? event.meetings[0].mode 
+                        : 'venue';
+
+                    return {
+                        ...event,
+                        id: event._id || event.id,
+                        mode: eventMode, 
+                        displayDay: !isNaN(startDate.getTime()) ? startDate.toLocaleDateString('en-US', { day: '2-digit' }) : "??",
+                        displayMonth: !isNaN(startDate.getTime()) ? startDate.toLocaleDateString('en-US', { month: 'short' }) : "TBA",
+                        fullDate: startDate.toISOString()
+                    };
+                });
+                setEvents(formattedEvents);
+            }
+        } catch (error) {
+            console.log("Fetch error:", error);
+        } finally {
+            setLoading(false);
+            setIsSearching(false);
+        }
+    };
 
     useEffect(() => {
-        const fetchEvents = async () => {
-            try {
-                const response = await fetch(`${Config.API_BASE_URL}/agency/events/student/${id}`, {
-                    headers: { 'Authorization': `Bearer ${userToken}` }
-                });
-
-                const json = await response.json();
-                if (response.ok) {
-                    const rawEvents = Array.isArray(json.events) ? json.events : (Array.isArray(json) ? json : []);
-
-                    const formattedEvents = rawEvents.map(event => {
-                        const startDate = new Date(event.startAt || event.date || event.createdAt);
-                        const eventMode = event.meetings && event.meetings.length > 0 
-                            ? event.meetings[0].mode 
-                            : 'venue';
-
-                        return {
-                            ...event,
-                            id: event._id || event.id,
-                            mode: eventMode, 
-                            displayDay: !isNaN(startDate.getTime()) ? startDate.toLocaleDateString('en-US', { day: '2-digit' }) : "??",
-                            displayMonth: !isNaN(startDate.getTime()) ? startDate.toLocaleDateString('en-US', { month: 'short' }) : "TBA",
-                            fullDate: startDate.toISOString()
-                        };
-                    });
-                    setEvents(formattedEvents);
-                }
-            } catch (error) {
-                console.log("Fetch error:", error);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchEvents();
+        loadEvents();
     }, [id, userToken]);
 
     const renderEventItem = ({ item }) => {
@@ -120,6 +133,25 @@ export default function AllEvents() {
                     <View style={{ width: 40 }} />
                 </View>
                 <Text style={styles.headerSubtitle}>Events & Seminars</Text>
+
+                {/* Search Bar built into Header */}
+                <View style={styles.searchWrapper}>
+                    <Ionicons name="search" size={18} color={COLORS.textSecondary} />
+                    <TextInput 
+                        style={styles.searchInput}
+                        placeholder="Search for events..."
+                        placeholderTextColor="#A0AEC0"
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                        onSubmitEditing={() => loadEvents(searchQuery)}
+                        returnKeyType="search"
+                    />
+                    {searchQuery.length > 0 && (
+                        <TouchableOpacity onPress={() => { setSearchQuery(''); loadEvents(''); }}>
+                            <Ionicons name="close-circle" size={18} color={COLORS.textSecondary} />
+                        </TouchableOpacity>
+                    )}
+                </View>
             </View>
 
             {loading ? (
@@ -133,6 +165,12 @@ export default function AllEvents() {
                     contentContainerStyle={styles.listContainer}
                     columnWrapperStyle={styles.columnWrapper}
                     showsVerticalScrollIndicator={false}
+                    ListEmptyComponent={
+                        <View style={styles.emptyState}>
+                            <Ionicons name="calendar-outline" size={60} color={COLORS.border} />
+                            <Text style={styles.emptyText}>No events found</Text>
+                        </View>
+                    }
                 />
             )}
         </SafeAreaView>
@@ -154,7 +192,8 @@ const styles = StyleSheet.create({
         paddingBottom: 25, 
         borderBottomLeftRadius: 30, 
         borderBottomRightRadius: 30, 
-        paddingHorizontal: 20 
+        paddingHorizontal: 20,
+        paddingTop: 10
     },
     headerContent: { 
         flexDirection: 'row', 
@@ -172,7 +211,8 @@ const styles = StyleSheet.create({
     headerSubtitle: { 
         color: 'rgba(255,255,255,0.9)', 
         textAlign: 'center', 
-        marginTop: 4, 
+        marginTop: 4,
+        marginBottom: 15,
         fontSize: 14 
     },
     backButton: { 
@@ -182,6 +222,20 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(255,255,255,0.2)', 
         justifyContent: 'center', 
         alignItems: 'center' 
+    },
+    searchWrapper: {
+        flexDirection: 'row',
+        backgroundColor: COLORS.white,
+        borderRadius: 12,
+        paddingHorizontal: 12,
+        height: 45,
+        alignItems: 'center',
+    },
+    searchInput: {
+        flex: 1,
+        marginLeft: 8,
+        fontSize: 14,
+        color: COLORS.textPrimary,
     },
     listContainer: { 
         padding: 16 
@@ -275,5 +329,17 @@ const styles = StyleSheet.create({
         color: '#718096', 
         marginLeft: 4, 
         flex: 1 
-    }
+    },
+    emptyState: { 
+        flex: 1, 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        paddingVertical: 80 
+    },
+    emptyText: { 
+        fontSize: 18, 
+        fontWeight: '600', 
+        color: COLORS.textSecondary, 
+        marginTop: 20 
+    },
 });

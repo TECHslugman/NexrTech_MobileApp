@@ -9,6 +9,8 @@ import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../../context/AuthContext';
 import { Config } from '../../../config';
 import { useFocusEffect } from 'expo-router';
+import ChatBot from '../../../components/ChatBot';
+
 const DEFAULT_IMAGE = require('../../../../assets/images/agencies/default.png');
 
 const COLORS = {
@@ -17,16 +19,21 @@ const COLORS = {
     sectionTitle: '#2D3748',
     viewAll: '#718096',
     white: '#FFFFFF',
-    border: '#EEF2F7',
+    border: '#E5E7EB',
     cardBg: '#FFFFFF',
-    textPrimary: '#2D3748',
-    textSecondary: '#718096',
+    textPrimary: '#1F2937',
+    textSecondary: '#6B7280',
     accent: '#E2E8F0',
     lightBlue: '#E8F1FF',
-    online: '#48BB78',
-    seated: '#ED8936',
+    online: '#10B981',
+    seated: '#F59E0B',
+    scholarship1: '#769FCD',
+    scholarship2: '#6B8CBE',
+    scholarship3: '#5E7AAE',
+    scholarship4: '#51699E',
 };
 
+// Improved spacing system with more granular control
 const SPACING = {
     xs: 4,
     sm: 8,
@@ -34,9 +41,32 @@ const SPACING = {
     lg: 16,
     xl: 20,
     xxl: 24,
+    xxxl: 32,
 };
 
-const BORDER_RADIUS = 12;
+const BORDER_RADIUS = {
+    sm: 8,
+    md: 12,
+    lg: 16,
+    full: 9999,
+};
+
+const SHADOWS = {
+    sm: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+        elevation: 1,
+    },
+    md: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+};
 
 export default function SelectedAgencyHome() {
     const router = useRouter();
@@ -52,6 +82,7 @@ export default function SelectedAgencyHome() {
     const [scholarships, setScholarships] = useState([]);
     const [mentors, setMentors] = useState([]);
     const [searchQuery, setSearchQuery] = useState('');
+    const [scholarshipImageErrors, setScholarshipImageErrors] = useState({});
 
     // Filtered data based on search query
     const filteredCourses = courses.filter(course =>
@@ -130,7 +161,8 @@ export default function SelectedAgencyHome() {
                         const cJson = await coursesRes.json();
                         const courseList = (cJson.courses || cJson || []).map(c => ({
                             id: c._id || c.id || Math.random().toString(),
-                            title: c.title || c.name || "Course"
+                            title: c.title || c.name || "Course",
+                            image: c.image || c.bannerImage || null
                         }));
                         setCourses(courseList);
                         completeAgencyData.courses = courseList;
@@ -168,7 +200,9 @@ export default function SelectedAgencyHome() {
                         const formattedScholar = rawScholar.map(s => ({
                             id: s._id || s.id,
                             title: s.title || "Scholarship Program",
-                            amount: s.amount || s.funding
+                            amount: s.amount || s.funding,
+                            image: s.image || s.bannerImage || s.thumbnail || null,
+                            description: s.description || "Scholarship opportunity for international students"
                         }));
                         setScholarships(formattedScholar);
                         completeAgencyData.scholarships = formattedScholar;
@@ -214,6 +248,10 @@ export default function SelectedAgencyHome() {
         }, [id, userToken])
     );
 
+    const handleScholarshipImageError = (scholarshipId) => {
+        setScholarshipImageErrors(prev => ({ ...prev, [scholarshipId]: true }));
+    };
+
     if (loading) {
         return (
             <View style={[styles.safe, styles.center]}>
@@ -222,21 +260,25 @@ export default function SelectedAgencyHome() {
         );
     }
 
-    const responsiveWidth = width * 0.9;
+    const getScholarshipColor = (index) => {
+        const colors = [COLORS.scholarship1, COLORS.scholarship2, COLORS.scholarship3, COLORS.scholarship4];
+        return colors[index % colors.length];
+    };
 
     return (
         <SafeAreaView style={styles.safe} edges={['top']}>
             <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
 
+            {/* HEADER */}
             <View style={styles.header}>
                 <View style={styles.headerTop}>
                     <View style={styles.agencyInfo}>
                         <View style={styles.agencyBadge}>
-                            {agencyData?.logo ? (
+                            {agencyData?.logo && agencyData.logo.trim() !== '' ? (
                                 <Image
                                     source={{ uri: agencyData.logo }}
                                     style={styles.agencyLogoImage}
-                                    resizeMode="contain"
+                                    resizeMode="cover"
                                 />
                             ) : (
                                 <Text style={styles.agencyInitial}>
@@ -263,6 +305,8 @@ export default function SelectedAgencyHome() {
                         )}
                     </TouchableOpacity>
                 </View>
+
+                {/* SEARCH BAR */}
                 <View style={styles.searchContainer}>
                     <Feather name="search" size={18} color={COLORS.textSecondary} style={styles.searchIcon} />
                     <TextInput
@@ -280,8 +324,11 @@ export default function SelectedAgencyHome() {
                 </View>
             </View>
 
-            <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false} overScrollMode="never">
-
+            <ScrollView
+                contentContainerStyle={styles.body}
+                showsVerticalScrollIndicator={false}
+                overScrollMode="never"
+            >
                 {/* QUICK STATS */}
                 <View style={styles.statsContainer}>
                     {[
@@ -329,6 +376,7 @@ export default function SelectedAgencyHome() {
                                         courseName: item.title
                                     }
                                 })}
+                                activeOpacity={0.7}
                             >
                                 <Text style={styles.courseText} numberOfLines={3}>
                                     {item.title || item}
@@ -344,7 +392,10 @@ export default function SelectedAgencyHome() {
                 )}
 
                 {/* EVENTS */}
-                <SectionHeader title="Upcoming Events" onBtnPress={() => router.push(`/agency/selected/events/${id}`)} />
+                <SectionHeader
+                    title="Upcoming Events"
+                    onBtnPress={() => router.push(`/agency/selected/events/${id}`)}
+                />
                 {filteredEvents.length > 0 ? (
                     <FlatList
                         horizontal
@@ -357,18 +408,36 @@ export default function SelectedAgencyHome() {
                                 style={styles.eventCard}
                                 onPress={() => router.push({
                                     pathname: `/agency/selected/events/details`,
-                                    params: { id: item._id, title: item.title, image: item.bannerImageUrl, date: item.date, time: item.time }
+                                    params: {
+                                        id: item._id,
+                                        title: item.title,
+                                        image: item.bannerImageUrl,
+                                        date: item.date,
+                                        time: item.time
+                                    }
                                 })}
+                                activeOpacity={0.7}
                             >
                                 <View style={styles.imageWrapper}>
-                                    <Image source={{ uri: item.bannerImageUrl }} style={styles.eventImg} resizeMode="cover" />
-                                    <View style={[styles.modeBadge, { backgroundColor: item.mode === 'online' ? COLORS.online : COLORS.primary }]}>
+                                    {item.bannerImageUrl && item.bannerImageUrl.trim() !== '' ? (
+                                        <Image
+                                            source={{ uri: item.bannerImageUrl }}
+                                            style={styles.eventImg}
+                                            resizeMode="cover"
+                                        />
+                                    ) : (
+                                        <View style={[styles.eventImg, { backgroundColor: COLORS.accent }]} />
+                                    )}
+                                    <View style={[
+                                        styles.modeBadge,
+                                        { backgroundColor: item.mode === 'online' ? COLORS.online : COLORS.primary }
+                                    ]}>
                                         <Text style={styles.modeBadgeText}>{item.mode}</Text>
                                     </View>
                                 </View>
 
                                 <View style={styles.eventContent}>
-                                    <Text style={styles.eventTitle} numberOfLines={1}>{item.title}</Text>
+                                    <Text style={styles.eventTitle} numberOfLines={2}>{item.title}</Text>
                                     <View style={styles.eventDetails}>
                                         <View style={styles.eventDetailRow}>
                                             <Feather name="calendar" size={12} color={COLORS.textSecondary} />
@@ -395,42 +464,65 @@ export default function SelectedAgencyHome() {
                 )}
 
                 {/* SCHOLARSHIPS */}
-                <SectionHeader title="Available Scholarships" onBtnPress={() => router.push({
-                    pathname: `/agency/selected/scholarships/${id}`,
-                    params: {
-                        initialData: JSON.stringify(scholarships),
-                        agencyName: agencyData?.organizationName
-                    }
-                })} />
+                <SectionHeader
+                    title="Available Scholarships"
+                    onBtnPress={() => router.push({
+                        pathname: `/agency/selected/scholarships/${id}`,
+                        params: {
+                            initialData: JSON.stringify(scholarships),
+                            agencyName: agencyData?.organizationName
+                        }
+                    })}
+                />
                 {scholarships.length > 0 ? (
                     <FlatList
                         horizontal
                         data={scholarships}
-                        keyExtractor={(item) => item._id || item.id || index.toString()}
+                        keyExtractor={(item) => item._id || item.id || Math.random().toString()}
                         showsHorizontalScrollIndicator={false}
                         contentContainerStyle={styles.listContent}
-                        renderItem={({ item }) => (
-                            <TouchableOpacity
-                                style={styles.scholarshipCard}
-                                onPress={() => {
-                                    const scholarshipId = item._id || item.id;
-                                    const scholarshipTitle = item.title || item.name || "Scholarship Program";
+                        renderItem={({ item, index }) => {
+                            const hasImage = item.image && !scholarshipImageErrors[item.id];
+                            const scholarshipColor = getScholarshipColor(index);
 
-                                    router.push({
-                                        pathname: '/agency/selected/scholarships/details',
-                                        params: {
-                                            id: scholarshipId,
-                                            agencyId: id,
-                                            scholarshipName: scholarshipTitle
-                                        }
-                                    });
-                                }}
-                            >
-                                <Text style={styles.scholarshipText} numberOfLines={3}>
-                                    {item.title || item.name || "Scholarship Program"}
-                                </Text>
-                            </TouchableOpacity>
-                        )}
+                            return (
+                                <TouchableOpacity
+                                    style={[
+                                        styles.scholarshipCard,
+                                        { backgroundColor: hasImage ? COLORS.white : scholarshipColor }
+                                    ]}
+                                    onPress={() => {
+                                        const scholarshipId = item._id || item.id;
+                                        const scholarshipTitle = item.title || item.name || "Scholarship Program";
+                                        router.push({
+                                            pathname: '/agency/selected/scholarships/details',
+                                            params: {
+                                                id: scholarshipId,
+                                                agencyId: id,
+                                                scholarshipName: scholarshipTitle
+                                            }
+                                        });
+                                    }}
+                                    activeOpacity={0.7}
+                                >
+                                    {hasImage && item.image.trim() !== '' ? (
+                                        <Image
+                                            source={{ uri: item.image }}
+                                            style={styles.scholarshipImage}
+                                            resizeMode="contain"
+                                            onError={() => handleScholarshipImageError(item.id)}
+                                        />
+                                    ) : (
+                                        <View style={styles.scholarshipContent}>
+                                            <Feather name="award" size={24} color={COLORS.white} />
+                                            <Text style={styles.scholarshipText} numberOfLines={2}>
+                                                {item.title || item.name || "Scholarship Program"}
+                                            </Text>
+                                        </View>
+                                    )}
+                                </TouchableOpacity>
+                            );
+                        }}
                         ItemSeparatorComponent={() => <View style={{ width: SPACING.md }} />}
                     />
                 ) : (
@@ -438,7 +530,10 @@ export default function SelectedAgencyHome() {
                 )}
 
                 {/* UNIVERSITIES */}
-                <SectionHeader title="Partner Universities" onBtnPress={() => router.push({ pathname: `/agency/selected/universities/${id}` })} />
+                <SectionHeader
+                    title="Partner Universities"
+                    onBtnPress={() => router.push({ pathname: `/agency/selected/universities/${id}` })}
+                />
                 {agencyData?.partnerUniversities && agencyData.partnerUniversities.length > 0 ? (
                     <FlatList
                         horizontal
@@ -449,13 +544,24 @@ export default function SelectedAgencyHome() {
                         renderItem={({ item }) => (
                             <TouchableOpacity
                                 style={styles.uniTile}
-                                onPress={() => router.push({ pathname: `/agency/selected/universities/details`, params: { id: item._id, name: item.name, logo: item.logo, website: item.websiteUrl } })}
+                                onPress={() => router.push({
+                                    pathname: `/agency/selected/universities/details`,
+                                    params: {
+                                        id: item._id,
+                                        name: item.name,
+                                        logo: item.logo,
+                                        website: item.websiteUrl
+                                    }
+                                })}
+                                activeOpacity={0.7}
                             >
-                                {item.logo ? (
+                                {item.logo && item.logo.trim() !== '' ? (
                                     <Image source={{ uri: item.logo }} style={styles.uniImg} resizeMode="contain" />
                                 ) : (
                                     <View style={styles.uniPlaceholder}>
-                                        <Text style={styles.uniPlaceholderText}>{item.name?.substring(0, 2).toUpperCase() || 'UN'}</Text>
+                                        <Text style={styles.uniPlaceholderText}>
+                                            {item.name?.substring(0, 2).toUpperCase() || 'UN'}
+                                        </Text>
                                     </View>
                                 )}
                             </TouchableOpacity>
@@ -466,8 +572,11 @@ export default function SelectedAgencyHome() {
                     <Text style={styles.noResultsText}>No partner universities</Text>
                 )}
 
-                {/* MENTORS SECTION */}
-                <SectionHeader title="Meet the Mentors" onBtnPress={() => router.push(`/agency/selected/mentors/${id}`)} />
+                {/* MENTORS */}
+                <SectionHeader
+                    title="Meet the Mentors"
+                    onBtnPress={() => router.push(`/agency/selected/mentors/${id}`)}
+                />
                 {mentors.length > 0 ? (
                     <FlatList
                         horizontal
@@ -482,15 +591,17 @@ export default function SelectedAgencyHome() {
                                     pathname: `/agency/selected/mentors/details`,
                                     params: { id: item.id, agencyId: id }
                                 })}
+                                activeOpacity={0.7}
                             >
                                 <Image
-                                    source={item.profilepic ? { uri: item.profilepic } : DEFAULT_IMAGE}
+                                    source={item.profilepic && item.profilepic.trim() !== '' ? { uri: item.profilepic } : DEFAULT_IMAGE}
                                     style={styles.mentorCircleImg}
+                                    resizeMode="cover"
                                 />
                                 <View style={styles.mentorTextContainer}>
-                                    <Text style={styles.mentorDisplayName}>{item.name}</Text>
-                                    <Text style={styles.mentorExpText} numberOfLines={3}>
-                                        {item.experience}
+                                    <Text style={styles.mentorDisplayName} numberOfLines={1}>{item.name}</Text>
+                                    <Text style={styles.mentorExpText} numberOfLines={2}>
+                                        {typeof item.experience === 'string' ? item.experience : "Professional mentor"}
                                     </Text>
                                 </View>
                             </TouchableOpacity>
@@ -501,8 +612,11 @@ export default function SelectedAgencyHome() {
                     <Text style={styles.noResultsText}>No mentors available</Text>
                 )}
 
-                <View style={{ height: 40 }} />
+                <View style={{ height: SPACING.xxxl }} />
             </ScrollView>
+
+            {/* ChatBot Component */}
+            <ChatBot agencyId={id} />
         </SafeAreaView>
     );
 }
@@ -511,9 +625,9 @@ function SectionHeader({ title, onBtnPress }) {
     return (
         <View style={styles.sectionHeader}>
             <Text style={styles.sectionHeading}>{title}</Text>
-            <TouchableOpacity onPress={onBtnPress} style={styles.viewAllBtn}>
+            <TouchableOpacity onPress={onBtnPress} style={styles.viewAllBtn} activeOpacity={0.7}>
                 <Text style={styles.viewAllText}>View all</Text>
-                <Feather name="chevron-right" size={14} color={COLORS.primary} />
+                <Feather name="chevron-right" size={16} color={COLORS.primary} />
             </TouchableOpacity>
         </View>
     );
@@ -529,17 +643,21 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center'
     },
+
+    // HEADER STYLES
     header: {
-        backgroundColor: COLORS.bg,
+        backgroundColor: COLORS.white,
         paddingHorizontal: SPACING.lg,
-        paddingTop: SPACING.md,
+        paddingTop: SPACING.lg,
         paddingBottom: SPACING.lg,
+        borderBottomWidth: 1,
+        borderBottomColor: COLORS.border,
     },
     headerTop: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: SPACING.md,
+        marginBottom: SPACING.lg,
     },
     agencyInfo: {
         flexDirection: 'row',
@@ -549,16 +667,16 @@ const styles = StyleSheet.create({
     agencyBadge: {
         width: 48,
         height: 48,
-        borderRadius: BORDER_RADIUS,
+        borderRadius: BORDER_RADIUS.md,
         backgroundColor: COLORS.primary,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: SPACING.md,
+        overflow: 'hidden',
     },
     agencyLogoImage: {
         width: '100%',
         height: '100%',
-        borderRadius: BORDER_RADIUS,
     },
     agencyInitial: {
         fontSize: 20,
@@ -572,13 +690,14 @@ const styles = StyleSheet.create({
         marginBottom: 2,
     },
     agencyTagline: {
-        fontSize: 12,
+        fontSize: 13,
         color: COLORS.textSecondary,
+        fontWeight: '500',
     },
     notificationButton: {
         width: 44,
         height: 44,
-        borderRadius: BORDER_RADIUS,
+        borderRadius: BORDER_RADIUS.md,
         backgroundColor: 'transparent',
         justifyContent: 'center',
         alignItems: 'center',
@@ -586,26 +705,30 @@ const styles = StyleSheet.create({
     },
     notificationBadge: {
         position: 'absolute',
-        top: 0,
-        right: 0,
+        top: 8,
+        right: 8,
         backgroundColor: '#EF4444',
-        borderRadius: 10,
+        borderRadius: BORDER_RADIUS.full,
         minWidth: 18,
         height: 18,
         justifyContent: 'center',
         alignItems: 'center',
         paddingHorizontal: 4,
+        borderWidth: 2,
+        borderColor: COLORS.white,
     },
     notificationBadgeText: {
         color: COLORS.white,
         fontSize: 10,
         fontWeight: '700',
     },
+
+    // SEARCH BAR
     searchContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: COLORS.white,
-        borderRadius: BORDER_RADIUS,
+        backgroundColor: COLORS.bg,
+        borderRadius: BORDER_RADIUS.md,
         paddingHorizontal: SPACING.md,
         height: 48,
         borderWidth: 1,
@@ -618,101 +741,131 @@ const styles = StyleSheet.create({
         flex: 1,
         fontSize: 15,
         color: COLORS.textPrimary,
+        paddingVertical: 0,
+    },
+
+    // BODY & STATS
+    body: {
+        paddingTop: SPACING.lg,
+        paddingHorizontal: SPACING.lg,
     },
     statsContainer: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginBottom: SPACING.xl,
-        marginTop: SPACING.md,
-        gap: SPACING.md,
+        marginBottom: SPACING.lg,
+        gap: SPACING.sm,
     },
     statCard: {
         flex: 1,
         backgroundColor: COLORS.white,
-        borderRadius: BORDER_RADIUS,
+        borderRadius: BORDER_RADIUS.md,
         paddingVertical: SPACING.lg,
-        paddingHorizontal: SPACING.xs,
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 1,
         borderColor: COLORS.border,
-        minHeight: 80,
     },
     statNumber: {
-        fontSize: 24,
+        fontSize: 26,
         fontWeight: '700',
         color: COLORS.textPrimary,
         marginBottom: 4,
     },
     statLabel: {
-        fontSize: 11,
+        fontSize: 12,
         color: COLORS.textSecondary,
         fontWeight: '500',
         textAlign: 'center',
     },
-    body: {
-        paddingHorizontal: SPACING.lg,
-        paddingBottom: SPACING.xl,
-    },
-    listContent: {
-        paddingVertical: SPACING.xs,
-    },
+
+    // SECTION HEADERS
     sectionHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: SPACING.md,
-        marginTop: SPACING.xl,
+        marginTop: SPACING.md,
     },
     sectionHeading: {
         fontSize: 18,
         fontWeight: '700',
-        color: COLORS.sectionTitle,
+        color: COLORS.textPrimary,
+        letterSpacing: -0.3,
     },
     viewAllBtn: {
         flexDirection: 'row',
         alignItems: 'center',
+        paddingVertical: SPACING.xs,
+        paddingHorizontal: SPACING.xs,
     },
     viewAllText: {
         fontSize: 14,
         color: COLORS.primary,
         fontWeight: '600',
-        marginRight: 4,
+        marginRight: 2,
     },
+
+    // LIST CONTENT
+    listContent: {
+        paddingBottom: SPACING.xs,
+        marginBottom: SPACING.md,
+    },
+
+    // COURSE CARDS
     courseCard: {
-        width: 160,
-        height: 100,
-        borderRadius: BORDER_RADIUS,
+        width: 180,
+        height: 110,
+        borderRadius: BORDER_RADIUS.md,
         padding: SPACING.lg,
         justifyContent: 'center',
         alignItems: 'flex-start',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.2)',
     },
     courseText: {
         color: COLORS.white,
         fontWeight: '600',
-        fontSize: 14,
-        lineHeight: 20,
+        fontSize: 15,
+        lineHeight: 21,
     },
+
+    // EVENT CARDS
     eventCard: {
         width: 280,
         backgroundColor: COLORS.white,
-        borderRadius: BORDER_RADIUS,
+        borderRadius: BORDER_RADIUS.md,
         borderWidth: 1,
         borderColor: COLORS.border,
         overflow: 'hidden',
     },
+    imageWrapper: {
+        position: 'relative',
+        height: 140,
+        backgroundColor: COLORS.accent,
+    },
     eventImg: {
         width: '100%',
-        height: 140,
+        height: '100%',
+    },
+    modeBadge: {
+        position: 'absolute',
+        top: SPACING.md,
+        left: SPACING.md,
+        paddingHorizontal: SPACING.sm + 2,
+        paddingVertical: 6,
+        borderRadius: BORDER_RADIUS.sm,
+    },
+    modeBadgeText: {
+        color: COLORS.white,
+        fontSize: 10,
+        fontWeight: '700',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
     },
     eventContent: {
         padding: SPACING.lg,
     },
     eventTitle: {
         fontSize: 15,
-        fontWeight: '600',
+        fontWeight: '700',
         color: COLORS.textPrimary,
         marginBottom: SPACING.sm,
         lineHeight: 20,
@@ -727,47 +880,42 @@ const styles = StyleSheet.create({
         gap: 6,
     },
     eventDetailText: {
-        fontSize: 12,
+        fontSize: 13,
         color: COLORS.textSecondary,
+        fontWeight: '500',
     },
     eventAction: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'flex-end',
         gap: 4,
+        paddingTop: SPACING.xs,
     },
     eventActionText: {
-        fontSize: 12,
+        fontSize: 13,
         color: COLORS.primary,
         fontWeight: '600',
     },
-    modeBadge: {
-        position: 'absolute',
-        top: SPACING.md,
-        left: SPACING.md,
-        paddingHorizontal: SPACING.sm,
-        paddingVertical: 4,
-        borderRadius: 6,
-    },
-    modeBadgeText: {
-        color: '#FFFFFF',
-        fontSize: 10,
-        fontWeight: '700',
-        textTransform: 'uppercase',
-    },
-    imageWrapper: {
-        position: 'relative',
-    },
+
+    // SCHOLARSHIP CARDS
     scholarshipCard: {
-        width: 180,
-        height: 100,
-        borderRadius: BORDER_RADIUS,
-        backgroundColor: COLORS.primary,
+        width: 200,
+        height: 130,
+        borderRadius: BORDER_RADIUS.md,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: COLORS.border,
+    },
+    scholarshipImage: {
+        width: '100%',
+        height: '100%',
+    },
+    scholarshipContent: {
+        flex: 1,
         padding: SPACING.lg,
         justifyContent: 'center',
         alignItems: 'center',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)',
+        gap: SPACING.sm,
     },
     scholarshipText: {
         color: COLORS.white,
@@ -776,36 +924,44 @@ const styles = StyleSheet.create({
         lineHeight: 20,
         textAlign: 'center',
     },
+
+    // UNIVERSITY CARDS
     uniTile: {
         width: 140,
         height: 100,
-        borderRadius: BORDER_RADIUS,
+        borderRadius: BORDER_RADIUS.md,
         backgroundColor: COLORS.white,
-        padding: SPACING.lg,
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1,
         borderColor: COLORS.border,
+        overflow: 'hidden',
+        padding: 0,  // Remove padding for images
     },
     uniImg: {
         width: '100%',
         height: '100%',
+        resizeMode: 'cover',  // or 'contain' based on preference
     },
     uniPlaceholder: {
         width: '100%',
         height: '100%',
         justifyContent: 'center',
         alignItems: 'center',
+        backgroundColor: COLORS.lightBlue,
+        borderRadius: BORDER_RADIUS.sm,
     },
     uniPlaceholderText: {
-        fontSize: 16,
-        fontWeight: 'bold',
+        fontSize: 18,
+        fontWeight: '700',
         color: COLORS.primary,
     },
+
+    // MENTOR CARDS
     mentorCard: {
         width: 260,
         backgroundColor: COLORS.white,
-        borderRadius: BORDER_RADIUS,
+        borderRadius: BORDER_RADIUS.md,
         padding: SPACING.lg,
         flexDirection: 'row',
         alignItems: 'center',
@@ -813,10 +969,12 @@ const styles = StyleSheet.create({
         borderColor: COLORS.border,
     },
     mentorCircleImg: {
-        width: 64,
-        height: 64,
-        borderRadius: 32,
+        width: 60,
+        height: 60,
+        borderRadius: BORDER_RADIUS.full,
         backgroundColor: COLORS.accent,
+        borderWidth: 2,
+        borderColor: COLORS.border,
     },
     mentorTextContainer: {
         flex: 1,
@@ -825,20 +983,23 @@ const styles = StyleSheet.create({
     },
     mentorDisplayName: {
         fontSize: 15,
-        fontWeight: '600',
+        fontWeight: '700',
         color: COLORS.textPrimary,
         marginBottom: 4,
     },
     mentorExpText: {
-        fontSize: 12,
+        fontSize: 13,
         color: COLORS.textSecondary,
         lineHeight: 18,
+        fontWeight: '500',
     },
+
+    // NO RESULTS
     noResultsText: {
         textAlign: 'center',
         color: COLORS.textSecondary,
-        fontStyle: 'italic',
-        marginVertical: SPACING.lg,
+        marginVertical: SPACING.xl,
         fontSize: 14,
+        fontWeight: '500',
     },
 });

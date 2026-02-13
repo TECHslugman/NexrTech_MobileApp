@@ -5,12 +5,9 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
+import { Ionicons, Feather } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
 import { Config } from '../../../../config';
-
-const DEFAULT_IMAGE = 'https://i.pravatar.cc/300';
-
 
 const COLORS = {
     bg: '#F8FAFD',
@@ -20,6 +17,14 @@ const COLORS = {
     textSecondary: '#64748B',
     border: '#E2E8F0',
     cardBg: '#FFFFFF',
+};
+
+// Helper function to get initials from name
+const getInitials = (name) => {
+    if (!name) return 'M';
+    const words = name.trim().split(' ');
+    if (words.length === 1) return words[0].charAt(0).toUpperCase();
+    return (words[0].charAt(0) + words[words.length - 1].charAt(0)).toUpperCase();
 };
 
 export default function MentorListPage() {
@@ -78,18 +83,19 @@ export default function MentorListPage() {
             })}
             activeOpacity={0.7}
         >
-            <Image 
-                source={item.profilepic ? { uri: item.profilepic } : { uri: DEFAULT_IMAGE }} 
-                style={styles.avatar} 
-            />
+            {item.profilepic ? (
+                <Image 
+                    source={{ uri: item.profilepic }} 
+                    style={styles.avatar} 
+                />
+            ) : (
+                <View style={styles.avatarPlaceholder}>
+                    <Text style={styles.initialsText}>{getInitials(item.name)}</Text>
+                </View>
+            )}
             
             <View style={styles.mentorInfo}>
-                <View style={styles.nameRow}>
-                    <Text style={styles.mentorName} numberOfLines={1}>{item.name}</Text>
-                    {item.isVerified && (
-                        <MaterialIcons name="verified" size={16} color={COLORS.primary} style={{marginLeft: 4}} />
-                    )}
-                </View>
+                <Text style={styles.mentorName} numberOfLines={1}>{item.name}</Text>
                 <Text style={styles.mentorExp} numberOfLines={2}>
                     {item.experience}
                 </Text>
@@ -209,10 +215,27 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: COLORS.border,
     },
-    avatar: { width: 65, height: 65, borderRadius: 32.5, backgroundColor: COLORS.bg },
+    avatar: { 
+        width: 65, 
+        height: 65, 
+        borderRadius: 32.5, 
+        backgroundColor: COLORS.bg 
+    },
+    avatarPlaceholder: {
+        width: 65,
+        height: 65,
+        borderRadius: 32.5,
+        backgroundColor: COLORS.primary,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    initialsText: {
+        fontSize: 24,
+        fontWeight: '700',
+        color: COLORS.white,
+    },
     mentorInfo: { flex: 1, marginLeft: 15, marginRight: 10 },
-    nameRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-    mentorName: { fontSize: 17, fontWeight: '700', color: COLORS.textPrimary },
+    mentorName: { fontSize: 17, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 4 },
     mentorExp: { fontSize: 13, color: COLORS.textSecondary, lineHeight: 18 },
     arrowCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F0F7FF', justifyContent: 'center', alignItems: 'center' },
     emptyContainer: { alignItems: 'center', marginTop: 100 },

@@ -37,6 +37,7 @@ export default function AllUniversities() {
     const [universities, setUniversities] = useState([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [isSearching, setIsSearching] = useState(false);
+    const [imageErrors, setImageErrors] = useState({});
 
     const fetchUniversities = async (query = '') => {
         if (!userToken || !id) return;
@@ -63,6 +64,7 @@ export default function AllUniversities() {
                     : (json.university?.partnerUniversities || []);
                 
                 setUniversities(results);
+                setImageErrors({}); // Reset image errors on new fetch
             }
         } catch (error) {
             console.error("Fetch Error:", error);
@@ -76,8 +78,13 @@ export default function AllUniversities() {
         fetchUniversities();
     }, [id, userToken]);
 
+    const handleImageError = (itemId) => {
+        setImageErrors(prev => ({ ...prev, [itemId]: true }));
+    };
+
     const renderUniItem = ({ item }) => {
         const cardWidth = (width - 48) / 2;
+        const hasImageError = imageErrors[item._id];
         
         return (
             <TouchableOpacity 
@@ -95,11 +102,12 @@ export default function AllUniversities() {
                 }}
             >
                 <View style={styles.imageContainer}>
-                    {item.logo ? (
+                    {item.logo && !hasImageError ? (
                         <Image 
                             source={{ uri: item.logo }} 
-                            style={styles.universityLogo} 
-                            resizeMode="contain" 
+                            style={styles.universityImage} 
+                            resizeMode="cover"
+                            onError={() => handleImageError(item._id)}
                         />
                     ) : (
                         <View style={styles.logoPlaceholder}>
@@ -311,18 +319,17 @@ const styles = StyleSheet.create({
     },
     
     imageContainer: {
-        height: 120,
+        height: 140,
         width: '100%',
         justifyContent: 'center',
         alignItems: 'center',
         backgroundColor: '#F9FBFD',
-        borderBottomWidth: 1,
-        borderBottomColor: COLORS.border,
+        overflow: 'hidden',
     },
     
-    universityLogo: { 
-        width: 70, 
-        height: 70 
+    universityImage: { 
+        width: '100%', 
+        height: '100%',
     },
     
     logoPlaceholder: { 
@@ -343,6 +350,7 @@ const styles = StyleSheet.create({
     cardContent: { 
         padding: 14,
         alignItems: 'center',
+        minHeight: 68,
     },
     
     universityName: { 
@@ -351,7 +359,6 @@ const styles = StyleSheet.create({
         color: COLORS.textPrimary, 
         textAlign: 'center',
         lineHeight: 20,
-        height: 40,
     },
     
     // Empty State Styles
