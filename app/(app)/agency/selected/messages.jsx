@@ -1,1311 +1,922 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-    View, Text, StyleSheet, TouchableOpacity, StatusBar, Image, Animated,
-    FlatList, ActivityIndicator
+    View, Text, StyleSheet, TouchableOpacity, StatusBar,
+    Image, FlatList, ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter, useFocusEffect } from 'expo-router';
 import socketService from '../../../services/SocketService';
 import { useAuth } from '../../../context/AuthContext';
-import Toast from 'react-native-toast-message';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Config } from '../../../config';
 
-const COLORS = {
-    bg: '#F8FBFF',
-    primary: '#769FCD',
-    white: '#FFFFFF',
-    textPrimary: '#2D3748',
+// ═══════════════════════════════════════════════════════════
+//  MODULE-LEVEL CACHE (persists across navigations)
+// ═══════════════════════════════════════════════════════════
+let _contactMap       = {};
+let _rawConversations = [];
+let _builtConvs       = [];
+
+// ═══════════════════════════════════════════════════════════
+//  THEME
+// ═══════════════════════════════════════════════════════════
+const C = {
+    bg:            '#F8FBFF',
+    primary:       '#769FCD',
+    primarySoft:   '#E8F0FE',
+    white:         '#FFFFFF',
+    textPrimary:   '#2D3748',
     textSecondary: '#64748B',
-    border: '#E0EBFF',
-    accent: '#E8F1FF',
-    active: '#769FCD',
-    inactive: '#94A3B8',
-    success: '#10B981',
-    online: '#10B981',
+    border:        '#E0EBFF',
+    warning:       '#F59E0B',
+    unread:        '#FF4D6D',
 };
 
-// Agency-specific storage keys
-const getStorageKey = (agencyId) => `chat_conversations_${agencyId}`;
-const getMetadataKey = (agencyId) => `chat_metadata_${agencyId}`;
-const AGENCY_STAFF_KEY = 'agency_staff';
+const MODEL_ICON = {
+    Agency:  'business-outline',
+    Mentor:  'school-outline',
+    Agent:   'ribbon-outline',
+    Student: 'person-outline',
+};
+
+// ═══════════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════════
+
+function formatTime(ts) {
+    if (!ts) return '';
+    const d  = new Date(ts);
+    const ms = Date.now() - d.getTime();
+    if (ms < 60_000)      return 'Just now';
+    if (ms < 3_600_000)   return `${Math.floor(ms / 60_000)}m`;
+    if (ms < 86_400_000)  return `${Math.floor(ms / 3_600_000)}h`;
+    if (ms < 604_800_000) return `${Math.floor(ms / 86_400_000)}d`;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function toId(val) {
+    if (!val) return null;
+    if (typeof val === 'string') return val.trim() || null;
+    if (typeof val === 'object') {
+        const s = val._id || val.id;
+        return s ? String(s).trim() : null;
+    }
+    return null;
+}
+
+/**
+ * Extract the "other" participant from a raw conversation.
+ * Backend shape: participants = [{ user, model }, ...]
+ * where `user` can be:
+ *   - plain string ID
+ *   - ObjectId
+ *   - populated doc { _id, name, avatar, model }
+ */
+function getOtherParticipant(raw, myId) {
+    const myStr = String(myId || '').trim();
+
+    for (const p of (raw.participants || [])) {
+        let id     = null;
+        let model  = null;
+        let name   = null;
+        let avatar = null;
+
+        if (typeof p === 'string') {
+            id = p.trim();
+        } else if (p.user) {
+            const u = p.user;
+            id    = toId(u);
+            model = p.model || (typeof u === 'object' ? u.model : null);
+            name  = typeof u === 'object' ? (u.name || null) : null;
+            avatar = typeof u === 'object' ? (u.avatar || u.profileUrl || u.logo || null) : null;
+        } else if (p._id) {
+            id     = toId(p._id);
+            model  = p.model || null;
+            name   = p.name  || null;
+            avatar = p.avatar || p.profileUrl || p.logo || null;
+        }
+
+        if (!id || id === myStr)   continue;
+        if (model === 'Student')   continue;  // skip own side
+
+        return { id, model, name, avatar };
+    }
+
+    // Fallback: any non-me participant
+    for (const p of (raw.participants || [])) {
+        const u  = p.user || p;
+        const id = toId(u);
+        if (id && id !== myStr) {
+            return {
+                id,
+                model:  p.model || null,
+                name:   typeof u === 'object' ? (u.name || null) : null,
+                avatar: typeof u === 'object' ? (u.avatar || u.profileUrl || u.logo || null) : null,
+            };
+        }
+    }
+
+    return null;
+}
+
+function formatConversation(raw, myId) {
+    const other   = getOtherParticipant(raw, myId);
+    const otherId = other?.id || String(raw._id || raw.id);
+
+    // Prefer contact map (has real fetched names) over socket data
+    const contact = _contactMap[otherId];
+
+    const name   = contact?.name   || other?.name   || 'Support';
+    const avatar = contact?.logo   || other?.avatar  || '';
+    const model  = contact?.model  || other?.model   || 'Agent';
+    const type   = contact?.type   || model;
+
+    let lastMessage = 'Start a conversation…';
+    let timestamp   = raw.updatedAt || raw.createdAt || new Date().toISOString();
+
+    if (raw.lastMessage) {
+        lastMessage = raw.lastMessage.content || lastMessage;
+        timestamp   = raw.lastMessage.createdAt || timestamp;
+    }
+
+    return {
+        id:             String(raw._id || raw.id),
+        conversationId: String(raw._id || raw.id),
+        participantId:  otherId,
+        name,
+        avatar,
+        model,
+        type,
+        lastMessage,
+        timestamp,
+        unreadCount:    raw.unreadCount || 0,
+    };
+}
+
+function buildSortedConvs(myId) {
+    const seen = new Map();
+    for (const raw of _rawConversations) {
+        const conv = formatConversation(raw, myId);
+        if (!conv.participantId) continue;
+
+        const key      = conv.participantId;
+        const existing = seen.get(key);
+
+        if (!existing || new Date(conv.timestamp) > new Date(existing.timestamp)) {
+            seen.set(key, conv);
+        }
+    }
+
+    const sorted = Array.from(seen.values()).sort(
+        (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
+    );
+
+    _builtConvs = sorted;
+    return sorted;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  FETCH CONTACT DETAILS
+// ═══════════════════════════════════════════════════════════
+
+async function fetchOneContactDetail(id, type, token) {
+    try {
+        let url;
+        if (type === 'Mentor') {
+            url = `${Config.API_BASE_URL}/agency/mentors/${id}`;
+        } else if (type === 'Admission Officer' || type === 'Visa Officer') {
+            url = `${Config.API_BASE_URL}/agency/profile/employee/agents/${id}/agents`;
+        } else {
+            return null;
+        }
+
+        const res = await fetch(url, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (!res.ok) return null;
+
+        const data = await res.json();
+
+        if (type === 'Mentor' && data.mentor) return data.mentor;
+        if (data.agent) return data.agent;
+        if (data.data)  return data.data;
+        if (data.name)  return data;
+        return null;
+    } catch (e) {
+        console.error(`fetchOneContactDetail(${type}):`, e.message);
+        return null;
+    }
+}
+
+async function buildContactMap(profile, activeAgency, token) {
+    const map   = {};
+    const tasks = [];
+
+    const addContact = async (rawId, base) => {
+        const id = toId(rawId);
+        if (!id) return;
+
+        const info = { ...base };
+
+        // Fetch real name/avatar for non-Agency types
+        if (base.type === 'Mentor' || base.type === 'Admission Officer' || base.type === 'Visa Officer') {
+            const details = await fetchOneContactDetail(id, base.type, token);
+            if (details) {
+                info.name = details.name || info.name;
+                info.logo = details.profilepic || details.avatar || details.logo || info.logo;
+            }
+        }
+
+        map[id] = info;
+    };
+
+    if (profile.registeredAgency) {
+        tasks.push(addContact(profile.registeredAgency, {
+            name:  activeAgency?.name || 'Agency Support',
+            logo:  activeAgency?.logo || '',
+            model: 'Agency',
+            type:  'Agency',
+        }));
+    }
+
+    if (profile.assignedAgent) {
+        tasks.push(addContact(profile.assignedAgent, {
+            name:  'Admission Officer',
+            logo:  '',
+            model: 'Agent',
+            type:  'Admission Officer',
+        }));
+    }
+
+    const vo = profile.assignedVisaOfficer || profile.visaOfficer;
+    if (vo) {
+        const voId = toId(typeof vo === 'object' ? (vo._id || vo.id) : vo);
+        if (voId) {
+            tasks.push(addContact(voId, {
+                name:  'Visa Officer',
+                logo:  '',
+                model: 'Agent',
+                type:  'Visa Officer',
+            }));
+        }
+    }
+
+    if (profile.connectedMentor?.status === 'confirmed') {
+        const mentor   = profile.connectedMentor.mentor;
+        const mentorId = toId(typeof mentor === 'object' ? (mentor._id || mentor.id) : mentor);
+        if (mentorId) {
+            tasks.push(addContact(mentorId, {
+                name:  'Your Mentor',
+                logo:  '',
+                model: 'Mentor',
+                type:  'Mentor',
+            }));
+        }
+    }
+
+    await Promise.all(tasks);
+    console.log('✅ Contact map built:', Object.keys(map));
+    return map;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  COMPONENT
+// ═══════════════════════════════════════════════════════════
 
 export default function MessagesScreen() {
-    const router = useRouter();
+    const router                            = useRouter();
     const { userToken, activeAgency, user } = useAuth();
-    const [assignedAgentData, setAssignedAgentData] = useState(null);
-    const [connectedMentorData, setConnectedMentorData] = useState(null);
-    const agencyId = activeAgency?.id;
-    const agencyName = activeAgency?.name;
-    const agencyLogo = activeAgency?.logo;
+    const myId                              = String(user?.id || user?._id || '');
 
-    const [chats, setChats] = useState([]);
-    const [showSuggestion, setShowSuggestion] = useState(false);
-    const [fadeAnim] = useState(new Animated.Value(0));
-    const [isLoadingChats, setIsLoadingChats] = useState(false);
-    const [refreshKey, setRefreshKey] = useState(0);
+    const [conversations, setConversations] = useState(_builtConvs);
+    const [contacts,      setContacts]      = useState(
+        Object.entries(_contactMap).map(([id, info]) => ({ id, ...info }))
+    );
+    const [isLoading,    setIsLoading]    = useState(_builtConvs.length === 0);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [isConnected,  setIsConnected]  = useState(socketService.isConnected());
 
-    const conversationsRef = useRef({});
-    const chatMetadataRef = useRef({});
-    const agencyStaffRef = useRef([]);
+    const mountedRef  = useRef(false);
+    const fetchingRef = useRef(false);
 
-    // Force refresh function
-    const forceRefresh = () => {
-        console.log("🔄 Force refreshing chats");
-        setRefreshKey(prev => prev + 1);
-    };
+    // ── Refresh from cache ──
+    const refreshFromCache = useCallback(() => {
+        if (!myId) return;
+        const built = buildSortedConvs(myId);
+        if (mountedRef.current) {
+            setConversations([...built]);
+        }
+    }, [myId]);
 
-    // Clear all data for current agency
-    const clearCurrentAgencyData = async () => {
-        conversationsRef.current = {};
-        chatMetadataRef.current = {};
-        agencyStaffRef.current = [];
-        setChats([]);
-    };
+    // ── Load contacts from API ──
+    const loadContacts = useCallback(async (isRefresh = false) => {
+        if (fetchingRef.current) return;
+        fetchingRef.current = true;
 
-    // Listen for navigation to messages screen
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            forceRefresh();
-        }, 300);
-
-        return () => clearTimeout(timer);
-    }, [agencyId]);
-
-    // Clear data when agency changes
-    useEffect(() => {
-        console.log("🔄 Agency changed to:", agencyId);
-        clearCurrentAgencyData();
-    }, [agencyId]);
-
-    // Load saved conversations from AsyncStorage
-    const loadSavedConversations = async () => {
         try {
-            if (!agencyId) {
-                console.log("⏳ Waiting for agencyId...");
-                return;
+            const res = await fetch(`${Config.API_BASE_URL}/students/profile`, {
+                headers: { Authorization: `Bearer ${userToken}` },
+            });
+
+            if (!res.ok) throw new Error(`Profile fetch failed: ${res.status}`);
+
+            const data    = await res.json();
+            const profile = data?.profile || data;
+            if (!profile) return;
+
+            const map  = await buildContactMap(profile, activeAgency, userToken);
+            _contactMap = map;
+
+            const list = Object.entries(map).map(([id, info]) => ({ id, ...info }));
+
+            if (!mountedRef.current) return;
+
+            setContacts(list);
+            refreshFromCache();
+        } catch (e) {
+            console.error('loadContacts error:', e.message);
+        } finally {
+            fetchingRef.current = false;
+            if (isRefresh && mountedRef.current) {
+                setIsRefreshing(false);
             }
-
-            const storageKey = getStorageKey(agencyId);
-            const metadataKey = getMetadataKey(agencyId);
-
-            const saved = await AsyncStorage.getItem(storageKey);
-            if (saved) {
-                const conversations = JSON.parse(saved);
-                conversationsRef.current = conversations;
-                console.log('📂 Loaded conversations for agency', agencyId, ':', Object.keys(conversations).length);
-            } else {
-                conversationsRef.current = {};
-                console.log('📂 No saved conversations for agency', agencyId);
-            }
-
-            const metadataSaved = await AsyncStorage.getItem(metadataKey);
-            if (metadataSaved) {
-                const metadata = JSON.parse(metadataSaved);
-                chatMetadataRef.current = metadata;
-                console.log('📊 Loaded chat metadata for agency', agencyId, ':', Object.keys(metadata).length);
-            } else {
-                chatMetadataRef.current = {};
-                console.log('📊 No saved metadata for agency', agencyId);
-            }
-
-            await refreshChats();
-
-        } catch (error) {
-            console.error('❌ Error loading conversations:', error);
         }
-    };
+    }, [userToken, activeAgency, refreshFromCache]);
 
-    // Load agency staff
-    const loadAgencyStaff = async () => {
-        try {
-            const saved = await AsyncStorage.getItem(AGENCY_STAFF_KEY);
-            if (saved) {
-                const staffData = JSON.parse(saved);
-                const currentAgencyStaff = staffData.filter(staff => staff.agencyId === agencyId);
-                agencyStaffRef.current = currentAgencyStaff;
-                console.log('👥 Loaded agency staff for', agencyId, ':', currentAgencyStaff.length);
-            } else {
-                await fetchAgencyStaff();
-            }
-        } catch (error) {
-            console.error('❌ Error loading agency staff:', error);
-        }
-    };
+    const onRefresh = useCallback(() => {
+        setIsRefreshing(true);
+        loadContacts(true);
+    }, [loadContacts]);
 
-    // Fetch agency staff from API
-    const fetchAgencyStaff = async () => {
-        try {
-            const allStaff = [
-                { id: 'mentor_001', name: 'Dr. Smith (Mentor)', type: 'Mentor', logo: 'https://i.pravatar.cc/150?u=mentor1', agencyId: '6965f08b28d4d0d367698827' },
-                { id: 'agent_002', name: 'Sarah Agent', type: 'Agent', logo: 'https://i.pravatar.cc/150?u=agent1', agencyId: '6965f08b28d4d0d367698827' },
-                { id: 'mentor_003', name: 'Coach Johnson', type: 'Mentor', logo: 'https://i.pravatar.cc/150?u=mentor2', agencyId: '6965f08b28d4d0d367698827' },
-            ];
-
-            const currentAgencyStaff = allStaff.filter(staff => staff.agencyId === agencyId);
-            agencyStaffRef.current = currentAgencyStaff;
-
-            await AsyncStorage.setItem(AGENCY_STAFF_KEY, JSON.stringify(allStaff));
-            console.log('👥 Fetched agency staff for', agencyId, ':', currentAgencyStaff.length);
-
-        } catch (error) {
-            console.error('❌ Error fetching agency staff:', error);
-        }
-    };
-
-    // MAIN SOCKET AND DATA LOADING EFFECT
+    // ── Socket listeners ──
     useEffect(() => {
-        console.log("🚀 Initializing MessagesScreen for agency:", agencyId);
+        mountedRef.current = true;
 
-        if (!agencyId) {
-            console.log("⏳ Waiting for agencyId...");
-            return;
+        // Show cached data immediately
+        if (_builtConvs.length > 0) {
+            setConversations([..._builtConvs]);
+            setIsLoading(false);
         }
 
-        const initializeData = async () => {
-            try {
-                await fetchStudentProfile();
-                await loadSavedConversations();
-                await loadAgencyStaff();
+        socketService.connect(userToken);
+        loadContacts();
 
-                console.log("✅ Data initialization complete");
-            } catch (error) {
-                console.error("❌ Initialization error:", error);
-            }
-        };
+        const unsubConn = socketService.onConnectionChange(connected => {
+            if (mountedRef.current) setIsConnected(connected);
+        });
 
-        initializeData();
+        const unsubList = socketService.onConversationList(data => {
+            if (!mountedRef.current) return;
 
-        if (!userToken) {
-            console.log("🔑 No user token available");
-            return;
-        }
+            const raw = Array.isArray(data)
+                ? data
+                : Array.isArray(data?.conversations)
+                    ? data.conversations
+                    : [];
 
-        socketService.connect(userToken, agencyId);
+            console.log(`📥 conversation_list: ${raw.length} conversations`);
+            _rawConversations = raw;
 
-        // ====== BACKEND EVENT: receive_message ======
-        const handleReceiveMessage = (message) => {
-            console.log("📩 New message received:", message);
+            const built = buildSortedConvs(myId);
+            setConversations([...built]);
+            setIsLoading(false);
+        });
 
-            const isFromCurrentAgency = checkIfFromCurrentAgency(message.sender, message);
+        const unsubNew = socketService.onNewMessage(payload => {
+            if (!mountedRef.current) return;
 
-            if (!isFromCurrentAgency) {
-                console.log("📭 Message not for current agency, ignoring");
-                return;
-            }
+            const msg    = payload.message || payload;
+            const convId = String(payload.conversationId || msg.conversationId || '');
 
-            if (message.conversationId && message.sender) {
-                const senderId = message.sender;
-                conversationsRef.current[senderId] = message.conversationId;
+            console.log('📥 new_message for conv:', convId);
 
-                const metadata = {
-                    id: senderId,
-                    name: message.senderName || getRecipientName(senderId),
-                    logo: message.senderAvatar || getRecipientLogo(senderId),
-                    type: message.senderModel === 'Agency' ? 'Agency' :
-                        message.senderModel === 'Mentor' ? 'Mentor' :
-                            message.senderModel === 'Agent' ? 'Agent' : 'Support',
-                    lastMessage: message.content,
-                    timestamp: new Date(message.createdAt),
-                    unreadCount: 1,
-                    agencyId: agencyId
-                };
+            setConversations(prev => {
+                const idx = prev.findIndex(c => c.conversationId === convId);
 
-                saveChatMetadata(senderId, metadata);
-                saveConversationToStorage(senderId, message.conversationId);
-                refreshChats();
-            }
-        };
+                if (idx === -1) {
+                    // New conversation from automated message
+                    const senderId = String(msg.sender || msg.senderId || '');
+                    const contact  = _contactMap[senderId] || {};
 
-        // ====== BACKEND EVENT: sent_message ======
-        const handleSentMessage = async (message) => {
-            console.log('✅ Message sent confirmation received:', message);
+                    const newConv = {
+                        id:             convId || `new_${Date.now()}`,
+                        conversationId: convId || `new_${Date.now()}`,
+                        participantId:  senderId,
+                        name:           contact.name  || msg.senderInfo?.name  || 'Support',
+                        avatar:         contact.logo  || msg.senderInfo?.avatar || '',
+                        model:          contact.model || msg.senderInfo?.model  || 'Agent',
+                        type:           contact.type  || 'Contact',
+                        lastMessage:    msg.content   || '',
+                        timestamp:      msg.createdAt || new Date().toISOString(),
+                        unreadCount:    1,
+                    };
 
-            if (message?.conversationId && message?.receiver) {
-                const recipientId = message.receiver;
-                const conversationId = message.conversationId;
-
-                const isRecipientFromCurrentAgency = checkIfFromCurrentAgency(recipientId, message);
-
-                if (!isRecipientFromCurrentAgency) {
-                    console.log('📭 Message not for current agency, ignoring');
-                    return;
+                    const next  = [newConv, ...prev];
+                    _builtConvs = next;
+                    return next;
                 }
 
-                conversationsRef.current[recipientId] = conversationId;
-
-                const metadata = {
-                    id: recipientId,
-                    name: message.receiverName || getRecipientName(recipientId),
-                    logo: message.receiverAvatar || getRecipientLogo(recipientId),
-                    type: message.receiverModel || getRecipientType(recipientId),
-                    lastMessage: message.content,
-                    timestamp: new Date(message.createdAt),
-                    unreadCount: 0,
-                    agencyId: agencyId
+                const updated = [...prev];
+                updated[idx]  = {
+                    ...updated[idx],
+                    lastMessage: msg.content   || updated[idx].lastMessage,
+                    timestamp:   msg.createdAt || new Date().toISOString(),
+                    unreadCount: (updated[idx].unreadCount || 0) + 1,
                 };
 
-                await saveChatMetadata(recipientId, metadata);
-                await saveConversationToStorage(recipientId, conversationId);
-                await refreshChats();
-            }
-        };
+                const [moved] = updated.splice(idx, 1);
+                const next    = [moved, ...updated];
+                _builtConvs   = next;
+                return next;
+            });
+        });
 
-        // ====== BACKEND EVENT: conversation_list ======
-        const handleConversationList = (data) => {
-            console.log('📋 Received conversation list from backend');
-            
-            // Backend automatically sends this on connect with full chat history
-            if (data && Array.isArray(data)) {
-                console.log('📋 Processing', data.length, 'conversations');
-                
-                // Process each conversation from the list
-                data.forEach(conversation => {
-                    if (conversation.conversationId && conversation.participants) {
-                        // Find the other participant (not the current user)
-                        const otherParticipant = conversation.participants.find(
-                            p => p.id !== user?.id
-                        );
-                        
-                        if (otherParticipant) {
-                            const participantId = otherParticipant.id;
-                            
-                            // Save conversation ID
-                            conversationsRef.current[participantId] = conversation.conversationId;
-                            
-                            // Save metadata
-                            const metadata = {
-                                id: participantId,
-                                name: otherParticipant.name || getRecipientName(participantId),
-                                logo: otherParticipant.avatar || getRecipientLogo(participantId),
-                                type: otherParticipant.model || getRecipientType(participantId),
-                                lastMessage: conversation.lastMessage?.content || '',
-                                timestamp: conversation.lastMessage?.createdAt 
-                                    ? new Date(conversation.lastMessage.createdAt) 
-                                    : new Date(),
-                                unreadCount: conversation.unreadCount || 0,
-                                agencyId: agencyId
-                            };
-                            
-                            saveChatMetadata(participantId, metadata);
-                            saveConversationToStorage(participantId, conversation.conversationId);
-                        }
-                    }
-                });
-                
-                refreshChats();
-            } else {
-                console.log('📋 Conversation list received (will refresh chats)');
-                refreshChats();
-            }
-        };
+        const unsubSent = socketService.onMessageSent(payload => {
+            if (!mountedRef.current) return;
 
-        // Set up listeners using the cleaned SocketService methods
-        const unsubscribeReceive = socketService.onReceiveMessage(handleReceiveMessage);
-        const unsubscribeSent = socketService.onSentMessage(handleSentMessage);
-        const unsubscribeList = socketService.onConversationList(handleConversationList);
+            const msg    = payload.message || payload;
+            const convId = String(payload.conversationId || msg.conversationId || '');
+
+            console.log('📥 message_sent for conv:', convId);
+
+            if (!convId) return;
+
+            setConversations(prev => {
+                const idx = prev.findIndex(c => c.conversationId === convId);
+
+                if (idx !== -1) {
+                    const updated = [...prev];
+                    updated[idx]  = {
+                        ...updated[idx],
+                        lastMessage: msg.content   || updated[idx].lastMessage,
+                        timestamp:   msg.createdAt || new Date().toISOString(),
+                        unreadCount: 0,
+                    };
+
+                    const [moved] = updated.splice(idx, 1);
+                    const next    = [moved, ...updated];
+                    _builtConvs   = next;
+                    return next;
+                }
+
+                // First message in new conversation
+                const receiverId = String(msg.receiver || '');
+                const contact    = _contactMap[receiverId] || {};
+
+                const newConv = {
+                    id:             convId,
+                    conversationId: convId,
+                    participantId:  receiverId,
+                    name:           contact.name  || 'Support',
+                    avatar:         contact.logo  || '',
+                    model:          contact.model || 'Agent',
+                    type:           contact.type  || 'Contact',
+                    lastMessage:    msg.content   || '',
+                    timestamp:      msg.createdAt || new Date().toISOString(),
+                    unreadCount:    0,
+                };
+
+                const next  = [newConv, ...prev];
+                _builtConvs = next;
+                return next;
+            });
+        });
+
+        const unsubUpd = socketService.onConversationUpdated(upd => {
+            if (!mountedRef.current) return;
+
+            const updId = String(upd._id || upd.id || '');
+            if (!updId) return;
+
+            setConversations(prev => {
+                const idx = prev.findIndex(c => c.conversationId === updId);
+                if (idx === -1) return prev;
+
+                const updated = [...prev];
+                updated[idx]  = {
+                    ...updated[idx],
+                    lastMessage: upd.lastMessage?.content  || updated[idx].lastMessage,
+                    timestamp:   upd.lastMessage?.createdAt || updated[idx].timestamp,
+                    unreadCount: upd.unreadCount ?? updated[idx].unreadCount,
+                };
+
+                const sorted = [...updated].sort(
+                    (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
+                );
+
+                _builtConvs = sorted;
+                return sorted;
+            });
+        });
+
+        const timeout = setTimeout(() => {
+            if (mountedRef.current) setIsLoading(false);
+        }, 8000);
 
         return () => {
-            console.log("🧹 Cleaning up MessagesScreen listeners");
-            // Use the cleanup functions returned by the listeners
-            unsubscribeReceive();
-            unsubscribeSent();
-            unsubscribeList();
+            mountedRef.current = false;
+            clearTimeout(timeout);
+            unsubConn();
+            unsubList();
+            unsubNew();
+            unsubSent();
+            unsubUpd();
         };
-    }, [userToken, agencyId, refreshKey]);
+    }, [userToken, myId]);
 
-    const fetchMentorDetails = async (mentorId) => {
-        try {
-            const response = await fetch(`${Config.API_BASE_URL}/agency/mentors/${mentorId}`, {
-                headers: { 'Authorization': `Bearer ${userToken}` }
-            });
-            const data = await response.json();
-
-            if (data.message === "Success") {
-                setConnectedMentorData(data.mentor);
-                console.log("✅ Full Mentor Details Loaded:", data.mentor.name);
+    // Reload contacts on screen focus
+    useFocusEffect(
+        useCallback(() => {
+            if (mountedRef.current) {
+                loadContacts();
             }
-        } catch (error) {
-            console.error("❌ Error fetching mentor details:", error);
-        }
-    };
-
-    const fetchAgentDetails = async (agentId) => {
-        try {
-            // Updated URL to include the trailing /agents as seen in your screenshot
-            const API_URL = `${Config.API_BASE_URL}/agency/profile/employee/agents/${agentId}/agents`;
-
-            console.log("🌐 Fetching Agent details from:", API_URL);
-
-            const response = await fetch(API_URL, {
-                headers: { 'Authorization': `Bearer ${userToken}` }
-            });
-
-            const data = await response.json();
-
-            if (data.message === "Success" && data.agent) {
-                setAssignedAgentData(data.agent);
-                console.log("✅ Agent Details Loaded:", data.agent.name);
-            }
-        } catch (error) {
-            console.error("❌ Error fetching agent details:", error);
-        }
-    };
-
-    const fetchStudentProfile = async () => {
-        try {
-            const response = await fetch(`${Config.API_BASE_URL}/students/profile`, {
-                headers: { 'Authorization': `Bearer ${userToken}` }
-            });
-            const data = await response.json();
-
-            // 1. Handle Mentor Connection
-            const connection = data?.profile?.connectedMentor;
-            if (connection && connection.status === 'confirmed') {
-                console.log("🔗 Found confirmed mentor ID:", connection.mentor);
-                await fetchMentorDetails(connection.mentor);
-            }
-
-            // 2. Handle Assigned Agent (Admission/Visa Officer)
-            const agentId = data?.profile?.assignedAgent;
-            if (agentId) {
-                console.log("🔗 Found assigned agent ID:", agentId);
-                await fetchAgentDetails(agentId);
-            }
-
-        } catch (err) {
-            console.error("❌ Profile fetch failed:", err);
-        }
-    };
-
-    const checkIfFromCurrentAgency = (id, message = {}) => {
-        if (!agencyId) return false;
-        if (id === agencyId) return true;
-
-        const metadata = chatMetadataRef.current[id];
-        if (metadata?.agencyId === agencyId) return true;
-
-        const isAgencyStaff = agencyStaffRef.current.some(staff =>
-            staff.id === id && staff.agencyId === agencyId
-        );
-        if (isAgencyStaff) return true;
-
-        return false;
-    };
-
-    const getAgencyContacts = () => {
-        const contacts = [];
-
-        // 1. Agency Support Option
-        if (!conversationsRef.current[agencyId]) {
-            contacts.push({
-                id: agencyId,
-                name: agencyName || 'Agency Support',
-                logo: agencyLogo || '',
-                type: 'Agency',
-                agencyId: agencyId
-            });
-        }
-
-        // 2. Connected Mentor Option
-        if (connectedMentorData) {
-            const mId = connectedMentorData._id;
-
-            if (!conversationsRef.current[mId]) {
-                contacts.push({
-                    id: mId,
-                    name: connectedMentorData.name,
-                    logo: connectedMentorData.profilepic,
-                    type: 'Mentor',
-                    agencyId: agencyId
-                });
-            }
-        }
-
-        // 3. Assigned Agent Option
-        if (assignedAgentData) {
-            const agentId = assignedAgentData._id;
-
-            if (!conversationsRef.current[agentId]) {
-
-                const displayRole = assignedAgentData.systemRole
-                    ? assignedAgentData.systemRole.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())
-                    : 'Officer';
-
-                contacts.push({
-                    id: agentId,
-                    name: `${assignedAgentData.name} (${displayRole})`,
-                    subtitle: displayRole,
-                    logo: '',
-                    type: 'Agent',
-                    agencyId: agencyId
-                });
-            }
-        }
-
-        return contacts;
-    };
-
-    const saveConversationToStorage = async (recipientId, conversationId) => {
-        try {
-            if (!agencyId) {
-                console.error("❌ No agencyId for saving conversation");
-                return;
-            }
-
-            const storageKey = getStorageKey(agencyId);
-            const saved = await AsyncStorage.getItem(storageKey);
-            const conversations = saved ? JSON.parse(saved) : {};
-
-            conversations[recipientId] = conversationId;
-
-            await AsyncStorage.setItem(storageKey, JSON.stringify(conversations));
-            conversationsRef.current = conversations;
-
-            console.log('✅ SAVED conversation for agency:', agencyId, {
-                recipientId,
-                conversationId,
-                allConversations: Object.keys(conversations)
-            });
-        } catch (error) {
-            console.error('❌ Error saving conversation:', error);
-        }
-    };
-
-    const saveChatMetadata = async (recipientId, metadata) => {
-        try {
-            if (!agencyId) {
-                console.error("❌ No agencyId for saving metadata");
-                return;
-            }
-
-            const metadataKey = getMetadataKey(agencyId);
-            const saved = await AsyncStorage.getItem(metadataKey);
-            const allMetadata = saved ? JSON.parse(saved) : {};
-
-            allMetadata[recipientId] = {
-                ...allMetadata[recipientId],
-                ...metadata,
-                timestamp: metadata.timestamp || new Date(),
-                lastMessage: metadata.lastMessage || allMetadata[recipientId]?.lastMessage || '',
-                agencyId: agencyId
-            };
-
-            await AsyncStorage.setItem(metadataKey, JSON.stringify(allMetadata));
-            chatMetadataRef.current = allMetadata;
-            console.log('💾 Saved chat metadata for agency:', agencyId);
-        } catch (error) {
-            console.error('❌ Error saving chat metadata:', error);
-        }
-    };
-
-    const getRecipientName = (recipientId) => {
-        if (chatMetadataRef.current[recipientId]?.name) {
-            return chatMetadataRef.current[recipientId].name;
-        }
-
-        if (recipientId === agencyId) return agencyName || 'Agency Support';
-
-        const staff = agencyStaffRef.current.find(staff => staff.id === recipientId);
-        if (staff) return staff.name;
-
-        return 'Support';
-    };
-
-    const getRecipientLogo = (recipientId) => {
-        if (chatMetadataRef.current[recipientId]?.logo) {
-            return chatMetadataRef.current[recipientId].logo;
-        }
-
-        if (recipientId === agencyId) return agencyLogo;
-
-        const staff = agencyStaffRef.current.find(staff => staff.id === recipientId);
-        if (staff) return staff.logo;
-
-        return '';
-    };
-
-    const getRecipientType = (recipientId) => {
-        if (chatMetadataRef.current[recipientId]?.type) {
-            return chatMetadataRef.current[recipientId].type;
-        }
-
-        if (recipientId === agencyId) return 'Agency';
-
-        const staff = agencyStaffRef.current.find(staff => staff.id === recipientId);
-        if (staff) return staff.type;
-
-        return 'Support';
-    };
-
-    const getLastMessage = (recipientId) => {
-        const lastMsg = chatMetadataRef.current[recipientId]?.lastMessage;
-        return lastMsg && lastMsg.trim() !== '' ? lastMsg : 'Start a conversation...';
-    };
-
-    const getTimestamp = (recipientId) => {
-        const timestamp = chatMetadataRef.current[recipientId]?.timestamp;
-        return timestamp ? new Date(timestamp) : new Date();
-    };
-
-    const getUnreadCount = (recipientId) => {
-        return chatMetadataRef.current[recipientId]?.unreadCount || 0;
-    };
-
-    const refreshChats = async () => {
-        try {
-            setIsLoadingChats(true);
-
-            if (!agencyId) {
-                console.log("⏳ No agencyId, skipping refresh");
-                setIsLoadingChats(false);
-                return;
-            }
-
-            const storageKey = getStorageKey(agencyId);
-            const metadataKey = getMetadataKey(agencyId);
-
-            const saved = await AsyncStorage.getItem(storageKey);
-            const metadataSaved = await AsyncStorage.getItem(metadataKey);
-
-            if (saved) {
-                const conversations = JSON.parse(saved);
-                conversationsRef.current = conversations;
-            } else {
-                conversationsRef.current = {};
-            }
-
-            if (metadataSaved) {
-                const metadata = JSON.parse(metadataSaved);
-                chatMetadataRef.current = metadata;
-            } else {
-                chatMetadataRef.current = {};
-            }
-
-            let chatList = [];
-
-            Object.entries(conversationsRef.current).forEach(([recipientId, conversationId]) => {
-                const metadata = chatMetadataRef.current[recipientId] || {};
-
-                if (metadata.agencyId === agencyId || recipientId === agencyId) {
-                    chatList.push({
-                        id: recipientId,
-                        conversationId: conversationId,
-                        name: getRecipientName(recipientId),
-                        logo: getRecipientLogo(recipientId),
-                        type: getRecipientType(recipientId),
-                        lastMessage: getLastMessage(recipientId),
-                        timestamp: getTimestamp(recipientId),
-                        unreadCount: getUnreadCount(recipientId),
-                        agencyId: agencyId
-                    });
-                }
-            });
-
-            Object.entries(chatMetadataRef.current).forEach(([recipientId, metadata]) => {
-                if (metadata.agencyId === agencyId && !chatList.find(chat => chat.id === recipientId)) {
-                    chatList.push({
-                        id: recipientId,
-                        conversationId: conversationsRef.current[recipientId] || null,
-                        name: metadata.name || getRecipientName(recipientId),
-                        logo: metadata.logo || getRecipientLogo(recipientId),
-                        type: metadata.type || getRecipientType(recipientId),
-                        lastMessage: metadata.lastMessage || getLastMessage(recipientId),
-                        timestamp: metadata.timestamp ? new Date(metadata.timestamp) : getTimestamp(recipientId),
-                        unreadCount: metadata.unreadCount || getUnreadCount(recipientId),
-                        agencyId: agencyId
-                    });
-                }
-            });
-
-            chatList.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-            setChats(chatList);
-            console.log('✅ Refreshed chats for agency', agencyId, ':', chatList.length);
-
-            setIsLoadingChats(false);
-        } catch (error) {
-            console.error('❌ Error refreshing chats:', error);
-            setIsLoadingChats(false);
-        }
-    };
-
-    const startNewChat = (recipient) => {
-        if (!recipient.id) {
-            Toast.show({
-                type: 'error',
-                text1: 'Recipient Missing',
-                text2: 'Unable to start chat. Recipient ID is missing.'
-            });
-            return;
-        }
-
-        console.log("🚀 Starting new chat with:", recipient);
-
-        const metadata = {
-            id: recipient.id,
-            name: recipient.name,
-            logo: recipient.logo || '',
-            type: recipient.type,
-            lastMessage: '',
-            timestamp: new Date(),
-            unreadCount: 0,
-            agencyId: agencyId
-        };
-
-        saveChatMetadata(recipient.id, metadata);
-
-        Toast.show({
-            type: 'success',
-            text1: 'Starting Chat',
-            text2: `Connecting you with ${recipient.name}...`,
-            visibilityTime: 1500,
-        });
-
-        handleGoToChat(recipient);
-    };
-
-    useEffect(() => {
-        if (showSuggestion) {
-            Animated.timing(fadeAnim, {
-                toValue: 1,
-                duration: 300,
-                useNativeDriver: true,
-            }).start();
-        } else {
-            fadeAnim.setValue(0);
-        }
-    }, [showSuggestion]);
-
-    const handleGoToChat = (recipient) => {
-        if (!recipient.id) {
-            Toast.show({
-                type: 'error',
-                text1: 'Connection Error',
-                text2: 'Could not open chat. Recipient ID is missing.'
-            });
-            return;
-        }
-
-        const conversationId = conversationsRef.current[recipient.id];
-
-        console.log("📍 Navigating to chat with:", {
-            recipientId: recipient.id,
-            conversationId: conversationId,
-            name: recipient.name,
-            agencyId: agencyId
-        });
-
+        }, [loadContacts])
+    );
+
+    // ── Navigation ──
+    const openChat = (conv) => {
         router.push({
-            pathname: "/agency/selected/chat",
+            pathname: '/agency/selected/chat',
             params: {
-                recipientId: recipient.id,
-                name: recipient.name,
-                logo: recipient.logo || "",
-                recipientType: recipient.type,
-                initialConversationId: conversationId || undefined,
-                agencyId: agencyId
-            }
+                conversationId: conv.conversationId || '',
+                recipientId:    conv.participantId  || '',
+                recipientModel: conv.model          || 'Agent',
+                name:           conv.name           || 'Support',
+                logo:           conv.avatar         || '',
+            },
         });
     };
 
-    const handleCloseSuggestion = () => {
-        Animated.timing(fadeAnim, {
-            toValue: 0,
-            duration: 200,
-            useNativeDriver: true,
-        }).start(() => setShowSuggestion(false));
+    const startChat = (contact) => {
+        router.push({
+            pathname: '/agency/selected/chat',
+            params: {
+                recipientId:    contact.id    || '',
+                recipientModel: contact.model || 'Agent',
+                name:           contact.name  || 'Support',
+                logo:           contact.logo  || '',
+            },
+        });
     };
 
-    const formatTime = (timestamp) => {
-        const now = new Date();
-        const messageDate = new Date(timestamp);
-        const diffMs = now - messageDate;
-        const diffMins = Math.floor(diffMs / 60000);
-        const diffHours = Math.floor(diffMins / 60);
-        const diffDays = Math.floor(diffHours / 24);
+    // ── Render ──
+    const renderItem = ({ item }) => (
+        <TouchableOpacity style={styles.row} onPress={() => openChat(item)} activeOpacity={0.72}>
+            <View style={styles.avatarWrap}>
+                {item.avatar ? (
+                    <Image source={{ uri: item.avatar }} style={styles.avatar} />
+                ) : (
+                    <View style={[styles.avatarFallback, { backgroundColor: C.primary }]}>
+                        <Text style={styles.avatarLetter}>{item.name?.[0]?.toUpperCase() || '?'}</Text>
+                    </View>
+                )}
+                {item.unreadCount > 0 && <View style={styles.unreadDot} />}
+            </View>
 
-        if (diffMins < 1) return 'Just now';
-        if (diffMins < 60) return `${diffMins}m`;
-        if (diffHours < 24) return `${diffHours}h`;
-        if (diffDays < 7) return `${diffDays}d`;
+            <View style={styles.rowContent}>
+                <View style={styles.rowTop}>
+                    <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
+                    <Text style={styles.rowTime}>{formatTime(item.timestamp)}</Text>
+                </View>
 
-        return messageDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    };
+                <Text style={styles.rowPreview} numberOfLines={1}>
+                    {item.lastMessage?.length > 60
+                        ? item.lastMessage.slice(0, 60) + '…'
+                        : item.lastMessage}
+                </Text>
 
-    const renderChatItem = ({ item }) => {
-        // 1. Determine the specific label to show for Agents
-        let displayType = item.type;
-        if (item.type === 'Agent' && assignedAgentData && assignedAgentData._id === item.id) {
-            // Formats "visa_officer" to "Visa Officer"
-            displayType = assignedAgentData.systemRole
-                ? assignedAgentData.systemRole.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())
-                : 'Officer';
-        }
-
-        return (
-            <TouchableOpacity
-                style={styles.chatItem}
-                onPress={() => handleGoToChat(item)}
-                activeOpacity={0.7}
-            >
-                <View style={styles.chatAvatarContainer}>
-                    {item.logo ? (
-                        <Image source={{ uri: item.logo }} style={styles.chatAvatar} />
-                    ) : (
-                        <View style={styles.chatAvatarFallback}>
-                            <Text style={styles.chatAvatarText}>
-                                {item.name ? item.name.charAt(0).toUpperCase() : '?'}
-                            </Text>
+                <View style={styles.rowBottom}>
+                    <View style={[styles.badge, { backgroundColor: C.primarySoft }]}>
+                        <Ionicons
+                            name={MODEL_ICON[item.model] || 'person-outline'}
+                            size={11}
+                            color={C.primary}
+                        />
+                        <Text style={[styles.badgeText, { color: C.primary }]}>
+                            {item.type || item.model}
+                        </Text>
+                    </View>
+                    {item.unreadCount > 0 && (
+                        <View style={styles.unreadBadge}>
+                            <Text style={styles.unreadBadgeText}>{item.unreadCount}</Text>
                         </View>
                     )}
-                    {item.unreadCount > 0 && <View style={styles.onlineIndicator} />}
                 </View>
+            </View>
+        </TouchableOpacity>
+    );
 
-                <View style={styles.chatContent}>
-                    <View style={styles.chatHeader}>
-                        <Text style={styles.chatName} numberOfLines={1}>{item.name}</Text>
-                        <Text style={styles.chatTime}>{formatTime(item.timestamp)}</Text>
-                    </View>
-
-                    <View style={styles.chatMessageRow}>
-                        <Text
-                            style={[
-                                styles.chatMessage,
-                                item.unreadCount > 0 && styles.chatMessageUnread
-                            ]}
-                            numberOfLines={1}
-                        >
-                            {item.lastMessage || 'No messages yet'}
-                        </Text>
-                    </View>
-
-                    <View style={styles.chatFooter}>
-                        <View style={styles.chatTypeBadge}>
-                            <Ionicons
-                                name={
-                                    item.type === 'Agency' ? 'business-outline' :
-                                        item.type === 'Mentor' ? 'school-outline' :
-                                            item.type === 'Agent' ? 'ribbon-outline' : 'person-outline'
-                                }
-                                size={12}
-                                color={COLORS.primary}
-                            />
-                            {/* 2. Display the dynamic type (Visa Officer / Mentor / Agency) */}
-                            <Text style={styles.chatTypeText}>{displayType}</Text>
-                        </View>
-
-                        {item.unreadCount > 0 && (
-                            <View style={styles.unreadBadge}>
-                                <Text style={styles.unreadText}>{item.unreadCount}</Text>
-                            </View>
-                        )}
-                    </View>
+    if (isLoading) {
+        return (
+            <SafeAreaView style={styles.root}>
+                <ScreenHeader onBack={() => router.back()} />
+                <View style={styles.center}>
+                    <ActivityIndicator size="large" color={C.primary} />
+                    <Text style={styles.loadingText}>Loading conversations…</Text>
                 </View>
-            </TouchableOpacity>
+            </SafeAreaView>
         );
-    };
+    }
 
     return (
-        <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
+        <SafeAreaView style={styles.root}>
+            <StatusBar barStyle="dark-content" backgroundColor={C.white} />
+            <ScreenHeader onBack={() => router.back()} />
 
-            {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity
-                    onPress={() => router.back()}
-                    style={styles.backButton}
-                >
-                    <Ionicons name="arrow-back" size={24} color={COLORS.textPrimary} />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Messages</Text>
-                <View style={styles.headerRight}>
-                    <TouchableOpacity
-                        style={styles.composeButton}
-                        onPress={() => setShowSuggestion(true)}
-                    >
-                        <Ionicons name="create-outline" size={22} color={COLORS.primary} />
-                    </TouchableOpacity>
+            {!isConnected && (
+                <View style={styles.offlineBanner}>
+                    <Ionicons name="cloud-offline-outline" size={15} color={C.white} />
+                    <Text style={styles.offlineText}>Reconnecting…</Text>
                 </View>
-            </View>
+            )}
 
-            {/* New Message Sheet */}
-            {showSuggestion && (
-                <Animated.View style={[styles.suggestionOverlay, { opacity: fadeAnim }]}>
-                    <TouchableOpacity
-                        style={styles.overlayBackground}
-                        activeOpacity={1}
-                        onPress={handleCloseSuggestion}
+            <FlatList
+                data={conversations}
+                renderItem={renderItem}
+                keyExtractor={item => item.id}
+                contentContainerStyle={styles.listContent}
+                showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={isRefreshing}
+                        onRefresh={onRefresh}
+                        colors={[C.primary]}
+                        tintColor={C.primary}
                     />
-
-                    <Animated.View
-                        style={[
-                            styles.suggestionSheet,
-                            {
-                                transform: [{
-                                    translateY: fadeAnim.interpolate({
-                                        inputRange: [0, 1],
-                                        outputRange: [300, 0]
-                                    })
-                                }]
-                            }
-                        ]}
-                    >
-                        <View style={styles.sheetHandle} />
-
-                        <View style={styles.sheetHeader}>
-                            <Text style={styles.sheetTitle}>New Message</Text>
-                            <TouchableOpacity
-                                onPress={handleCloseSuggestion}
-                                style={styles.closeButton}
-                            >
-                                <Ionicons name="close" size={24} color={COLORS.textSecondary} />
-                            </TouchableOpacity>
-                        </View>
-
-                        <View style={styles.suggestedContainer}>
-                            <Text style={styles.suggestedTitle}>CONTACTS</Text>
-
-                            {getAgencyContacts().map((contact) => (
-                                <TouchableOpacity
-                                    key={contact.id}
-                                    style={styles.contactItem}
-                                    onPress={() => {
-                                        startNewChat(contact);
-                                        handleCloseSuggestion();
-                                    }}
-                                    activeOpacity={0.7}
-                                >
-                                    <View style={styles.contactAvatarContainer}>
-                                        {contact.logo ? (
-                                            <Image source={{ uri: contact.logo }} style={styles.contactAvatar} />
-                                        ) : (
-                                            <View style={styles.contactAvatarFallback}>
-                                                <Text style={styles.contactAvatarText}>
-                                                    {contact.name.charAt(0).toUpperCase()}
-                                                </Text>
+                }
+                ListHeaderComponent={
+                    contacts.length > 0 ? (
+                        <View style={styles.contactsSection}>
+                            <Text style={styles.sectionTitle}>Available Contacts</Text>
+                            <View style={styles.contactsGrid}>
+                                {contacts.map(contact => {
+                                    const existingConv = conversations.find(
+                                        c => c.participantId === contact.id
+                                    );
+                                    return (
+                                        <TouchableOpacity
+                                            key={contact.id}
+                                            style={styles.contactItem}
+                                            onPress={() =>
+                                                existingConv
+                                                    ? openChat(existingConv)
+                                                    : startChat(contact)
+                                            }
+                                        >
+                                            <View style={[styles.contactAvatar, { borderColor: C.primary }]}>
+                                                {contact.logo ? (
+                                                    <Image
+                                                        source={{ uri: contact.logo }}
+                                                        style={styles.contactAvatarImg}
+                                                    />
+                                                ) : (
+                                                    <View
+                                                        style={[
+                                                            styles.contactAvatarFallback,
+                                                            { backgroundColor: C.primary },
+                                                        ]}
+                                                    >
+                                                        <Text style={styles.contactAvatarLetter}>
+                                                            {contact.name?.[0]?.toUpperCase()}
+                                                        </Text>
+                                                    </View>
+                                                )}
                                             </View>
-                                        )}
-                                    </View>
-
-                                    <View style={styles.contactInfo}>
-                                        <Text style={styles.contactName}>{contact.name}</Text>
-                                        <Text style={styles.contactRole}>{contact.type}</Text>
-                                    </View>
-
-                                    <Ionicons name="chevron-forward" size={20} color={COLORS.textSecondary} />
-                                </TouchableOpacity>
-                            ))}
-
-                            {getAgencyContacts().length === 0 && (
-                                <View style={styles.noContacts}>
-                                    <Ionicons name="people-outline" size={48} color={COLORS.border} />
-                                    <Text style={styles.noContactsText}>No contacts available</Text>
-                                    <Text style={styles.noContactsSubtext}>
-                                        All available contacts already have active conversations
-                                    </Text>
-                                </View>
-                            )}
+                                            <Text style={styles.contactName} numberOfLines={1}>
+                                                {contact.name?.split(' ')[0]}
+                                            </Text>
+                                            <Text style={styles.contactType} numberOfLines={1}>
+                                                {contact.type}
+                                            </Text>
+                                            {existingConv && (
+                                                <View style={styles.chatBadge}>
+                                                    <Ionicons name="chatbubble" size={12} color={C.primary} />
+                                                </View>
+                                            )}
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </View>
                         </View>
-                    </Animated.View>
-                </Animated.View>
-            )}
-
-            {/* Main Content */}
-            <View style={styles.content}>
-                {isLoadingChats ? (
-                    <View style={styles.loadingContainer}>
-                        <ActivityIndicator size="large" color={COLORS.primary} />
-                        <Text style={styles.loadingText}>Loading messages...</Text>
-                    </View>
-                ) : chats.length === 0 ? (
-                    <View style={styles.emptyContainer}>
-                        <View style={styles.emptyIcon}>
-                            <Ionicons name="chatbubbles-outline" size={80} color={COLORS.border} />
-                        </View>
+                    ) : null
+                }
+                ListEmptyComponent={
+                    <View style={styles.emptyWrap}>
+                        <Ionicons
+                            name="chatbubbles-outline"
+                            size={64}
+                            color={C.primary}
+                            style={{ opacity: 0.25, alignSelf: 'center', marginBottom: 16 }}
+                        />
                         <Text style={styles.emptyTitle}>No Messages Yet</Text>
-                        <Text style={styles.emptySubtitle}>
-                            Start a conversation with {agencyName || 'your agency'}
+                        <Text style={styles.emptyBody}>
+                            {contacts.length > 0
+                                ? 'Tap a contact above to start a conversation.'
+                                : 'Your assigned contacts will appear here.'}
                         </Text>
-                        <TouchableOpacity
-                            style={styles.startChatButton}
-                            onPress={() => setShowSuggestion(true)}
-                        >
-                            <Ionicons name="add" size={20} color={COLORS.white} />
-                            <Text style={styles.startChatText}>Start New Chat</Text>
-                        </TouchableOpacity>
                     </View>
-                ) : (
-                    <FlatList
-                        data={chats}
-                        renderItem={renderChatItem}
-                        keyExtractor={item => item.id}
-                        showsVerticalScrollIndicator={false}
-                        contentContainerStyle={styles.chatList}
-                        refreshing={isLoadingChats}
-                        onRefresh={forceRefresh}
-                    />
-                )}
-            </View>
-
-            {/* Floating Action Button */}
-            {chats.length > 0 && (
-                <TouchableOpacity
-                    style={styles.fab}
-                    onPress={() => setShowSuggestion(true)}
-                    activeOpacity={0.9}
-                >
-                    <Ionicons name="create-outline" size={24} color={COLORS.white} />
-                </TouchableOpacity>
-            )}
+                }
+            />
         </SafeAreaView>
     );
 }
 
+function ScreenHeader({ onBack }) {
+    return (
+        <View style={styles.header}>
+            <TouchableOpacity style={styles.backBtn} onPress={onBack}>
+                <Ionicons name="arrow-back" size={22} color="#2D3748" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Messages</Text>
+            <View style={{ width: 40 }} />
+        </View>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════
+//  STYLES
+// ═══════════════════════════════════════════════════════════
+
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: COLORS.bg
-    },
+    root:        { flex: 1, backgroundColor: C.bg },
+    center:      { flex: 1, justifyContent: 'center', alignItems: 'center' },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingHorizontal: 20,
-        paddingVertical: 16,
-        backgroundColor: COLORS.white,
+        paddingVertical: 14,
+        backgroundColor: C.white,
         borderBottomWidth: 1,
-        borderBottomColor: COLORS.border,
+        borderBottomColor: C.border,
     },
-    backButton: {
+    backBtn: {
         width: 40,
         height: 40,
         borderRadius: 10,
-        backgroundColor: COLORS.bg,
+        backgroundColor: C.bg,
         justifyContent: 'center',
         alignItems: 'center',
     },
-    headerTitle: {
-        fontSize: 20,
-        fontWeight: '700',
-        color: COLORS.textPrimary,
-        flex: 1,
-        marginLeft: 16
-    },
-    headerRight: {
+    headerTitle:  { fontSize: 19, fontWeight: '700', color: '#2D3748' },
+    offlineBanner: {
         flexDirection: 'row',
         alignItems: 'center',
-    },
-    composeButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 10,
-        backgroundColor: COLORS.accent,
         justifyContent: 'center',
-        alignItems: 'center',
+        gap: 8,
+        paddingVertical: 8,
+        backgroundColor: C.warning,
     },
-    content: {
-        flex: 1,
-        backgroundColor: COLORS.white
-    },
-    chatList: {
-        paddingBottom: 80
-    },
-    chatItem: {
-        flexDirection: 'row',
+    offlineText:  { color: C.white, fontSize: 13, fontWeight: '600' },
+    loadingText:  { marginTop: 14, color: C.textSecondary, fontSize: 14 },
+    listContent:  { paddingBottom: 28 },
+
+    contactsSection: {
         paddingHorizontal: 20,
-        paddingVertical: 16,
-        backgroundColor: COLORS.white,
-        borderBottomWidth: 1,
-        borderBottomColor: COLORS.border,
+        paddingTop: 16,
+        paddingBottom: 24,
+        backgroundColor: C.white,
+        borderBottomWidth: 8,
+        borderBottomColor: C.bg,
     },
-    chatAvatarContainer: {
-        position: 'relative',
-        marginRight: 14,
-    },
-    chatAvatar: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
-        backgroundColor: COLORS.accent
-    },
-    chatAvatarFallback: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
-        backgroundColor: COLORS.accent,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    chatAvatarText: {
-        fontSize: 22,
-        fontWeight: '600',
-        color: COLORS.primary
-    },
-    onlineIndicator: {
-        position: 'absolute',
-        bottom: 2,
-        right: 2,
-        width: 14,
-        height: 14,
-        borderRadius: 7,
-        backgroundColor: COLORS.online,
-        borderWidth: 2,
-        borderColor: COLORS.white,
-    },
-    chatContent: {
-        flex: 1,
-        justifyContent: 'center'
-    },
-    chatHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 6
-    },
-    chatName: {
+    sectionTitle: {
         fontSize: 16,
         fontWeight: '600',
-        color: COLORS.textPrimary,
-        flex: 1,
-        marginRight: 8
+        color: '#2D3748',
+        marginBottom: 16,
     },
-    chatTime: {
-        fontSize: 12,
-        color: COLORS.textSecondary,
-        fontWeight: '500'
-    },
-    chatMessageRow: {
+    contactsGrid: {
         flexDirection: 'row',
+        flexWrap: 'wrap',
+        marginHorizontal: -8,
+    },
+    contactItem: {
+        width: '25%',
+        paddingHorizontal: 8,
         alignItems: 'center',
-        marginBottom: 6
+        marginBottom: 16,
+        position: 'relative',
     },
-    chatMessage: {
-        fontSize: 14,
-        color: COLORS.textSecondary,
-        flex: 1,
-        lineHeight: 20
+    contactAvatar: {
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        marginBottom: 6,
+        overflow: 'hidden',
+        backgroundColor: C.bg,
+        borderWidth: 2,
+        borderColor: C.white,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
     },
-    chatMessageUnread: {
-        color: COLORS.textPrimary,
-        fontWeight: '500'
+    contactAvatarImg:      { width: 56, height: 56, borderRadius: 28 },
+    contactAvatarFallback: {
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
-    chatFooter: {
+    contactAvatarLetter: { fontSize: 20, fontWeight: '600', color: C.white },
+    contactName: {
+        fontSize: 12,
+        fontWeight: '500',
+        color: '#2D3748',
+        textAlign: 'center',
+        marginBottom: 2,
+    },
+    contactType: { fontSize: 10, color: C.textSecondary, textAlign: 'center' },
+    chatBadge: {
+        position: 'absolute',
+        top: 0,
+        right: 12,
+        backgroundColor: C.white,
+        borderRadius: 10,
+        padding: 2,
+        borderWidth: 1,
+        borderColor: C.primary,
+    },
+
+    row: {
+        flexDirection: 'row',
+        paddingHorizontal: 20,
+        paddingVertical: 14,
+        backgroundColor: C.white,
+        borderBottomWidth: 1,
+        borderBottomColor: C.border,
+    },
+    avatarWrap: { position: 'relative', marginRight: 14 },
+    avatar:     { width: 54, height: 54, borderRadius: 27, backgroundColor: C.bg },
+    avatarFallback: {
+        width: 54,
+        height: 54,
+        borderRadius: 27,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    avatarLetter: { fontSize: 20, fontWeight: '700', color: C.white },
+    unreadDot: {
+        position: 'absolute',
+        top: 1,
+        right: 1,
+        width: 13,
+        height: 13,
+        borderRadius: 6.5,
+        backgroundColor: C.unread,
+        borderWidth: 2,
+        borderColor: C.white,
+    },
+    rowContent: { flex: 1 },
+    rowTop: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 4,
+    },
+    rowName:    { fontSize: 15, fontWeight: '600', color: '#2D3748', flex: 1, marginRight: 8 },
+    rowTime:    { fontSize: 12, color: C.textSecondary },
+    rowPreview: { fontSize: 13, color: C.textSecondary, marginBottom: 6 },
+    rowBottom:  {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
     },
-    chatTypeBadge: {
+    badge: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: COLORS.accent,
-        paddingHorizontal: 10,
-        paddingVertical: 4,
+        gap: 4,
+        paddingHorizontal: 9,
+        paddingVertical: 3,
         borderRadius: 6,
-        gap: 4
     },
-    chatTypeText: {
-        fontSize: 11,
-        color: COLORS.primary,
-        fontWeight: '600'
-    },
+    badgeText:       { fontSize: 11, fontWeight: '600' },
     unreadBadge: {
-        backgroundColor: COLORS.primary,
+        backgroundColor: C.unread,
         borderRadius: 12,
         minWidth: 22,
         height: 22,
         justifyContent: 'center',
         alignItems: 'center',
-        paddingHorizontal: 6,
+        paddingHorizontal: 5,
     },
-    unreadText: {
-        fontSize: 11,
-        color: COLORS.white,
-        fontWeight: '700'
-    },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingHorizontal: 40
-    },
-    loadingText: {
-        marginTop: 16,
-        color: COLORS.textSecondary,
-        fontSize: 14,
-        fontWeight: '500'
-    },
-    emptyContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingHorizontal: 40
-    },
-    emptyIcon: {
-        marginBottom: 24
-    },
+    unreadBadgeText: { fontSize: 11, color: C.white, fontWeight: '700' },
+
+    emptyWrap:  { flex: 1, paddingHorizontal: 24, paddingTop: 48 },
     emptyTitle: {
-        fontSize: 22,
-        fontWeight: '700',
-        color: COLORS.textPrimary,
-        marginBottom: 8
-    },
-    emptySubtitle: {
-        fontSize: 14,
-        color: COLORS.textSecondary,
-        textAlign: 'center',
-        lineHeight: 20,
-        marginBottom: 32
-    },
-    startChatButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: COLORS.primary,
-        paddingHorizontal: 24,
-        paddingVertical: 14,
-        borderRadius: 12,
-        gap: 8
-    },
-    startChatText: {
-        color: COLORS.white,
-        fontSize: 15,
-        fontWeight: '600'
-    },
-    fab: {
-        position: 'absolute',
-        bottom: 24,
-        right: 24,
-        width: 56,
-        height: 56,
-        borderRadius: 28,
-        backgroundColor: COLORS.primary,
-        justifyContent: 'center',
-        alignItems: 'center',
-        elevation: 6,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.3,
-        shadowRadius: 4,
-    },
-    suggestionOverlay: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 1000
-    },
-    overlayBackground: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)'
-    },
-    suggestionSheet: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        backgroundColor: COLORS.white,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-        paddingBottom: 30,
-        maxHeight: '70%',
-    },
-    sheetHandle: {
-        width: 40,
-        height: 4,
-        backgroundColor: COLORS.border,
-        borderRadius: 2,
-        alignSelf: 'center',
-        marginTop: 12,
-        marginBottom: 8
-    },
-    sheetHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingHorizontal: 20,
-        paddingVertical: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: COLORS.border,
-    },
-    sheetTitle: {
         fontSize: 20,
         fontWeight: '700',
-        color: COLORS.textPrimary
+        color: '#2D3748',
+        textAlign: 'center',
+        marginBottom: 8,
     },
-    closeButton: {
-        padding: 4
-    },
-    suggestedContainer: {
-        paddingHorizontal: 20,
-        paddingTop: 16
-    },
-    suggestedTitle: {
-        fontSize: 12,
-        fontWeight: '700',
-        color: COLORS.textSecondary,
-        marginBottom: 16,
-        letterSpacing: 1
-    },
-    contactItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 14,
-        borderBottomWidth: 1,
-        borderBottomColor: COLORS.border
-    },
-    contactAvatarContainer: {
-        marginRight: 14,
-    },
-    contactAvatar: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        backgroundColor: COLORS.accent
-    },
-    contactAvatarFallback: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        backgroundColor: COLORS.accent,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    contactAvatarText: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: COLORS.primary
-    },
-    contactInfo: {
-        flex: 1
-    },
-    contactName: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-        marginBottom: 4
-    },
-    contactRole: {
-        fontSize: 13,
-        color: COLORS.textSecondary
-    },
-    noContacts: {
-        alignItems: 'center',
-        paddingVertical: 40
-    },
-    noContactsText: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-        marginTop: 16,
-        marginBottom: 8
-    },
-    noContactsSubtext: {
-        fontSize: 13,
-        color: COLORS.textSecondary,
+    emptyBody: {
+        fontSize: 14,
+        color: C.textSecondary,
         textAlign: 'center',
         lineHeight: 20,
-        paddingHorizontal: 20
     },
 });

@@ -8,7 +8,8 @@ const COLORS = {
   white: '#FFFFFF',
   border: '#EEF2F7',
   textInactive: '#BFC7D1',
-  disabled: '#CCCCCC'
+  disabled: '#CCCCCC',
+  lightPrimary: '#E8F0FE',
 };
 
 export default function BottomNavBar() {
@@ -43,24 +44,28 @@ export default function BottomNavBar() {
       name: 'Home',
       route: 'home',
       icon: 'home',
+      iconActive: 'home',
       getScreen: () => agencyId ? `/agency/selected/${agencyId}` : null,
     },
     {
       name: 'Messages',
       route: 'messages',
       icon: 'mail-outline',
+      iconActive: 'mail',
       getScreen: () => '/agency/selected/messages',
     },
     {
       name: 'Documents',
       route: 'documentupload', 
       icon: 'document-text-outline',
+      iconActive: 'document-text',
       getScreen: () => '/agency/selected/documentupload', 
     },
     {
       name: 'Profile',
       route: 'profile',
       icon: 'person-outline',
+      iconActive: 'person',
       getScreen: () => '/agency/selected/profile',
     },
   ];
@@ -77,7 +82,6 @@ export default function BottomNavBar() {
 
   const handleNavigation = (screen) => {
     if (!screen) return;
-
     router.push({
       pathname: screen,
       params: { agencyId, refresh: Date.now() } 
@@ -97,12 +101,15 @@ export default function BottomNavBar() {
             style={styles.navItem}
             onPress={() => handleNavigation(screen)}
             disabled={!canNavigate}
+            activeOpacity={0.7}
           >
-            <Ionicons
-              name={active ? item.icon.replace('-outline', '') : item.icon}
-              size={24}
-              color={active ? COLORS.primary : (canNavigate ? COLORS.textInactive : COLORS.disabled)}
-            />
+            <View style={[styles.iconContainer, active && styles.iconContainerActive]}>
+              <Ionicons
+                name={active ? item.iconActive : item.icon}
+                size={24}
+                color={active ? COLORS.primary : (canNavigate ? COLORS.textInactive : COLORS.disabled)}
+              />
+            </View>
             <Text style={[
               styles.navLabel,
               active && styles.navLabelActive,
@@ -124,25 +131,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
-    paddingBottom: 25,
-    paddingHorizontal: 10
+    paddingBottom: 20,
+    paddingHorizontal: 10,
   },
   navItem: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+  },
+  iconContainer: {
+    padding: 8,
+    borderRadius: 20,
+  },
+  iconContainerActive: {
+    backgroundColor: COLORS.lightPrimary,
   },
   navLabel: {
     fontSize: 11,
     color: COLORS.textInactive,
     fontWeight: '500',
-    marginTop: 4
+    marginTop: 4,
   },
   navLabelActive: {
     color: COLORS.primary,
-    fontWeight: '600'
+    fontWeight: '600',
   },
   navLabelDisabled: {
-    color: COLORS.disabled
-  }
+    color: COLORS.disabled,
+  },
 });

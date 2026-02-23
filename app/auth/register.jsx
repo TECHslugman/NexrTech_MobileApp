@@ -11,10 +11,9 @@ import {
     Image,
     ActivityIndicator
 } from "react-native";
-import {Config, config} from '../config.js';
+import { Config, config } from '../config.js';
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-// Import the Native Google Sign-in components
 import {
     GoogleSignin,
     statusCodes
@@ -26,7 +25,6 @@ export default function RegisterScreen() {
     const [isGoogleLoading, setIsGoogleLoading] = useState(false);
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-    // --- State Management ---
     const [loading, setLoading] = useState(false);
     const [phone, setPhone] = useState("");
     const [phoneTouched, setPhoneTouched] = useState(false);
@@ -37,7 +35,6 @@ export default function RegisterScreen() {
     const [showPassword, setShowPassword] = useState(false);
     const [focusedField, setFocusedField] = useState(null);
 
-    // --- Validation Logic ---
     const isEmailValid = emailRegex.test(email);
     const isPhoneValid = phone.length === 8;
     const showPhoneError = phoneTouched && !isPhoneValid;
@@ -45,27 +42,37 @@ export default function RegisterScreen() {
     const passwordIsValid = password.length >= 8;
     const allValid = fullName && email && isEmailValid && passwordIsValid;
 
-    // --- 1. Initialize Google Sign-In ---
     useEffect(() => {
         GoogleSignin.configure({
-            // Use your Web Client ID here (crucial for getting idToken)
             webClientId: process.env.EXPO_PUBLIC_WEB_CLIENT_ID,
             offlineAccess: true,
         });
     }, []);
 
-    // --- 2. Google Sign-In Handler ---
+    /**
+     * Central post-login navigation — same logic as login screen.
+     * New users via Google will have no agency → decision page.
+     * Returning users who already selected → their agency home.
+     */
+    const navigateAfterLogin = (agency) => {
+        if (agency?.id) {
+            router.replace({
+                pathname: `/agency/selected/${agency.id}`,
+                params: { name: agency.name, agencyLogo: agency.logo },
+            });
+        } else {
+            router.replace("/(app)/decision");
+        }
+    };
+
     const handleGoogleSignUp = async () => {
         try {
             await GoogleSignin.hasPlayServices();
             const userInfo = await GoogleSignin.signIn();
-
-            // The token is located inside userInfo.data (v11+) or userInfo (older)
             const idToken = userInfo.data?.idToken || userInfo.idToken;
 
             if (idToken) {
                 setIsGoogleLoading(true);
-                console.log(" Token found, calling backend...");
                 await handleBackendGoogleSignIn(idToken);
             }
         } catch (error) {
@@ -82,58 +89,47 @@ export default function RegisterScreen() {
         }
     };
 
-    // --- 3. Backend Integration ---
     const handleBackendGoogleSignIn = async (idtoken) => {
         try {
-            console.log("Sending token to backend...");
-            console.log("ID Token:", idtoken);
             const res = await fetch("https://edu-agent-backend.vercel.app/google-signin-student", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id_token: idtoken }), // Sending the idToken to backend
+                body: JSON.stringify({ id_token: idtoken }),
             });
-            console.log("Backend Status:", res.status);
-            const data = await res.json();
-            console.log(data);
-            console.log("Backend Response Data:", data);
-            if (res.ok) {
-                console.log("SUCCESS: Attempting to navigate to dashboard...");
-                const tokenToStore = data.accessToken;
-                await signIn(tokenToStore);
-               
-                try {
-                    router.replace("/(app)/decision");
-                } catch (navError) {
-                    console.log("Navigation to dashboard failed. ", navError);
-                }
 
+            const data = await res.json();
+
+            if (res.ok) {
+                // signIn returns resolved agency — new Google users get null → decision page
+                const agency = await signIn(data.accessToken);
+                navigateAfterLogin(agency);
             } else {
                 setIsGoogleLoading(false);
                 console.log("Backend verification failed:", data.message);
             }
         } catch (e) {
+            setIsGoogleLoading(false);
             console.log("Backend Connection error:", e);
         }
     };
 
-    // --- Standard Registration Handler ---
     const handleRegister = async () => {
         if (!allValid) return;
 
-        setLoading(true); 
+        setLoading(true);
         try {
             const res = await fetch(Config.url.sendOtp(), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     name: fullName,
-                    phone: phone, 
-                    email: email.toLowerCase().trim(), 
+                    phone: phone,
+                    email: email.toLowerCase().trim(),
                     password: password,
                 }),
             });
 
-            const data = await res.json().catch(() => null); 
+            const data = await res.json().catch(() => null);
 
             if (!res.ok) {
                 if (res.status === 409 || data?.message?.includes("already registered")) {
@@ -148,17 +144,16 @@ export default function RegisterScreen() {
                 return;
             }
 
-            
-            router.push({ 
+            router.push({
                 pathname: "/auth/verify_register",
-                params: { email, phone }, 
+                params: { email, phone },
             });
 
         } catch (e) {
             console.error("Register request failed:", e);
             Alert.alert("Network Error", "Please check your internet connection.");
         } finally {
-            setLoading(false); 
+            setLoading(false);
         }
     };
 
@@ -183,7 +178,6 @@ export default function RegisterScreen() {
                 />
             </View>
 
-
             {/* Phone Number Input */}
             <View style={styles.field}>
                 <Text style={styles.label}>Phone Number</Text>
@@ -196,7 +190,7 @@ export default function RegisterScreen() {
                     placeholderTextColor="#969389"
                     value={phone}
                     onChangeText={setPhone}
-                    keyboardType="phone-pad" // Shows the number keypad
+                    keyboardType="phone-pad"
                     onFocus={() => setFocusedField("phone")}
                     onBlur={() => {
                         setFocusedField(null);
@@ -273,18 +267,15 @@ export default function RegisterScreen() {
                 <View style={styles.divider} />
             </View>
 
-            {/* Native Google Button */}
+            {/* Google Button */}
             <TouchableOpacity
-                style={[
-                    styles.googleButton,
-                    isGoogleLoading && { opacity: 0.7 } 
-                ]}
+                style={[styles.googleButton, isGoogleLoading && { opacity: 0.7 }]}
                 activeOpacity={0.85}
                 onPress={handleGoogleSignUp}
-                disabled={isGoogleLoading} 
+                disabled={isGoogleLoading}
             >
                 {isGoogleLoading ? (
-                    <ActivityIndicator color="#4A5568" /> 
+                    <ActivityIndicator color="#4A5568" />
                 ) : (
                     <>
                         <Image
@@ -318,7 +309,6 @@ export default function RegisterScreen() {
                 </Text>
             </TouchableOpacity>
 
-
             <Text style={styles.footerText}>
                 By continuing, you agree to our{" "}
                 <Text style={styles.footerLinkText}>Terms of Service</Text> {"\n"} and{" "}
@@ -329,109 +319,29 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-    container:
-    {
-        flex: 1,
-        backgroundColor: "#F7FAFC",
-        paddingHorizontal: 24,
-        paddingTop: 80
-    },
-    title:
-    {
-        fontSize: 25,
-        fontWeight: "600",
-        color: "#769FCD",
-        textAlign: "center",
-        marginBottom: 40,
-        marginTop:30
-
-
-    },
-    field:
-    {
-        marginBottom: 20
-    },
-    label:
-    {
-        fontSize: 14,
-        color: "#4A5568",
-        marginBottom: 8
-    },
-    input:
-    {
-        backgroundColor: "#FFFFFF",
-        borderRadius: 10,
-        borderWidth: 1,
-        paddingHorizontal: 14,
-        paddingVertical: 12,
-        fontSize: 14,
-        color: "#2D3748"
-    },
-    passwordWrapper:
-    {
-        flexDirection: "row",
-        alignItems: "center",
-        backgroundColor: "#FFFFFF",
-        borderRadius: 10,
-        borderWidth: 1
-    },
-    passwordInput:
-    {
-        flex: 1,
-        paddingHorizontal: 14,
-        paddingVertical: 12,
-        fontSize: 14,
-        color: "#2D3748"
-    },
-    eyeIconWrapper:
-    {
-        paddingHorizontal: 12
-    },
-    passwordHintRow:
-    {
-        flexDirection: "row",
-        alignItems: "center",
-        marginTop: 6
-    },
-    bullet:
-    {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-        backgroundColor: "#A0AEC0",
-        marginRight: 6
-    },
-
-    passwordHintText:
-    {
-        fontSize: 12,
-        color: "#A0AEC0"
-    },
-    dividerRow:
-    {
-        flexDirection: "row", alignItems: "center", marginVertical: 18
-    },
-    divider:
-        { flex: 1, height: 1, backgroundColor: "#E2E8F0" },
-    dividerText:
-        { marginHorizontal: 8, fontSize: 16, color: "#A0AEC0" },
-    googleButton:
-        { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFF", borderRadius: 10, borderWidth: 1, borderColor: "#E2E8F0", paddingVertical: 12, marginBottom: 20 },
-    googleLogo:
-        { width: 20, height: 20, marginRight: 10 },
-    googleButtonText:
-        { fontSize: 16, color: "#4A5568" },
-    primaryButton:
-        { backgroundColor: "#4A4A4A", borderRadius: 24, paddingVertical: 14, alignItems: "center", marginBottom: 12 },
-    primaryButtonText:
-        { color: "#FFFFFF", fontSize: 16, fontWeight: "600" },
-    footerText:
-        { fontSize: 11, color: "#A0AEC0", textAlign: "center", marginTop: 6 },
-    footerLinkText:
-        { color: "#7185A8", textDecorationLine: "underline" },
-    errorText:
-        { color: "#E53E3E", fontSize: 12, marginTop: 4 },
+    container: { flex: 1, backgroundColor: "#F7FAFC", paddingHorizontal: 24, paddingTop: 80 },
+    title: { fontSize: 25, fontWeight: "600", color: "#769FCD", textAlign: "center", marginBottom: 40, marginTop: 30 },
+    field: { marginBottom: 20 },
+    label: { fontSize: 14, color: "#4A5568", marginBottom: 8 },
+    input: { backgroundColor: "#FFFFFF", borderRadius: 10, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: "#2D3748" },
+    passwordWrapper: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFFFFF", borderRadius: 10, borderWidth: 1 },
+    passwordInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: "#2D3748" },
+    eyeIconWrapper: { paddingHorizontal: 12 },
+    passwordHintRow: { flexDirection: "row", alignItems: "center", marginTop: 6 },
+    bullet: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#A0AEC0", marginRight: 6 },
+    passwordHintText: { fontSize: 12, color: "#A0AEC0" },
+    dividerRow: { flexDirection: "row", alignItems: "center", marginVertical: 18 },
+    divider: { flex: 1, height: 1, backgroundColor: "#E2E8F0" },
+    dividerText: { marginHorizontal: 8, fontSize: 16, color: "#A0AEC0" },
+    googleButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#FFFFFF", borderRadius: 10, borderWidth: 1, borderColor: "#E2E8F0", paddingVertical: 12, marginBottom: 20 },
+    googleLogo: { width: 20, height: 20, marginRight: 10 },
+    googleButtonText: { fontSize: 16, color: "#4A5568" },
+    primaryButton: { backgroundColor: "#4A4A4A", borderRadius: 24, paddingVertical: 14, alignItems: "center", marginBottom: 12 },
+    primaryButtonText: { color: "#FFFFFF", fontSize: 16, fontWeight: "600" },
+    footerText: { fontSize: 11, color: "#A0AEC0", textAlign: "center", marginTop: 6 },
+    footerLinkText: { color: "#7185A8", textDecorationLine: "underline" },
+    errorText: { color: "#E53E3E", fontSize: 12, marginTop: 4 },
     switchAuthWrapper: { marginTop: 20, alignItems: 'center', marginBottom: 30 },
     switchAuthText: { color: "#4A5568", fontSize: 14 },
-    switchAuthLink: { color: "#769FCD", fontWeight: "600" }
+    switchAuthLink: { color: "#769FCD", fontWeight: "600" },
 });

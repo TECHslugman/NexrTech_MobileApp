@@ -10,10 +10,11 @@ export default function DocumentUploadController() {
     const [currentStage, setCurrentStage] = useState('admission');
     const [error, setError] = useState(null);
 
-    const checkStatus = useCallback(async () => {
+    // This function ONLY gets the stage from the server - doesn't modify anything else
+    const fetchStage = useCallback(async (showLoading = true) => {
         console.log("--- 🔄 Controller: Fetching Current Stage ---");
         try {
-            setLoading(true);
+            if (showLoading) setLoading(true);
             setError(null);
 
             const res = await fetch(`${Config.API_BASE_URL}/students/profile`, {
@@ -25,33 +26,43 @@ export default function DocumentUploadController() {
             
             if (res.ok && json.profile) {
                 const profile = json.profile;
-                
-                // Get current stage from backend (admission, coe, or visa)
                 const serverStage = profile.currentProcessStage || 'admission';
                 console.log(`📍 Current Stage: [${serverStage.toUpperCase()}]`);
-                
-                setCurrentStage(serverStage);
+                return serverStage;
             } else {
                 console.log("⚠️ No profile found, defaulting to admission stage");
-                setCurrentStage('admission');
+                return 'admission';
             }
         } catch (e) {
             console.error("❌ Controller Sync Error:", e.message);
             setError('Failed to load application status');
-            setCurrentStage('admission');
+            return 'admission';
         } finally {
-            setLoading(false);
+            if (showLoading) setLoading(false);
             console.log("--- 🏁 Controller: Sync Complete ---");
         }
     }, [userToken]);
 
+    // Initial load - sets the stage
     useEffect(() => { 
-        checkStatus(); 
-    }, [checkStatus]);
+        const initialize = async () => {
+            const stage = await fetchStage(true);
+            setCurrentStage(stage);
+        };
+        initialize();
+    }, []); // Empty dependency array - only run once on mount
 
+    // This is called when the user manually changes stage (via continue button)
     const handleStageTransition = (nextStage) => {
-        console.log(`🔄 Transitioning to stage: ${nextStage}`);
+        console.log(`🔄 Manually transitioning to stage: ${nextStage}`);
         setCurrentStage(nextStage);
+    };
+
+    // This is called on pull-to-refresh - we DON'T want to change the stage here
+    const handleRefresh = () => {
+        console.log(`🔄 Refreshing documents for current stage: ${currentStage}`);
+        // We don't fetch the stage again - we just pass the refresh signal to DocumentUpload
+        // The DocumentUpload component will handle refreshing its own data
     };
 
     if (loading) {
@@ -76,7 +87,7 @@ export default function DocumentUploadController() {
         <DocumentUpload 
             stage={currentStage} 
             onStageChange={handleStageTransition}
-            onRefresh={checkStatus}
+            onRefresh={handleRefresh}
         />
     );
 }

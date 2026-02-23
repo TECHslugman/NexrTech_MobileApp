@@ -4,268 +4,336 @@ const SOCKET_URL = "https://undeaf-crashing-ellie.ngrok-free.dev";
 
 class SocketService {
     constructor() {
-        this.socket = null;
-        this.token = null;
-        this.currentAgencyId = null; 
-        this.isConnecting = false;
-        this.connectionCallbacks = [];
-        this.activeListeners = new Set(); 
+        this.socket               = null;
+        this.token                = null;
+        this.isConnecting         = false;
+        this._manualDisconnect    = false;
+        this.reconnectAttempts    = 0;
+        this.maxReconnectAttempts = 5;
+        this.baseReconnectDelay   = 1000;
+
+        // Persistent subscribers (survive socket recreation)
+        this._connSubs  = new Map();
+        this._connSubId = 0;
+
+        // Persistent event listeners (re-attach on reconnect)
+        this._eventListeners = new Map();
+        this._listenerIdSeq  = 0;
     }
 
-    connect(token, agencyId = null) {
-        // If already connecting or connected with same token and agency, skip
-        if ((this.socket?.connected || this.isConnecting) && 
-            this.token === token && 
-            this.currentAgencyId === agencyId) {
-            console.log("♻️ Using existing socket connection for agency:", agencyId);
-            return this.socket;
-        }
+    // ═══════════════════════════════════════════════════════
+    //  CONNECTION
+    // ═══════════════════════════════════════════════════════
 
-        // If agency changed, disconnect old socket
-        if (this.currentAgencyId !== agencyId && this.socket?.connected) {
-            console.log("🔄 Agency changed, reconnecting socket");
-            this.disconnect();
-        }
-
+    connect(token) {
         if (!token) {
-            console.error("❌ Connection failed: No token provided");
+            console.error("❌ connect(): no token provided");
             return null;
         }
 
-        this.token = token;
-        this.currentAgencyId = agencyId;
-        this.isConnecting = true;
+        // Already connected with same token — reuse
+        if (this.socket?.connected && this.token === token) {
+            console.log("♻️  Socket already connected:", this.socket.id);
+            return this.socket;
+        }
 
-        console.log("🔌 Connecting socket for agency:", agencyId);
+        // Connection in progress
+        if (this.isConnecting && this.token === token) {
+            console.log("⏳ Connection already in progress");
+            return this.socket;
+        }
 
-        this.socket = io(SOCKET_URL, {
-            transports: ["websocket"],
-            auth: { token: token },
-            reconnection: true,
-            reconnectionAttempts: 5,
-            reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000,
-            timeout: 20000,
-        });
+        // Tear down old socket if token changed or reconnecting
+        if (this.socket) {
+            console.log("🔄 Disconnecting old socket");
+            this._manualDisconnect = true;
+            this.socket.removeAllListeners();
+            this.socket.disconnect();
+            this.socket = null;
+        }
 
-        // Connection events
-        this.socket.on("connect", () => {
-            console.log("✅ Socket Connected for agency:", this.currentAgencyId);
-            this.isConnecting = false;
-            this.notifyConnectionChange(true);
-            
-            // Backend automatically sends conversation list on connect
-            console.log("📋 Socket connected, ready to receive conversation list");
-        });
+        this.token             = token;
+        this.isConnecting      = true;
+        this._manualDisconnect = false;
+        this.reconnectAttempts = 0;
 
-        this.socket.on("connect_error", (err) => {
-            console.error("❌ Socket Error:", err.message);
-            this.isConnecting = false;
-            this.notifyConnectionChange(false);
-        });
-
-        this.socket.on("disconnect", (reason) => {
-            console.warn("🔌 Socket Disconnected:", reason);
-            this.notifyConnectionChange(false);
-           
-            if (reason === "io server disconnect" || reason === "transport close") {
-                console.log("🔄 Server disconnected, will attempt to reconnect...");
-                setTimeout(() => {
-                    if (this.token && !this.socket?.connected) {
-                        console.log("Attempting to reconnect...");
-                        this.connect(this.token, this.currentAgencyId);
-                    }
-                }, 2000);
-            }
-        });
-
+        this._createSocket();
         return this.socket;
     }
 
-    updateAgencyContext(agencyId) {
-        if (this.currentAgencyId !== agencyId) {
-            console.log("🔄 Updating socket agency context to:", agencyId);
-            this.currentAgencyId = agencyId;
-            if (this.socket?.connected && this.token) {
-                this.connect(this.token, agencyId);
-            }
-        }
+    _createSocket() {
+        console.log("🔌 Creating socket instance");
+        this.socket = io(SOCKET_URL, {
+            transports:   ["websocket"],
+            auth:         { token: this.token },
+            reconnection: false,  // manual reconnect only
+            timeout:      20_000,
+            forceNew:     true,
+        });
+
+        this._bindCoreEvents();
+        this._reattachEventListeners();
     }
 
-    // ====== BACKEND EVENT EMITTERS ======
-    
-    /**
-     * Send a message to a recipient
-     * @param {string} receiverId - ID of the recipient
-     * @param {string} content - Message content
-     * @param {string} receiverModel - Model type (default: "Agency")
-     */
-    sendMessage(receiverId, content, receiverModel = "Agency") {
-        if (!this.socket?.connected) {
-            console.error("❌ Send failed: Socket not connected");
-            return false;
+    _reattachEventListeners() {
+        this._eventListeners.forEach((listeners, event) => {
+            listeners.forEach(cb => {
+                this.socket.on(event, cb);
+            });
+        });
+    }
+
+    _bindCoreEvents() {
+        this.socket.on("connect", () => {
+            console.log("✅ Socket connected:", this.socket.id);
+            this.isConnecting      = false;
+            this.reconnectAttempts = 0;
+            this._broadcastConn(true);
+        });
+
+        this.socket.on("connect_error", (err) => {
+            console.error("❌ connect_error:", err.message);
+            this.isConnecting = false;
+
+            const isAuth = err.message === "Authentication error"
+                || err.message?.toLowerCase().includes("auth");
+
+            if (isAuth) {
+                console.error("🔐 Auth failed — stopping reconnect");
+                this._broadcastConn(false);
+                return;
+            }
+
+            this._scheduleReconnect();
+        });
+
+        this.socket.on("disconnect", (reason) => {
+            console.warn("⚠️  Disconnected:", reason);
+            this._broadcastConn(false);
+
+            if (!this._manualDisconnect) {
+                this._scheduleReconnect();
+            }
+        });
+
+        this.socket.on("error", (e) => {
+            console.error("❌ Socket error:", e);
+        });
+    }
+
+    _scheduleReconnect() {
+        if (this._manualDisconnect || !this.token) return;
+
+        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+            console.error("❌ Max reconnect attempts reached");
+            this._broadcastConn(false);
+            return;
         }
 
-        console.log("📤 Sending message to:", receiverId, "agency:", this.currentAgencyId);
-        this.socket.emit("send_message", {
-            receiver: receiverId,
-            content: content,
-            receiverModel: receiverModel
-        });
+        const delay = this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts);
+        this.reconnectAttempts++;
+
+        console.log(
+            `🔄 Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`
+        );
+
+        setTimeout(() => {
+            if (!this._manualDisconnect && this.token) {
+                if (this.socket) {
+                    this.socket.removeAllListeners();
+                    this.socket.disconnect();
+                    this.socket = null;
+                }
+                this.isConnecting = true;
+                this._createSocket();
+            }
+        }, delay);
+    }
+
+    disconnect() {
+        console.log("🔌 Manual disconnect");
+        this._manualDisconnect = true;
+
+        if (this.socket) {
+            this.socket.removeAllListeners();
+            this.socket.disconnect();
+            this.socket = null;
+        }
+
+        this.token             = null;
+        this.isConnecting      = false;
+        this.reconnectAttempts = 0;
+        this._broadcastConn(false);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  OUTGOING EVENTS
+    // ═══════════════════════════════════════════════════════
+
+    getConversationMessages(conversationId, cursorCreatedAt = null, cursorId = null, limit = 20) {
+        if (!this._assertConn("get_conversation_messages")) return false;
+
+        const payload = { conversationId, limit };
+        if (cursorCreatedAt && cursorId) {
+            payload.cursorCreatedAt = cursorCreatedAt;
+            payload.cursorId        = cursorId;
+        }
+
+        console.log("📤 get_conversation_messages →", payload);
+        this.socket.emit("get_conversation_messages", payload);
         return true;
     }
 
-    // ====== BACKEND EVENT LISTENERS ======
+    sendMessage(receiver, receiverModel, content, conversationId = null) {
+        if (!this._assertConn("send_message")) return false;
 
-    /**
-     * Listen for conversation list (automatically sent by backend on connect)
-     * Backend sends full chat history and chat list
-     * @param {Function} callback - Callback function to handle conversation list
-     * @returns {Function} Cleanup function
-     */
-    onConversationList(callback) {
-        if (!this.socket) {
-            console.error("❌ Socket not initialized");
-            return () => {};
+        if (!receiver || !receiverModel) {
+            console.error("❌ sendMessage: missing receiver/receiverModel");
+            return false;
         }
 
-        console.log("📊 Setting up conversation_list listener");
-        this.socket.on("conversation_list", callback);
-        this.activeListeners.add('conversation_list');
-        
-        return () => {
-            this.socket?.off("conversation_list", callback);
-            this.activeListeners.delete('conversation_list');
-        };
-    }
-
-    /**
-     * Listen for incoming messages from other users
-     * @param {Function} callback - Callback function to handle received messages
-     * @returns {Function} Cleanup function
-     */
-    onReceiveMessage(callback) {
-        if (!this.socket) {
-            console.error("❌ Socket not initialized");
-            return () => {};
+        if (!content?.trim()) {
+            console.error("❌ sendMessage: empty content");
+            return false;
         }
 
-        console.log("📨 Setting up receive_message listener");
-        this.socket.on("receive_message", callback);
-        this.activeListeners.add('receive_message');
-        
-        return () => {
-            this.socket?.off("receive_message", callback);
-            this.activeListeners.delete('receive_message');
+        const payload = {
+            receiver,
+            receiverModel,
+            content: content.trim(),
         };
+
+        if (conversationId) payload.conversationId = conversationId;
+
+        console.log("📤 send_message →", payload);
+        this.socket.emit("send_message", payload);
+        return true;
     }
 
-    /**
-     * Listen for sent message confirmation (delivery status)
-     * Shows if message is delivered
-     * @param {Function} callback - Callback function to handle sent message status
-     * @returns {Function} Cleanup function
-     */
-    onSentMessage(callback) {
-        if (!this.socket) {
-            console.error("❌ Socket not initialized");
-            return () => {};
+    editMessage(messageId, newContent) {
+        if (!this._assertConn("edit_message")) return false;
+
+        if (!newContent?.trim()) {
+            console.error("❌ editMessage: empty content");
+            return false;
         }
 
-        console.log("✅ Setting up sent_message listener");
-        this.socket.on("sent_message", callback);
-        this.activeListeners.add('sent_message');
-        
+        console.log("📤 edit_message →", { messageId, newContent });
+        this.socket.emit("edit_message", { messageId, newContent: newContent.trim() });
+        return true;
+    }
+
+    deleteMessage(messageId, deleteFor = "me") {
+        if (!this._assertConn("delete_message")) return false;
+
+        console.log("📤 delete_message →", { messageId, deleteFor });
+        this.socket.emit("delete_message", { messageId, deleteFor });
+        return true;
+    }
+
+    emitTypingStart(receiverId, conversationId) {
+        if (!this._assertConn("typing_start")) return false;
+        this.socket.emit("typing_start", { receiverId, conversationId });
+        return true;
+    }
+
+    emitTypingStop(receiverId, conversationId) {
+        if (!this._assertConn("typing_stop")) return false;
+        this.socket.emit("typing_stop", { receiverId, conversationId });
+        return true;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  INCOMING EVENT SUBSCRIPTIONS
+    //
+    //  All listeners are stored in a persistent Map and re-attached
+    //  to every new socket instance. This ensures no events are missed
+    //  after reconnection (e.g., automated messages).
+    //
+    //  Each on* method returns a cleanup function: () => void
+    // ═══════════════════════════════════════════════════════
+
+    _registerListener(event, cb) {
+        if (!this._eventListeners.has(event)) {
+            this._eventListeners.set(event, new Map());
+        }
+
+        const id = ++this._listenerIdSeq;
+        this._eventListeners.get(event).set(id, cb);
+
+        // Attach to current socket if one exists
+        if (this.socket) {
+            this.socket.on(event, cb);
+        }
+
+        // Return cleanup
         return () => {
-            this.socket?.off("sent_message", callback);
-            this.activeListeners.delete('sent_message');
+            const map = this._eventListeners.get(event);
+            if (map) {
+                map.delete(id);
+                if (map.size === 0) {
+                    this._eventListeners.delete(event);
+                }
+            }
+            if (this.socket) {
+                this.socket.off(event, cb);
+            }
         };
     }
 
-    // ====== CONNECTION STATE METHODS ======
+    onConversationList(cb)     { return this._registerListener("conversation_list",     cb); }
+    onConversationMessages(cb) { return this._registerListener("conversation_messages", cb); }
+    onNewMessage(cb)           { return this._registerListener("new_message",           cb); }
+    onMessageSent(cb)          { return this._registerListener("message_sent",          cb); }
+    onMessageError(cb)         { return this._registerListener("message_error",         cb); }
+    onConversationUpdated(cb)  { return this._registerListener("conversation_updated",  cb); }
+    onMessageEdited(cb)        { return this._registerListener("message_edited",        cb); }
+    onMessageDeleted(cb)       { return this._registerListener("message_deleted",       cb); }
+    onUserTyping(cb)           { return this._registerListener("user_typing",           cb); }
+    onUserStoppedTyping(cb)    { return this._registerListener("user_stopped_typing",   cb); }
 
-    /**
-     * Listen for connection state changes
-     * @param {Function} callback - Callback with isConnected boolean
-     * @returns {Function} Cleanup function
-     */
-    onConnectionChange(callback) {
-        this.connectionCallbacks.push(callback);
-        // Immediately notify of current state
-        callback(this.socket?.connected || false);
-        
-        return () => {
-            this.connectionCallbacks = this.connectionCallbacks.filter(cb => cb !== callback);
-        };
+    // ═══════════════════════════════════════════════════════
+    //  CONNECTION-STATE SUBSCRIPTION
+    // ═══════════════════════════════════════════════════════
+
+    onConnectionChange(cb) {
+        const id = ++this._connSubId;
+        this._connSubs.set(id, cb);
+
+        // Fire immediately with current state
+        try {
+            cb(this.isConnected());
+        } catch (e) {
+            console.error("onConnectionChange callback error:", e);
+        }
+
+        return () => this._connSubs.delete(id);
     }
 
-    notifyConnectionChange(isConnected) {
-        this.connectionCallbacks.forEach(callback => {
+    isConnected() {
+        return this.socket?.connected ?? false;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  INTERNAL HELPERS
+    // ═══════════════════════════════════════════════════════
+
+    _assertConn(label) {
+        if (!this.socket?.connected) {
+            console.error(`❌ ${label}: socket not connected`);
+            return false;
+        }
+        return true;
+    }
+
+    _broadcastConn(state) {
+        this._connSubs.forEach(cb => {
             try {
-                callback(isConnected);
-            } catch (error) {
-                console.error("Error in connection callback:", error);
+                cb(state);
+            } catch (e) {
+                console.error("Connection callback error:", e);
             }
         });
-    }
-
-    getConnectionState() {
-        return this.socket?.connected || false;
-    }
-
-    getCurrentAgencyId() {
-        return this.currentAgencyId;
-    }
-
-    // ====== CLEANUP METHODS ======
-
-    /**
-     * Remove a specific listener
-     * @param {string} event - Event name
-     * @param {Function} callback - Specific callback to remove (optional)
-     */
-    removeListener(event, callback = null) {
-        if (callback) {
-            this.socket?.off(event, callback);
-        } else {
-            this.socket?.off(event);
-        }
-        this.activeListeners.delete(event);
-        console.log(`🗑️ Removed listener for ${event}`);
-    }
-
-    /**
-     * Remove all event listeners
-     */
-    removeAllListeners() {
-        this.socket?.removeAllListeners();
-        this.activeListeners.clear();
-        this.connectionCallbacks = [];
-        console.log("🗑️ Removed all listeners");
-    }
-
-    /**
-     * Disconnect socket and cleanup
-     */
-    disconnect() {
-        if (this.socket) {
-            console.log("🔌 Disconnecting socket");
-            this.removeAllListeners();
-            this.socket.disconnect();
-            this.socket = null;
-            this.token = null;
-            this.currentAgencyId = null;
-            this.isConnecting = false;
-        }
-    }
-   
-    /**
-     * Check if a specific listener is active
-     * @param {string} event - Event name to check
-     * @returns {boolean}
-     */
-    hasListener(event) {
-        return this.activeListeners.has(event);
     }
 }
 

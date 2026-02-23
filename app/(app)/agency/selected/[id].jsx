@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
-    FlatList, Image, useWindowDimensions, ActivityIndicator, StatusBar, Linking
+    FlatList, Image, useWindowDimensions, ActivityIndicator, StatusBar, Linking,
+    RefreshControl  // Add this import
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -75,6 +76,7 @@ export default function SelectedAgencyHome() {
     const { userToken, setActiveAgency } = useAuth();
 
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false); // Add refreshing state
     const [notificationCount, setNotificationCount] = useState(0);
     const [agencyData, setAgencyData] = useState(null);
     const [courses, setCourses] = useState([]);
@@ -92,161 +94,172 @@ export default function SelectedAgencyHome() {
         event.title?.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    useFocusEffect(
-        React.useCallback(() => {
-            const fetchAllData = async () => {
-                if (!userToken || !id) return;
-                setLoading(true);
+    // Separate fetch function to be reused
+    const fetchAllData = async (isRefreshing = false) => {
+        if (!userToken || !id) return;
+        
+        if (!isRefreshing) {
+            setLoading(true);
+        }
 
-                try {
-                    console.log(`📡 Fetching Agency Data [ID: ${id}]`);
+        try {
+            console.log(`📡 Fetching Agency Data [ID: ${id}]`);
 
-                    const endpoints = [
-                        `${Config.API_BASE_URL}/agency/profile/${id}`,
-                        `${Config.API_BASE_URL}/agency/universities/agency/${id}`,
-                        `${Config.API_BASE_URL}/students/courses/`,
-                        `${Config.API_BASE_URL}/agency/events/student/${id}`,
-                        `${Config.API_BASE_URL}/agency/scholarships/agency/${id}`,
-                        `${Config.API_BASE_URL}/students/mentors/${id}`,
-                        `${Config.API_BASE_URL}/students/students/notification/count`
-                    ];
+            const endpoints = [
+                `${Config.API_BASE_URL}/agency/profile/${id}`,
+                `${Config.API_BASE_URL}/agency/universities/agency/${id}`,
+                `${Config.API_BASE_URL}/students/courses/`,
+                `${Config.API_BASE_URL}/agency/events/student`,
+                `${Config.API_BASE_URL}/agency/scholarships/agency/${id}`,
+                `${Config.API_BASE_URL}/students/mentors/${id}`,
+                `${Config.API_BASE_URL}/students/students/notification/count`
+            ];
 
-                    const headers = {
-                        'Authorization': `Bearer ${userToken}`,
-                        'Content-Type': 'application/json'
-                    };
-
-                    const responses = await Promise.all(
-                        endpoints.map(url => fetch(url, { headers }))
-                    );
-
-                    const [
-                        agencyRes,
-                        uniRes,
-                        coursesRes,
-                        eventsRes,
-                        scholarRes,
-                        mentorRes,
-                        countRes
-                    ] = responses;
-
-                    let completeAgencyData = {
-                        partnerUniversities: [],
-                        courses: [],
-                        events: [],
-                        scholarships: [],
-                        mentors: []
-                    };
-
-                    // 1. Agency Profile
-                    if (agencyRes.ok) {
-                        const aJson = await agencyRes.json();
-                        const profile = aJson.agency || aJson.profile || aJson;
-                        completeAgencyData = { ...completeAgencyData, ...profile };
-                        setActiveAgency({
-                            id: id,
-                            name: profile.organizationName || profile.name || "Agency",
-                            logo: profile.logo || agencyLogo
-                        });
-                    }
-
-                    // 2. Universities
-                    if (uniRes.ok) {
-                        const uJson = await uniRes.json();
-                        completeAgencyData.partnerUniversities = uJson.university?.partnerUniversities || uJson.partnerUniversities || [];
-                    }
-
-                    // 3. Courses
-                    if (coursesRes.ok) {
-                        const cJson = await coursesRes.json();
-                        const courseList = (cJson.courses || cJson || []).map(c => ({
-                            id: c._id || c.id || Math.random().toString(),
-                            title: c.title || c.name || "Course",
-                            image: c.image || c.bannerImage || null
-                        }));
-                        setCourses(courseList);
-                        completeAgencyData.courses = courseList;
-                        console.log(`✅ Fetched ${courseList.length} courses`);
-                    }
-
-                    // 4. Events
-                    if (eventsRes.ok) {
-                        const eJson = await eventsRes.json();
-                        const rawEvents = Array.isArray(eJson.events) ? eJson.events : (Array.isArray(eJson) ? eJson : []);
-
-                        const formattedEvents = rawEvents.map(event => {
-                            const startDate = new Date(event.startAt || event.date || event.createdAt);
-                            const eventMode = event.meetings && event.meetings.length > 0
-                                ? event.meetings[0].mode
-                                : 'venue';
-
-                            return {
-                                ...event,
-                                id: event._id || event.id,
-                                mode: eventMode,
-                                bannerImage: event.bannerImageUrl || event.image,
-                                date: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-                                time: startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
-                            };
-                        });
-                        setEvents(formattedEvents);
-                        completeAgencyData.events = formattedEvents;
-                    }
-
-                    // 5. Scholarships
-                    if (scholarRes.ok) {
-                        const sJson = await scholarRes.json();
-                        const rawScholar = sJson.scholarship || sJson || [];
-                        const formattedScholar = rawScholar.map(s => ({
-                            id: s._id || s.id,
-                            title: s.title || "Scholarship Program",
-                            amount: s.amount || s.funding,
-                            image: s.image || s.bannerImage || s.thumbnail || null,
-                            description: s.description || "Scholarship opportunity for international students"
-                        }));
-                        setScholarships(formattedScholar);
-                        completeAgencyData.scholarships = formattedScholar;
-                    }
-
-                    // 6. Mentors
-                    if (mentorRes.ok) {
-                        const mJson = await mentorRes.json();
-                        const rawMentors = mJson.mentors || [];
-                        const formattedMentors = rawMentors.map(m => ({
-                            id: m._id,
-                            name: m.name,
-                            profilepic: m.profilepic,
-                            experience: m.experiences && m.experiences.length > 0
-                                ? m.experiences[0]
-                                : "Professional mentor for higher education"
-                        }));
-                        setMentors(formattedMentors);
-                    }
-
-                    // 7. Notification Count
-                    if (countRes) {
-                        if (countRes.ok) {
-                            const countJson = await countRes.json();
-                            setNotificationCount(countJson.total || 0);
-                        } else {
-                            const errorText = await countRes.text();
-                            console.error(`❌ Notification API failed with status ${countRes.status}:`, errorText);
-                        }
-                    }
-
-                    setAgencyData(completeAgencyData);
-                } catch (error) {
-                    console.error("❌ FetchAllData Error:", error);
-                } finally {
-                    setLoading(false);
-                }
+            const headers = {
+                'Authorization': `Bearer ${userToken}`,
+                'Content-Type': 'application/json'
             };
 
-            fetchAllData();
+            const responses = await Promise.all(
+                endpoints.map(url => fetch(url, { headers }))
+            );
 
-            return () => { };
+            const [
+                agencyRes,
+                uniRes,
+                coursesRes,
+                eventsRes,
+                scholarRes,
+                mentorRes,
+                countRes
+            ] = responses;
+
+            let completeAgencyData = {
+                partnerUniversities: [],
+                courses: [],
+                events: [],
+                scholarships: [],
+                mentors: []
+            };
+
+            // 1. Agency Profile
+            if (agencyRes.ok) {
+                const aJson = await agencyRes.json();
+                const profile = aJson.agency || aJson.profile || aJson;
+                completeAgencyData = { ...completeAgencyData, ...profile };
+                setActiveAgency({
+                    id: id,
+                    name: profile.organizationName || profile.name || "Agency",
+                    logo: profile.profileUrl|| agencyLogo
+                });
+            }
+
+            // 2. Universities
+            if (uniRes.ok) {
+                const uJson = await uniRes.json();
+                completeAgencyData.partnerUniversities = uJson.university?.partnerUniversities || uJson.partnerUniversities || [];
+            }
+
+            // 3. Courses
+            if (coursesRes.ok) {
+                const cJson = await coursesRes.json();
+                const courseList = (cJson.courses || cJson || []).map(c => ({
+                    id: c._id || c.id || Math.random().toString(),
+                    title: c.title || c.name || "Course",
+                    image: c.image || c.bannerImage || null
+                }));
+                setCourses(courseList);
+                completeAgencyData.courses = courseList;
+                console.log(`✅ Fetched ${courseList.length} courses`);
+            }
+
+            // 4. Events
+            if (eventsRes.ok) {
+                const eJson = await eventsRes.json();
+                const rawEvents = Array.isArray(eJson.events) ? eJson.events : (Array.isArray(eJson) ? eJson : []);
+
+                const formattedEvents = rawEvents.map(event => {
+                    const startDate = new Date(event.startAt || event.date || event.createdAt);
+                    const eventMode = event.meetings && event.meetings.length > 0
+                        ? event.meetings[0].mode
+                        : 'venue';
+
+                    return {
+                        ...event,
+                        id: event._id || event.id,
+                        mode: eventMode,
+                        bannerImage: event.bannerImageUrl || event.image,
+                        date: startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                        time: startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                    };
+                });
+                setEvents(formattedEvents);
+                completeAgencyData.events = formattedEvents;
+            }
+
+            // 5. Scholarships
+            if (scholarRes.ok) {
+                const sJson = await scholarRes.json();
+                const rawScholar = sJson.scholarship || sJson || [];
+                const formattedScholar = rawScholar.map(s => ({
+                    id: s._id || s.id,
+                    title: s.title || "Scholarship Program",
+                    amount: s.amount || s.funding,
+                    image: s.image || s.bannerImage || s.thumbnail || null,
+                    description: s.description || "Scholarship opportunity for international students"
+                }));
+                setScholarships(formattedScholar);
+                completeAgencyData.scholarships = formattedScholar;
+            }
+
+            // 6. Mentors
+            if (mentorRes.ok) {
+                const mJson = await mentorRes.json();
+                const rawMentors = mJson.mentors || [];
+                const formattedMentors = rawMentors.map(m => ({
+                    id: m._id,
+                    name: m.name,
+                    profilepic: m.profileUrl,
+                    experience: m.experiences && m.experiences.length > 0
+                        ? m.experiences[0]
+                        : "Professional mentor for higher education"
+                }));
+                setMentors(formattedMentors);
+                
+            }
+
+            // 7. Notification Count
+            if (countRes) {
+                if (countRes.ok) {
+                    const countJson = await countRes.json();
+                    setNotificationCount(countJson.total || 0);
+                } else {
+                    const errorText = await countRes.text();
+                    console.error(`❌ Notification API failed with status ${countRes.status}:`, errorText);
+                }
+            }
+
+            setAgencyData(completeAgencyData);
+        } catch (error) {
+            console.error("❌ FetchAllData Error:", error);
+        } finally {
+            setLoading(false);
+            setRefreshing(false); // Stop refreshing
+        }
+    };
+
+    useFocusEffect(
+        React.useCallback(() => {
+            fetchAllData(false);
+            return () => {};
         }, [id, userToken])
     );
+
+    // Add refresh handler
+    const onRefresh = React.useCallback(() => {
+        setRefreshing(true);
+        fetchAllData(true);
+    }, [id, userToken]);
 
     const handleScholarshipImageError = (scholarshipId) => {
         setScholarshipImageErrors(prev => ({ ...prev, [scholarshipId]: true }));
@@ -328,6 +341,16 @@ export default function SelectedAgencyHome() {
                 contentContainerStyle={styles.body}
                 showsVerticalScrollIndicator={false}
                 overScrollMode="never"
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        colors={[COLORS.primary]} // Android
+                        tintColor={COLORS.primary} // iOS
+                        title="Pull to refresh" // iOS
+                        titleColor={COLORS.textSecondary} // iOS
+                    />
+                }
             >
                 {/* QUICK STATS */}
                 <View style={styles.statsContainer}>
@@ -549,7 +572,7 @@ export default function SelectedAgencyHome() {
                                     params: {
                                         id: item._id,
                                         name: item.name,
-                                        logo: item.logo,
+                                        logo: item.profileUrl,
                                         website: item.websiteUrl
                                     }
                                 })}
@@ -936,12 +959,12 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: COLORS.border,
         overflow: 'hidden',
-        padding: 0,  // Remove padding for images
+        padding: 0,  
     },
     uniImg: {
         width: '100%',
         height: '100%',
-        resizeMode: 'cover',  // or 'contain' based on preference
+        resizeMode: 'cover',  
     },
     uniPlaceholder: {
         width: '100%',

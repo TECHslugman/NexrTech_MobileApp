@@ -7,23 +7,20 @@ import Toast from 'react-native-toast-message';
 import { Ionicons } from '@expo/vector-icons';
 import { Config } from './config';
 
-// --- 1. CLEANED UP IMPORTS ---
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 
-// --- 2. FIXED NOTIFICATION HANDLER ---
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
-    shouldShowBanner: true, 
+    shouldShowBanner: true,
     shouldShowList: true,
   }),
 });
 
-// --- CUSTOM TOAST DESIGN CONFIG ---
 const toastConfig = {
   success: ({ text1, text2 }: any) => (
     <View style={[styles.toastContainer, styles.successBg]}>
@@ -61,14 +58,14 @@ const toastConfig = {
 };
 
 function RootLayoutNav() {
-  const { userToken, isLoading } = useAuth();
+  // ← also pull activeAgency from context
+  const { userToken, isLoading, activeAgency } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
   const notificationListener = useRef<Notifications.EventSubscription | null>(null);
   const responseListener = useRef<Notifications.EventSubscription | null>(null);
 
-  // --- NEW: Helper to sync token with your backend ---
   const savePushTokenToBackend = async (token: string) => {
     if (!userToken) return;
     try {
@@ -92,57 +89,64 @@ function RootLayoutNav() {
         console.log("**************************************");
         console.log("YOUR EXPO PUSH TOKEN:", token);
         console.log("**************************************");
-        
-        // Sync token if user is logged in
         if (userToken) {
           savePushTokenToBackend(token);
         }
       }
     });
 
-    // Handle notification Received while app is OPEN
     notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
       console.log("Notification Received:", notification);
-      
       const { title, body } = notification.request.content;
       Toast.show({
         type: 'info',
         text1: title || 'New Update',
         text2: body || 'Check your document checklist.',
-        onPress: () => router.push('/(app)/agency/selected/documents/upload') // Route to your swipeable screen
+        onPress: () => router.push('/(app)/agency/selected/documents/upload')
       });
     });
 
-    // Handle notification Tapped
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
       console.log("Notification Tapped:", response);
-      
       const data = response.notification.request.content.data;
-      // Navigate if backend sends the instruction
       if (data?.screen === 'documents' || data?.type === 'CHECKLIST_UPDATE') {
         router.push('/(app)/agency/selected/documents/upload');
       }
     });
 
     return () => {
-      if (notificationListener.current) {
-        notificationListener.current.remove();
-      }
-      if (responseListener.current) {
-        responseListener.current.remove();
-      }
+      if (notificationListener.current) notificationListener.current.remove();
+      if (responseListener.current) responseListener.current.remove();
     };
-  }, [userToken]); // Re-run when userToken changes to sync the token
+  }, [userToken]);
 
   useEffect(() => {
+    // Wait until auth + agency are fully resolved before making any routing decision
     if (isLoading) return;
+
     const inAuthGroup = (segments as string[]).includes("auth");
+    console.log('[LAYOUT] routing effect fired — userToken:', userToken ? '✅' : '❌', '| activeAgency:', activeAgency?.name ?? 'null', '| inAuthGroup:', inAuthGroup);
+
     if (!userToken) {
+      // Not logged in — send to auth
       if (!inAuthGroup) router.replace("/auth/register");
-    } else if (userToken && inAuthGroup) {
-      router.replace("/(app)/decision");
+      return;
     }
-  }, [userToken, isLoading, segments]);
+
+    // Logged in but still on an auth screen — redirect into the app
+    if (inAuthGroup) {
+      if (activeAgency?.id) {
+        // Student already has an agency — go straight to their home
+        router.replace({
+          pathname: `/agency/selected/${activeAgency.id}` as any,
+          params: { name: activeAgency.name, agencyLogo: activeAgency.logo },
+        });
+      } else {
+        // New user or no agency selected yet — go to decision page
+        router.replace("/(app)/decision");
+      }
+    }
+  }, [userToken, isLoading, activeAgency, segments]);
 
   if (isLoading) {
     return (
@@ -182,7 +186,7 @@ async function registerForPushNotificationsAsync() {
       Alert.alert('Error', 'Failed to get push token for push notification!');
       return;
     }
-    
+
     const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
     if (!projectId) {
       console.error("Project ID not found in app.json.");
@@ -226,18 +230,18 @@ const styles = StyleSheet.create({
     elevation: 4,
     borderWidth: 0,
   },
-  successBg: { 
-    backgroundColor: '#FAFFFE', 
+  successBg: {
+    backgroundColor: '#FAFFFE',
     borderWidth: 1,
     borderColor: '#D1FAE5',
   },
-  errorBg: { 
-    backgroundColor: '#FFFBFB', 
+  errorBg: {
+    backgroundColor: '#FFFBFB',
     borderWidth: 1,
     borderColor: '#FEE2E2',
   },
-  infoBg: { 
-    backgroundColor: '#FAFCFF', 
+  infoBg: {
+    backgroundColor: '#FAFCFF',
     borderWidth: 1,
     borderColor: '#E0EDFF',
   },
@@ -253,16 +257,16 @@ const styles = StyleSheet.create({
   errorIconBg: { backgroundColor: '#FEF2F2' },
   infoIconBg: { backgroundColor: '#EFF6FF' },
   textContainer: { flex: 1, justifyContent: 'center' },
-  titleText: { 
-    fontSize: 14, 
-    fontWeight: '600', 
+  titleText: {
+    fontSize: 14,
+    fontWeight: '600',
     color: '#1F2937',
     letterSpacing: -0.2,
   },
-  subText: { 
-    fontSize: 12, 
-    color: '#6B7280', 
-    marginTop: 2, 
+  subText: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
     lineHeight: 16,
     letterSpacing: -0.1,
   }

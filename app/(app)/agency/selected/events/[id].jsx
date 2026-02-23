@@ -38,38 +38,97 @@ export default function AllEvents() {
             if (query.length > 0) setIsSearching(true);
             else setLoading(true);
 
+            // ─── DEBUG: Check params ───────────────────────────────────────
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.log('[AllEvents] agency id:', id);
+            console.log('[AllEvents] agencyName:', agencyName);
+            console.log('[AllEvents] userToken present:', !!userToken);
+            console.log('[AllEvents] Config.API_BASE_URL:', Config.API_BASE_URL);
+
             // Toggle URL based on search input
             const url = query.trim().length > 0
                 ? `${Config.API_BASE_URL}/agency/events/student/${id}?search=${query}`
-                : `${Config.API_BASE_URL}/agency/events/student/${id}`;
+                : `${Config.API_BASE_URL}/agency/events/student/`;
+
+            // ─── DEBUG: Log full URL ───────────────────────────────────────
+            console.log('[AllEvents] Full fetch URL:', url);
 
             const response = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${userToken}` }
             });
 
-            const json = await response.json();
+            // ─── DEBUG: Log raw response status ───────────────────────────
+            console.log('[AllEvents] Response status:', response.status);
+            console.log('[AllEvents] Response ok:', response.ok);
+            console.log('[AllEvents] Content-Type:', response.headers.get('content-type'));
+
+            // ─── DEBUG: Read raw text BEFORE parsing ──────────────────────
+            const rawText = await response.text();
+            console.log('[AllEvents] Raw response (first 500 chars):', rawText.slice(0, 500));
+
+            // Now safely try to parse as JSON
+            let json;
+            try {
+                json = JSON.parse(rawText);
+            } catch (parseError) {
+                console.log('[AllEvents] ❌ JSON parse failed — server returned non-JSON (HTML error page?)');
+                console.log('[AllEvents] Parse error:', parseError.message);
+                return;
+            }
+
+            // ─── DEBUG: Log parsed JSON structure ─────────────────────────
+            console.log('[AllEvents] Parsed JSON keys:', Object.keys(json));
+            console.log('[AllEvents] json.events:', json.events ? `Array(${json.events.length})` : 'undefined');
+            console.log('[AllEvents] json.data:', json.data ? `Array(${json.data.length})` : 'undefined');
+            console.log('[AllEvents] Is root array:', Array.isArray(json));
+            if (Array.isArray(json)) {
+                console.log('[AllEvents] Root array length:', json.length);
+            }
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
             if (response.ok) {
-                const rawEvents = Array.isArray(json.events) ? json.events : (Array.isArray(json) ? json : []);
+                const rawEvents = Array.isArray(json.events)
+                    ? json.events
+                    : Array.isArray(json.data)
+                        ? json.data
+                        : Array.isArray(json)
+                            ? json
+                            : [];
+
+                // ─── DEBUG: Log rawEvents count ───────────────────────────
+                console.log('[AllEvents] rawEvents count:', rawEvents.length);
+                if (rawEvents.length > 0) {
+                    console.log('[AllEvents] First event sample:', JSON.stringify(rawEvents[0]).slice(0, 300));
+                }
 
                 const formattedEvents = rawEvents.map(event => {
                     const startDate = new Date(event.startAt || event.date || event.createdAt);
-                    const eventMode = event.meetings && event.meetings.length > 0 
-                        ? event.meetings[0].mode 
+                    const eventMode = event.meetings && event.meetings.length > 0
+                        ? event.meetings[0].mode
                         : 'venue';
 
                     return {
                         ...event,
                         id: event._id || event.id,
-                        mode: eventMode, 
+                        mode: eventMode,
                         displayDay: !isNaN(startDate.getTime()) ? startDate.toLocaleDateString('en-US', { day: '2-digit' }) : "??",
                         displayMonth: !isNaN(startDate.getTime()) ? startDate.toLocaleDateString('en-US', { month: 'short' }) : "TBA",
                         fullDate: startDate.toISOString()
                     };
                 });
+
+                // ─── DEBUG: Final formatted events count ──────────────────
+                console.log('[AllEvents] formattedEvents count:', formattedEvents.length);
+
                 setEvents(formattedEvents);
+            } else {
+                // ─── DEBUG: Non-OK response ────────────────────────────────
+                console.log('[AllEvents] ❌ Response not OK. Status:', response.status);
+                console.log('[AllEvents] Error body:', JSON.stringify(json).slice(0, 300));
             }
         } catch (error) {
-            console.log("Fetch error:", error);
+            console.log('[AllEvents] ❌ Fetch error:', error.message);
+            console.log('[AllEvents] Full error:', error);
         } finally {
             setLoading(false);
             setIsSearching(false);
@@ -245,7 +304,7 @@ const styles = StyleSheet.create({
         marginBottom: 16 
     },
     
-    // Card Styles - No shadows, clean borders
+    // Card Styles
     eventCard: { 
         backgroundColor: COLORS.white, 
         borderRadius: 20, 
@@ -261,8 +320,6 @@ const styles = StyleSheet.create({
         width: '100%', 
         height: '100%' 
     },
-    
-    // Header overlay
     cardOverlayHeader: {
         position: 'absolute',
         top: 0,
@@ -273,7 +330,6 @@ const styles = StyleSheet.create({
         alignItems: 'flex-start',
         padding: 8,
     },
-    
     modeBadge: { 
         paddingHorizontal: 8, 
         paddingVertical: 4, 
@@ -286,7 +342,6 @@ const styles = StyleSheet.create({
         fontWeight: '800', 
         textTransform: 'uppercase' 
     },
-    
     dateBadge: { 
         backgroundColor: COLORS.dateBg, 
         width: 38, 
@@ -309,7 +364,6 @@ const styles = StyleSheet.create({
         color: '#769FCD', 
         textTransform: 'uppercase' 
     },
-    
     cardContent: { 
         padding: 12 
     },

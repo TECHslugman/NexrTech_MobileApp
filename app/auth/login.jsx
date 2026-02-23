@@ -24,7 +24,7 @@ export default function LoginScreen() {
     const [emailtouch, setEmailTouched] = useState(false);
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
-    const [focusedField, setFocusedField] = useState(null); // 'email' | 'password'
+    const [focusedField, setFocusedField] = useState(null);
     const [loading, setLoading] = useState(false);
     const [isGoogleLoading, setIsGoogleLoading] = useState(false);
     const isemailvalid = emailRegex.test(email);
@@ -32,18 +32,19 @@ export default function LoginScreen() {
     const emailerror = emailtouch && !isemailvalid && email.length > 0;
     const allValid = email && isemailvalid && passwordIsValid;
 
-    const handleAfterLogin = async (accessToken) => {
-        try {
-            // Ensure the token is a string before saving
-            const tokenString = typeof accessToken === 'string' ? accessToken : JSON.stringify(accessToken);
-
-            if (!tokenString) {
-                alert("No token received from server");
-                return;
-            }
-            await signIn(tokenString);
-        } catch (e) {
-            console.error("Error saving token:", e);
+    /**
+     * Central post-login navigation.
+     * If the student already has an agency → go straight to their agency home.
+     * If not → go to decision page to pick one.
+     */
+    const navigateAfterLogin = (agency) => {
+        if (agency?.id) {
+            router.replace({
+                pathname: `/agency/selected/${agency.id}`,
+                params: { name: agency.name, agencyLogo: agency.logo },
+            });
+        } else {
+            router.replace("/(app)/decision");
         }
     };
 
@@ -57,104 +58,83 @@ export default function LoginScreen() {
                 body: JSON.stringify({ email, password }),
             });
 
-            //-----------------
             const responseText = await res.text();
-            console.log("Server Response Raw:", responseText);
-
-            // Now try to parse it manually
             const data = JSON.parse(responseText);
-            // ------------------
 
             if (res.ok) {
                 console.log("Login success:", data.message);
-                handleAfterLogin(data.accessToken);
+                // signIn now returns the resolved agency (or null for new users)
+                const agency = await signIn(data.accessToken);
+                navigateAfterLogin(agency);
             } else {
                 alert(data.message || "Login failed");
             }
         } catch (error) {
             console.error("Login error detail:", error);
-            // If it's still a syntax error, look at the console.log above!
             alert("Server returned an invalid response.");
         } finally {
             setLoading(false);
         }
     };
 
-     // --- 2. Google Sign-In Handler ---
-        const handleGoogleSignUp = async () => {
-            try {
-                await GoogleSignin.hasPlayServices();
-                const userInfo = await GoogleSignin.signIn();
-    
-                // The token is located inside userInfo.data (v11+) or userInfo (older)
-                const idToken = userInfo.data?.idToken || userInfo.idToken;
-    
-                if (idToken) {
-                    setIsGoogleLoading(true);
-                    console.log(" Token found, calling backend...");
-                    await handleBackendGoogleSignIn(idToken);
-                }
-            } catch (error) {
-                setIsGoogleLoading(false);
-                if (error.code === statusCodes.SIGN_IN_CANCELLED) {
-                    console.log("User cancelled the login flow");
-                } else if (error.code === statusCodes.IN_PROGRESS) {
-                    console.log("Sign-in is already in progress");
-                } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
-                    console.log("Play services not available or outdated");
-                } else {
-                    console.log("Google Sign-In error:", error);
-                }
-            }
-        };
-    
-        // --- 3. Backend Integration ---
-        const handleBackendGoogleSignIn = async (idtoken) => {
-            try {
-                console.log("Sending token to backend...");
-                console.log("ID Token:", idtoken);
-                const res = await fetch("https://edu-agent-backend.vercel.app/google-signin-student", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ id_token: idtoken }), // Sending the idToken to backend
-                });
-                console.log("Backend Status:", res.status);
-                const data = await res.json();
-                console.log(data);
-                console.log("Backend Response Data:", data);
-                if (res.ok) {
-                    console.log("SUCCESS: Attempting to navigate to dashboard...");
-                    const tokenToStore = data.accessToken;
-                    await signIn(tokenToStore);
-                   
-                    try {
-                        router.replace("/(app)/decision");
-                    } catch (navError) {
-                        console.log("Navigation to dashboard failed. ", navError);
-                    }
-    
-                } else {
-                    setIsGoogleLoading(false);
-                    console.log("Backend verification failed:", data.message);
-                }
-            } catch (e) {
-                console.log("Backend Connection error:", e);
-            }
-        };
+    const handleGoogleSignIn = async () => {
+        try {
+            await GoogleSignin.hasPlayServices();
+            const userInfo = await GoogleSignin.signIn();
+            const idToken = userInfo.data?.idToken || userInfo.idToken;
 
+            if (idToken) {
+                setIsGoogleLoading(true);
+                await handleBackendGoogleSignIn(idToken);
+            }
+        } catch (error) {
+            setIsGoogleLoading(false);
+            if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+                console.log("User cancelled the login flow");
+            } else if (error.code === statusCodes.IN_PROGRESS) {
+                console.log("Sign-in is already in progress");
+            } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+                console.log("Play services not available or outdated");
+            } else {
+                console.log("Google Sign-In error:", error);
+            }
+        }
+    };
+
+    const handleBackendGoogleSignIn = async (idtoken) => {
+        try {
+            const res = await fetch("https://edu-agent-backend.vercel.app/google-signin-student", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id_token: idtoken }),
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                // signIn returns resolved agency — use it to route correctly
+                const agency = await signIn(data.accessToken);
+                navigateAfterLogin(agency);
+            } else {
+                setIsGoogleLoading(false);
+                console.log("Backend verification failed:", data.message);
+            }
+        } catch (e) {
+            setIsGoogleLoading(false);
+            console.log("Backend Connection error:", e);
+        }
+    };
 
     const getInputBorderColor = (field) =>
         focusedField === field ? "#B9D7EA" : "#E2E8F0";
 
     return (
         <View style={styles.container}>
-            {/* Title */}
             <Text style={styles.title}>Login</Text>
 
             {/* Email */}
             <View style={styles.field}>
                 <Text style={styles.label}>Email</Text>
-
                 <TextInput
                     style={[
                         styles.input,
@@ -173,14 +153,8 @@ export default function LoginScreen() {
                     }}
                 />
                 {emailerror && (
-                    <Text
-                        style={{
-                            color: "#E53E3E",
-                            fontSize: 12,
-                            marginTop: 4,
-                        }}
-                    >
-                        Please enter valid email adress
+                    <Text style={{ color: "#E53E3E", fontSize: 12, marginTop: 4 }}>
+                        Please enter valid email address
                     </Text>
                 )}
             </View>
@@ -204,7 +178,6 @@ export default function LoginScreen() {
                         onFocus={() => setFocusedField("password")}
                         onBlur={() => setFocusedField(null)}
                     />
-
                     <Pressable
                         style={styles.eyeIconWrapper}
                         onPress={() => setShowPassword((prev) => !prev)}
@@ -217,7 +190,6 @@ export default function LoginScreen() {
                     </Pressable>
                 </View>
 
-                {/* Forgot password link just under field, right side */}
                 <Text
                     style={styles.forgotText}
                     onPress={() => router.push("/auth/forget_password")}
@@ -225,7 +197,6 @@ export default function LoginScreen() {
                     Forgot password?
                 </Text>
 
-                {/* Password hint */}
                 <View style={styles.passwordHintRow}>
                     <View
                         style={[
@@ -253,16 +224,23 @@ export default function LoginScreen() {
 
             {/* Google button */}
             <TouchableOpacity
-                style={styles.googleButton}
+                style={[styles.googleButton, isGoogleLoading && { opacity: 0.7 }]}
                 activeOpacity={0.85}
-                onPress={handleGoogleSignUp}
+                onPress={handleGoogleSignIn}
+                disabled={isGoogleLoading}
             >
-                <Image
-                    source={require("../../assets/images/google-logo.png")}
-                    style={styles.googleLogo}
-                    resizeMode="contain"
-                />
-                <Text style={styles.googleButtonText}>Continue with Google</Text>
+                {isGoogleLoading ? (
+                    <ActivityIndicator color="#4A5568" />
+                ) : (
+                    <>
+                        <Image
+                            source={require("../../assets/images/google-logo.png")}
+                            style={styles.googleLogo}
+                            resizeMode="contain"
+                        />
+                        <Text style={styles.googleButtonText}>Continue with Google</Text>
+                    </>
+                )}
             </TouchableOpacity>
 
             {/* Login button */}
@@ -282,7 +260,6 @@ export default function LoginScreen() {
                 )}
             </TouchableOpacity>
 
-            {/* Footer */}
             <Text style={styles.footerText}>
                 By continuing, you agree to our{" "}
                 <Text style={styles.footerLinkText}>Terms of Service</Text> {"\n"} and{" "}
@@ -342,7 +319,6 @@ const styles = StyleSheet.create({
         justifyContent: "center",
         alignItems: "center",
     },
-
     forgotText: {
         marginTop: 3,
         fontSize: 12,
@@ -353,8 +329,6 @@ const styles = StyleSheet.create({
     passwordHintRow: {
         flexDirection: "row",
         alignItems: "center",
-
-
     },
     bullet: {
         width: 6,

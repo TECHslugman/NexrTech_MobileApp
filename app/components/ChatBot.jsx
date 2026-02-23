@@ -12,6 +12,7 @@ import {
     ActivityIndicator,
     Animated,
     StatusBar,
+    Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -21,15 +22,19 @@ import { Config } from '../config';
 const COLORS = {
     primary: '#769FCD',
     primaryDark: '#5A7FA8',
-    background: '#F8FAFD',
+    primaryLight: '#8FB6E0',
+    primarySoft: '#E8F0FE',
+    background: '#F8FAFC',
     white: '#FFFFFF',
-    textPrimary: '#2D3748',
-    textSecondary: '#718096',
-    border: '#EEF2F7',
+    textPrimary: '#1E293B',
+    textSecondary: '#64748B',
+    border: '#E2E8F0',
     userBubble: '#769FCD',
     botBubble: '#FFFFFF',
     error: '#EF4444',
-    shadow: 'rgba(0, 0, 0, 0.1)',
+    inputBg: '#F1F5F9',
+    shadow: 'rgba(0, 0, 0, 0.05)',
+    online: '#10B981',
 };
 
 const ChatBot = ({ agencyId }) => {
@@ -38,7 +43,9 @@ const ChatBot = ({ agencyId }) => {
     const [messages, setMessages] = useState([]);
     const [inputText, setInputText] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [isBotTyping, setIsBotTyping] = useState(false);
     const flatListRef = useRef(null);
+    const inputRef = useRef(null);
     
     // Floating button animation
     const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -123,7 +130,11 @@ const ChatBot = ({ agencyId }) => {
 
         setMessages(prev => [...prev, userMessage]);
         setInputText('');
-        setIsLoading(true);
+        setIsBotTyping(true);
+        Keyboard.dismiss();
+
+        // Scroll to bottom after user message
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
 
         try {
             const response = await fetch(`${Config.API_BASE_URL}/openai/chatbot`, {
@@ -177,8 +188,11 @@ const ChatBot = ({ agencyId }) => {
                         )
                     );
                     
+                    // Scroll to bottom as text streams in
+                    flatListRef.current?.scrollToEnd({ animated: true });
+                    
                     // Small delay to show streaming effect
-                    await new Promise(resolve => setTimeout(resolve, 50));
+                    await new Promise(resolve => setTimeout(resolve, 30));
                 } else if (event.type === 'done') {
                     // Mark streaming as complete
                     setMessages(prev =>
@@ -201,37 +215,70 @@ const ChatBot = ({ agencyId }) => {
             };
             setMessages(prev => [...prev, errorMessage]);
         } finally {
-            setIsLoading(false);
+            setIsBotTyping(false);
         }
     };
 
-    const renderMessage = ({ item }) => (
-        <View
-            style={[
-                styles.messageBubble,
-                item.isBot ? styles.botBubble : styles.userBubble,
-            ]}
-        >
-            {item.isBot && (
-                <View style={styles.botIconContainer}>
-                    <View style={styles.botIcon}>
-                        <MaterialCommunityIcons name="robot-outline" size={18} color={COLORS.white} />
-                    </View>
-                </View>
-            )}
-            <View style={[styles.messageContent, item.isBot ? styles.botContent : styles.userContent]}>
-                <Text style={[styles.messageText, item.isBot ? styles.botText : styles.userText]}>
-                    {item.text}
-                </Text>
-                {item.isStreaming && (
-                    <View style={styles.streamingIndicator}>
-                        <View style={styles.typingDots}>
-                            <View style={[styles.dot, styles.dot1]} />
-                            <View style={[styles.dot, styles.dot2]} />
-                            <View style={[styles.dot, styles.dot3]} />
+    const renderMessage = ({ item }) => {
+        const isBot = item.isBot;
+        
+        return (
+            <View style={[styles.messageRow, !isBot && styles.messageRowRight]}>
+                {isBot && (
+                    <View style={styles.avatarContainer}>
+                        <View style={[styles.avatarFallback, { backgroundColor: COLORS.primary }]}>
+                            <MaterialCommunityIcons name="robot-outline" size={16} color={COLORS.white} />
                         </View>
                     </View>
                 )}
+                <View style={[styles.messageWrapper, !isBot && styles.messageWrapperRight]}>
+                    <View style={[
+                        styles.bubble, 
+                        isBot ? styles.botBubble : styles.userBubble,
+                        item.isError && styles.errorBubble
+                    ]}>
+                        <Text style={[
+                            styles.bubbleText,
+                            !isBot && styles.userBubbleText
+                        ]}>
+                            {item.text}
+                        </Text>
+                        <View style={styles.bubbleFooter}>
+                            <Text style={[styles.time, !isBot && styles.userTime]}>
+                                {new Date(item.timestamp).toLocaleTimeString([], { 
+                                    hour: '2-digit', 
+                                    minute: '2-digit' 
+                                })}
+                            </Text>
+                            {item.isStreaming && (
+                                <View style={styles.typingIndicator}>
+                                    <View style={[styles.typingDot, styles.dot1]} />
+                                    <View style={[styles.typingDot, styles.dot2]} />
+                                    <View style={[styles.typingDot, styles.dot3]} />
+                                </View>
+                            )}
+                        </View>
+                    </View>
+                </View>
+            </View>
+        );
+    };
+
+    const renderTypingIndicator = () => (
+        <View style={styles.messageRow}>
+            <View style={styles.avatarContainer}>
+                <View style={[styles.avatarFallback, { backgroundColor: COLORS.primary }]}>
+                    <MaterialCommunityIcons name="robot-outline" size={16} color={COLORS.white} />
+                </View>
+            </View>
+            <View style={styles.messageWrapper}>
+                <View style={[styles.bubble, styles.botBubble, styles.typingBubble]}>
+                    <View style={styles.typingIndicator}>
+                        <View style={[styles.typingDot, styles.dot1]} />
+                        <View style={[styles.typingDot, styles.dot2]} />
+                        <View style={[styles.typingDot, styles.dot3]} />
+                    </View>
+                </View>
             </View>
         </View>
     );
@@ -281,33 +328,30 @@ const ChatBot = ({ agencyId }) => {
                     <View style={styles.modalContainer}>
                         {/* Header */}
                         <View style={styles.modalHeader}>
-                            <View style={styles.headerContent}>
-                                <View style={styles.headerLeft}>
-                                    <View style={styles.headerIconContainer}>
-                                        <MaterialCommunityIcons name="robot-outline" size={24} color={COLORS.white} />
-                                    </View>
-                                    <View style={styles.headerText}>
-                                        <Text style={styles.modalTitle}>AI Assistant</Text>
-                                        <View style={styles.statusContainer}>
-                                            <View style={styles.onlineIndicator} />
-                                            <Text style={styles.modalSubtitle}>Online</Text>
-                                        </View>
+                            <TouchableOpacity style={styles.backButton} onPress={() => setIsVisible(false)}>
+                                <Ionicons name="arrow-back" size={22} color={COLORS.textPrimary} />
+                            </TouchableOpacity>
+                            
+                            <View style={styles.headerInfo}>
+                                <View style={[styles.headerAvatar, { backgroundColor: COLORS.primary }]}>
+                                    <MaterialCommunityIcons name="robot-outline" size={20} color={COLORS.white} />
+                                </View>
+                                <View style={styles.headerText}>
+                                    <Text style={styles.headerName} numberOfLines={1}>AI Assistant</Text>
+                                    <View style={styles.headerStatusContainer}>
+                                        <View style={[styles.statusDot, { backgroundColor: COLORS.online }]} />
+                                        <Text style={styles.headerStatus}>Online</Text>
                                     </View>
                                 </View>
-                                <TouchableOpacity
-                                    style={styles.closeButton}
-                                    onPress={() => setIsVisible(false)}
-                                    activeOpacity={0.7}
-                                >
-                                    <Ionicons name="close" size={26} color={COLORS.textPrimary} />
-                                </TouchableOpacity>
                             </View>
+                            
+                            <View style={{ width: 40 }} />
                         </View>
 
                         <KeyboardAvoidingView
                             style={styles.keyboardView}
                             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                            keyboardVerticalOffset={Platform.OS === 'ios' ? 130 : 0}
+                            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
                         >
                             {/* Messages List */}
                             <View style={styles.messagesContainer}>
@@ -321,6 +365,7 @@ const ChatBot = ({ agencyId }) => {
                                     onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
                                     showsVerticalScrollIndicator={false}
                                     keyboardShouldPersistTaps="handled"
+                                    ListFooterComponent={isBotTyping ? renderTypingIndicator : null}
                                 />
                             </View>
 
@@ -329,6 +374,7 @@ const ChatBot = ({ agencyId }) => {
                                 <View style={styles.inputContainer}>
                                     <View style={styles.inputContent}>
                                         <TextInput
+                                            ref={inputRef}
                                             style={styles.input}
                                             placeholder="Type your message..."
                                             placeholderTextColor={COLORS.textSecondary}
@@ -336,27 +382,20 @@ const ChatBot = ({ agencyId }) => {
                                             onChangeText={setInputText}
                                             multiline
                                             maxLength={500}
-                                            editable={!isLoading}
+                                            editable={!isBotTyping}
+                                            returnKeyType="send"
+                                            onSubmitEditing={sendMessage}
                                         />
                                         <TouchableOpacity
                                             style={[
                                                 styles.sendButton,
-                                                (!inputText.trim() || isLoading) && styles.sendButtonDisabled,
+                                                (!inputText.trim() || isBotTyping) && styles.sendButtonDisabled,
                                             ]}
                                             onPress={sendMessage}
-                                            disabled={!inputText.trim() || isLoading}
+                                            disabled={!inputText.trim() || isBotTyping}
                                             activeOpacity={0.8}
                                         >
-                                            {isLoading ? (
-                                                <ActivityIndicator size="small" color={COLORS.white} />
-                                            ) : (
-                                                <Ionicons 
-                                                    name="send" 
-                                                    size={20} 
-                                                    color={COLORS.white} 
-                                                    style={styles.sendIcon}
-                                                />
-                                            )}
+                                            <Ionicons name="send" size={18} color={COLORS.white} />
                                         </TouchableOpacity>
                                     </View>
                                 </View>
@@ -411,224 +450,216 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     
-    // Header Styles
+    // Header Styles (matching chats.jsx)
     modalHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
         backgroundColor: COLORS.white,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
         borderBottomWidth: 1,
         borderBottomColor: COLORS.border,
-        elevation: 2,
-        shadowColor: COLORS.shadow,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
     },
-    headerContent: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingHorizontal: 20,
-        paddingVertical: 16,
-    },
-    headerLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-    },
-    headerIconContainer: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        backgroundColor: COLORS.primary,
+    backButton: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 14,
-        elevation: 2,
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.3,
-        shadowRadius: 4,
+        backgroundColor: COLORS.inputBg,
+    },
+    headerInfo: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginLeft: 8,
+    },
+    headerAvatar: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        marginRight: 10,
+        justifyContent: 'center',
+        alignItems: 'center',
+        overflow: 'hidden',
     },
     headerText: {
         flex: 1,
     },
-    modalTitle: {
-        fontSize: 19,
-        fontWeight: '700',
+    headerName: {
+        fontSize: 15,
+        fontWeight: '600',
         color: COLORS.textPrimary,
-        marginBottom: 4,
-        letterSpacing: 0.2,
+        marginBottom: 2,
     },
-    statusContainer: {
+    headerStatusContainer: {
         flexDirection: 'row',
         alignItems: 'center',
     },
-    onlineIndicator: {
+    statusDot: {
         width: 8,
         height: 8,
         borderRadius: 4,
-        backgroundColor: '#10B981',
-        marginRight: 6,
+        marginRight: 4,
     },
-    modalSubtitle: {
-        fontSize: 13,
+    headerStatus: {
+        fontSize: 11,
         color: COLORS.textSecondary,
-        fontWeight: '500',
-    },
-    closeButton: {
-        width: 44,
-        height: 44,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderRadius: 22,
-        backgroundColor: COLORS.background,
     },
     
-    // Messages Container Styles
+    // Messages Container Styles (matching chats.jsx)
     messagesContainer: {
         flex: 1,
-        backgroundColor: COLORS.background,
     },
     messagesList: {
-        padding: 20,
-        paddingBottom: 10,
+        padding: 16,
+        paddingBottom: 8,
         flexGrow: 1,
     },
-    messageBubble: {
-        marginBottom: 16,
+    messageRow: {
         flexDirection: 'row',
+        marginBottom: 12,
         alignItems: 'flex-end',
     },
-    botBubble: {
-        alignSelf: 'flex-start',
-        maxWidth: '85%',
+    messageRowRight: {
+        justifyContent: 'flex-end',
     },
-    userBubble: {
-        alignSelf: 'flex-end',
-        maxWidth: '85%',
-        flexDirection: 'row-reverse',
+    avatarContainer: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        marginRight: 8,
+        overflow: 'hidden',
     },
-    botIconContainer: {
-        marginRight: 10,
-        marginBottom: 2,
-    },
-    botIcon: {
-        width: 34,
-        height: 34,
-        borderRadius: 17,
-        backgroundColor: COLORS.primary,
+    avatarFallback: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
         justifyContent: 'center',
         alignItems: 'center',
-        elevation: 2,
-        shadowColor: COLORS.shadow,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.15,
-        shadowRadius: 4,
     },
-    messageContent: {
-        borderRadius: 20,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
+    messageWrapper: {
+        maxWidth: '75%',
+    },
+    messageWrapperRight: {
+        alignItems: 'flex-end',
+    },
+    bubble: {
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 18,
         elevation: 1,
         shadowColor: COLORS.shadow,
         shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.1,
         shadowRadius: 2,
     },
-    botContent: {
-        backgroundColor: COLORS.white,
+    botBubble: {
+        backgroundColor: COLORS.botBubble,
+        borderBottomLeftRadius: 4,
         borderWidth: 1,
         borderColor: COLORS.border,
-        borderBottomLeftRadius: 6,
     },
-    userContent: {
+    userBubble: {
         backgroundColor: COLORS.userBubble,
-        borderBottomRightRadius: 6,
+        borderBottomRightRadius: 4,
     },
-    messageText: {
-        fontSize: 15,
-        lineHeight: 22,
-        letterSpacing: 0.2,
+    errorBubble: {
+        backgroundColor: '#FEE2E2',
+        borderColor: '#FECACA',
     },
-    botText: {
+    bubbleText: {
+        fontSize: 14,
+        lineHeight: 20,
+        marginBottom: 4,
         color: COLORS.textPrimary,
     },
-    userText: {
+    userBubbleText: {
         color: COLORS.white,
     },
-    
-    // Streaming Indicator Styles
-    streamingIndicator: {
-        marginTop: 8,
-    },
-    typingDots: {
+    bubbleFooter: {
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'flex-end',
     },
-    dot: {
+    time: {
+        fontSize: 10,
+        color: COLORS.textSecondary,
+    },
+    userTime: {
+        color: 'rgba(255,255,255,0.7)',
+    },
+    
+    // Typing Indicator Styles
+    typingBubble: {
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+    },
+    typingIndicator: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginLeft: 4,
+    },
+    typingDot: {
         width: 6,
         height: 6,
         borderRadius: 3,
         backgroundColor: COLORS.primary,
         marginHorizontal: 2,
+        opacity: 0.6,
+    },
+    dot1: {
+        animation: 'typing 1.4s infinite',
+    },
+    dot2: {
+        animation: 'typing 1.4s infinite 0.2s',
+    },
+    dot3: {
+        animation: 'typing 1.4s infinite 0.4s',
     },
     
-    // Input Area Styles
+    // Input Area Styles (matching chats.jsx)
     inputWrapper: {
         backgroundColor: COLORS.white,
         borderTopWidth: 1,
         borderTopColor: COLORS.border,
-        elevation: 8,
-        shadowColor: COLORS.shadow,
-        shadowOffset: { width: 0, height: -2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
     },
     inputContainer: {
-        paddingHorizontal: 16,
-        paddingVertical: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
     },
     inputContent: {
         flexDirection: 'row',
         alignItems: 'flex-end',
-        backgroundColor: COLORS.background,
-        borderRadius: 28,
-        paddingLeft: 18,
-        paddingRight: 6,
-        paddingVertical: 6,
+        backgroundColor: COLORS.inputBg,
+        borderRadius: 24,
+        paddingLeft: 16,
+        paddingRight: 4,
+        paddingVertical: 4,
         borderWidth: 1,
         borderColor: COLORS.border,
     },
     input: {
         flex: 1,
-        fontSize: 15,
+        fontSize: 14,
         color: COLORS.textPrimary,
         maxHeight: 100,
-        paddingTop: 10,
-        paddingBottom: 10,
-        paddingRight: 10,
-        letterSpacing: 0.2,
+        paddingTop: 8,
+        paddingBottom: 8,
+        paddingRight: 8,
     },
     sendButton: {
-        width: 42,
-        height: 42,
-        borderRadius: 21,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         backgroundColor: COLORS.primary,
         justifyContent: 'center',
         alignItems: 'center',
-        elevation: 2,
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.3,
-        shadowRadius: 4,
+        marginLeft: 4,
     },
     sendButtonDisabled: {
         backgroundColor: COLORS.textSecondary,
         opacity: 0.4,
-        elevation: 0,
-        shadowOpacity: 0,
-    },
-    sendIcon: {
-        marginLeft: 2,
     },
 });
 

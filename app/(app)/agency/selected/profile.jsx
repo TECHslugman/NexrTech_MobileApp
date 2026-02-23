@@ -86,11 +86,14 @@ export default function UserProfile() {
                     'Content-Type': 'application/json'
                 }
             });
+            console.log("Fetching profile - Status:", response.status);
 
             const json = await response.json();
             if (response.ok) {
                 setUserData(json.profile);
                 console.log("✅ Profile fetched successfully - Image URL:", json.profile.profileUrl);
+                console.log("✅ Profile fetched successfully ", json.profile);
+
             } else {
                 console.error("❌ Failed to fetch profile", json);
             }

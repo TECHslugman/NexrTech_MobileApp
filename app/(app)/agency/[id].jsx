@@ -7,7 +7,6 @@ import {
     Image,
     FlatList,
     ActivityIndicator,
-    ScrollView,
     Dimensions,
     StatusBar,
     Animated,
@@ -22,7 +21,6 @@ import { Config } from "../../config";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// Responsive scaling functions
 const scale = (size) => (SCREEN_WIDTH / 375) * size;
 const verticalScale = (size) => (SCREEN_HEIGHT / 812) * size;
 const moderateScale = (size, factor = 0.5) => size + (scale(size) - size) * factor;
@@ -41,19 +39,31 @@ const COLORS = {
     lightBg: '#F8FAFC',
     success: '#57C785',
     accentLight: '#EDF4FB',
+    locked: '#E8F5E9',
+    lockedBorder: '#A5D6A7',
+    lockedText: '#2E7D32',
+    disabled: '#B0BEC5',
+    disabledBg: '#ECEFF1',
 };
 
 const defaultHero = require('../../../assets/images/agencies/default.png');
-const BANNER_HEIGHT = Math.min(verticalScale(240), SCREEN_HEIGHT * 0.3);
+const BANNER_HEIGHT = Math.min(verticalScale(220), SCREEN_HEIGHT * 0.28);
 
 export default function AgencyDetails() {
     const { id, name: paramName, heroUri } = useLocalSearchParams();
     const router = useRouter();
-    const { userToken } = useAuth();
+    const { userToken, activeAgency, setActiveAgency } = useAuth();
 
     const [agencyData, setAgencyData] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [selecting, setSelecting] = useState(false);
     const scrollY = new Animated.Value(0);
+
+    // Derived state: is THIS agency already the active one?
+    const isThisAgencySelected = activeAgency?.id === String(id);
+
+    // Derived state: is a DIFFERENT agency already selected?
+    const isDifferentAgencySelected = !!activeAgency && !isThisAgencySelected;
 
     useEffect(() => {
         const loadData = async () => {
@@ -114,6 +124,25 @@ export default function AgencyDetails() {
     }, [id, userToken]);
 
     const handleSelectAgency = async () => {
+        // Guard: already locked to a different agency
+        if (isDifferentAgencySelected) {
+            Toast.show({
+                type: 'error',
+                text1: 'Already Enrolled',
+                text2: `You are locked in with ${activeAgency.name}. Contact support to switch.`
+            });
+            return;
+        }
+
+        // Guard: already selected this one — just navigate
+        if (isThisAgencySelected) {
+            router.replace({
+                pathname: `/agency/selected/${id}`,
+                params: { name: agencyData?.name, agencyLogo: agencyData?.imageUri }
+            });
+            return;
+        }
+
         if (!id) {
             Toast.show({
                 type: 'error',
@@ -124,7 +153,7 @@ export default function AgencyDetails() {
         }
 
         try {
-            setLoading(true);
+            setSelecting(true);
             const response = await fetch(`${Config.API_BASE_URL}/students/select-agency`, {
                 method: 'POST',
                 headers: {
@@ -144,6 +173,13 @@ export default function AgencyDetails() {
                 });
                 return;
             }
+
+            // Lock the student into this agency — persisted to SecureStore
+            await setActiveAgency({
+                id: String(id),
+                name: agencyData?.name || paramName || '',
+                logo: agencyData?.imageUri || '',
+            });
 
             Toast.show({
                 type: 'success',
@@ -166,7 +202,7 @@ export default function AgencyDetails() {
                 text2: 'Please check your internet connection.'
             });
         } finally {
-            setTimeout(() => setLoading(false), 500);
+            setTimeout(() => setSelecting(false), 500);
         }
     };
 
@@ -177,23 +213,37 @@ export default function AgencyDetails() {
     }, [heroUri, agencyData]);
 
     const renderPartner = ({ item, index }) => (
-        <TouchableOpacity key={item._id || `p-${index}`} style={styles.partnerTile}>
+        <TouchableOpacity
+            key={item._id || `p-${index}`}
+            style={styles.partnerCard}
+            activeOpacity={0.7}
+        >
             {item.logo ? (
-                <Image source={{ uri: item.logo }} style={styles.partnerLogo} resizeMode="contain" />
+                <Image
+                    source={{ uri: item.logo }}
+                    style={styles.partnerLogo}
+                    resizeMode="cover"
+                />
             ) : (
                 <View style={styles.partnerPlaceholder}>
-                    <Feather name="briefcase" size={moderateScale(24)} color={COLORS.primary} />
+                    <Feather name="award" size={moderateScale(32)} color={COLORS.primary} />
+                    {item.name && (
+                        <Text style={styles.placeholderText} numberOfLines={2}>
+                            {item.name}
+                        </Text>
+                    )}
                 </View>
             )}
-            {item.name && (
-                <Text style={styles.partnerName} numberOfLines={2}>
-                    {item.name}
-                </Text>
+            {item.logo && item.name && (
+                <View style={styles.partnerNameOverlay}>
+                    <Text style={styles.partnerName} numberOfLines={2}>
+                        {item.name}
+                    </Text>
+                </View>
             )}
         </TouchableOpacity>
     );
 
-    // Animated header opacity based on scroll
     const headerOpacity = scrollY.interpolate({
         inputRange: [0, BANNER_HEIGHT - 100, BANNER_HEIGHT],
         outputRange: [0, 0, 1],
@@ -208,19 +258,17 @@ export default function AgencyDetails() {
 
     const HeaderSection = () => (
         <View style={styles.headerSection}>
-            {/* Parallax Banner */}
             <Animated.View style={[styles.banner, { transform: [{ scale: bannerScale }] }]}>
                 <Image
                     source={heroSource}
                     style={styles.bannerImage}
                     resizeMode="cover"
                 />
-                <View style={styles.bannerGradient} />
+                <View style={styles.bannerOverlay} />
             </Animated.View>
 
-            {/* Agency Card - Overlapping Banner */}
             <View style={styles.agencyCard}>
-                <View style={styles.agencyCardHeader}>
+                <View style={styles.agencyCardContent}>
                     <View style={styles.agencyLogoContainer}>
                         <Image
                             source={heroSource}
@@ -232,14 +280,23 @@ export default function AgencyDetails() {
                         <Text style={styles.agencyName} numberOfLines={2}>
                             {agencyData.name}
                         </Text>
+
+                        {/* Show "Your Agency" badge if this is the student's locked agency */}
+                        {isThisAgencySelected && (
+                            <View style={styles.yourAgencyBadge}>
+                                <Feather name="check-circle" size={moderateScale(13)} color={COLORS.lockedText} />
+                                <Text style={styles.yourAgencyBadgeText}>Your Agency</Text>
+                            </View>
+                        )}
+
                         <View style={styles.agencyMeta}>
                             <View style={styles.metaItem}>
-                                <Feather name="calendar" size={moderateScale(12)} color={COLORS.textSecondary} />
+                                <Feather name="calendar" size={moderateScale(13)} color={COLORS.textSecondary} />
                                 <Text style={styles.metaText}>Est. {agencyData.est}</Text>
                             </View>
                             <View style={styles.metaDivider} />
                             <View style={styles.metaItem}>
-                                <Feather name="map-pin" size={moderateScale(12)} color={COLORS.textSecondary} />
+                                <Feather name="map-pin" size={moderateScale(13)} color={COLORS.textSecondary} />
                                 <Text style={styles.metaText} numberOfLines={1}>
                                     {agencyData.address.split(',')[0]}
                                 </Text>
@@ -254,22 +311,20 @@ export default function AgencyDetails() {
     const Section = ({ title, icon, children, showViewAll = false, onViewAll = () => { } }) => (
         <View style={styles.section}>
             <View style={styles.sectionHeader}>
-                <View style={styles.sectionTitleContainer}>
+                <View style={styles.sectionTitleRow}>
                     <View style={styles.iconBadge}>
                         <Feather name={icon} size={moderateScale(16)} color={COLORS.primary} />
                     </View>
                     <Text style={styles.sectionTitle}>{title}</Text>
                 </View>
                 {showViewAll && (
-                    <TouchableOpacity style={styles.viewMoreBtn} onPress={onViewAll}>
-                        <Text style={styles.viewMoreText}>View All</Text>
-                        <Feather name="arrow-right" size={moderateScale(14)} color={COLORS.primary} />
+                    <TouchableOpacity style={styles.viewAllBtn} onPress={onViewAll} activeOpacity={0.7}>
+                        <Text style={styles.viewAllText}>View All</Text>
+                        <Feather name="chevron-right" size={moderateScale(16)} color={COLORS.primary} />
                     </TouchableOpacity>
                 )}
             </View>
-            <View style={styles.sectionContent}>
-                {children}
-            </View>
+            {children}
         </View>
     );
 
@@ -283,18 +338,81 @@ export default function AgencyDetails() {
         );
     }
 
+    // Render the correct action bar depending on lock state
+    const renderActionBar = () => {
+        // This agency is already selected — show a "Go to Dashboard" button
+        if (isThisAgencySelected) {
+            return (
+                <View style={styles.actionBar}>
+                    <View style={styles.lockedNotice}>
+                        <Feather name="lock" size={moderateScale(15)} color={COLORS.lockedText} />
+                        <Text style={styles.lockedNoticeText}>You are enrolled with this agency</Text>
+                    </View>
+                    <TouchableOpacity
+                        style={styles.goToDashboardBtn}
+                        onPress={() => router.replace({
+                            pathname: `/agency/selected/${id}`,
+                            params: { name: agencyData?.name, agencyLogo: agencyData?.imageUri }
+                        })}
+                        activeOpacity={0.8}
+                    >
+                        <Text style={styles.goToDashboardBtnText}>Go to Dashboard</Text>
+                        <Feather name="arrow-right" size={moderateScale(18)} color="#FFF" />
+                    </TouchableOpacity>
+                </View>
+            );
+        }
+
+        // A different agency is already selected — show a disabled/locked state
+        if (isDifferentAgencySelected) {
+            return (
+                <View style={styles.actionBar}>
+                    <View style={styles.lockedWarning}>
+                        <Feather name="alert-circle" size={moderateScale(15)} color="#C62828" />
+                        <Text style={styles.lockedWarningText}>
+                            You are already enrolled with <Text style={{ fontWeight: '700' }}>{activeAgency.name}</Text>
+                        </Text>
+                    </View>
+                    <View style={styles.selectBtnDisabled}>
+                        <Feather name="lock" size={moderateScale(18)} color={COLORS.disabled} />
+                        <Text style={styles.selectBtnDisabledText}>Selection Locked</Text>
+                    </View>
+                </View>
+            );
+        }
+
+        // No agency selected yet — normal select button
+        return (
+            <View style={styles.actionBar}>
+                <TouchableOpacity
+                    style={styles.selectBtn}
+                    onPress={handleSelectAgency}
+                    disabled={selecting}
+                    activeOpacity={0.8}
+                >
+                    {selecting ? (
+                        <ActivityIndicator color="#FFF" />
+                    ) : (
+                        <>
+                            <Text style={styles.selectBtnText}>Select This Agency</Text>
+                            <Feather name="arrow-right" size={moderateScale(18)} color="#FFF" />
+                        </>
+                    )}
+                </TouchableOpacity>
+            </View>
+        );
+    };
+
     return (
         <SafeAreaView style={styles.safe} edges={['bottom']}>
             <StatusBar barStyle="light-content" />
 
-            {/* Animated Header Background */}
             <Animated.View style={[styles.animatedHeader, { opacity: headerOpacity }]}>
                 <Text style={styles.animatedHeaderText} numberOfLines={1}>
                     {agencyData.name}
                 </Text>
             </Animated.View>
 
-            {/* Content */}
             <Animated.ScrollView
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
@@ -307,22 +425,28 @@ export default function AgencyDetails() {
                 <HeaderSection />
 
                 <View style={styles.contentContainer}>
-                    {/* About Section */}
-                    <Section title="About Agency" icon="info">
-                        <View style={styles.aboutCard}>
-                            <Text style={styles.aboutText}>{agencyData.about}</Text>
+                    {/* Locked-to-different-agency banner inside content */}
+                    {isDifferentAgencySelected && (
+                        <View style={styles.lockedBanner}>
+                            <Feather name="lock" size={moderateScale(16)} color="#C62828" />
+                            <Text style={styles.lockedBannerText}>
+                                You are currently enrolled with{' '}
+                                <Text style={{ fontWeight: '700' }}>{activeAgency.name}</Text>.
+                                Contact support if you need to switch agencies.
+                            </Text>
                         </View>
+                    )}
+
+                    <Section title="About Agency" icon="info">
+                        <Text style={styles.aboutText}>{agencyData.about}</Text>
                     </Section>
 
-                    {/* Services Section */}
                     {agencyData.services?.length > 0 && (
                         <Section title="Services Offered" icon="check-circle">
                             <View style={styles.servicesGrid}>
                                 {agencyData.services.map((service, index) => (
                                     <View key={`service-${index}`} style={styles.serviceChip}>
-                                        <View style={styles.serviceIcon}>
-                                            <Feather name="check" size={moderateScale(12)} color={COLORS.primary} />
-                                        </View>
+                                        <Feather name="check" size={moderateScale(14)} color={COLORS.primary} />
                                         <Text style={styles.serviceChipText}>{service}</Text>
                                     </View>
                                 ))}
@@ -330,22 +454,21 @@ export default function AgencyDetails() {
                         </Section>
                     )}
 
-                    {/* Process Section */}
                     {agencyData.process?.length > 0 && (
                         <Section title="Our Process" icon="list">
                             <View style={styles.processContainer}>
                                 {agencyData.process.map((step, index) => (
                                     <View key={`step-${index}`} style={styles.processItem}>
-                                        <View style={styles.processLeft}>
+                                        <View style={styles.processNumberWrapper}>
                                             <View style={styles.processNumber}>
                                                 <Text style={styles.processNumberText}>{index + 1}</Text>
                                             </View>
                                             {index < agencyData.process.length - 1 && (
-                                                <View style={styles.processLine} />
+                                                <View style={styles.processConnector} />
                                             )}
                                         </View>
-                                        <View style={styles.processRight}>
-                                            <Text style={styles.processStepText}>{step}</Text>
+                                        <View style={styles.processContent}>
+                                            <Text style={styles.processText}>{step}</Text>
                                         </View>
                                     </View>
                                 ))}
@@ -353,7 +476,6 @@ export default function AgencyDetails() {
                         </Section>
                     )}
 
-                    {/* Partners Section */}
                     <Section
                         title="Partner Universities"
                         icon="award"
@@ -379,7 +501,7 @@ export default function AgencyDetails() {
                             />
                         ) : (
                             <View style={styles.emptyState}>
-                                <Feather name="briefcase" size={moderateScale(32)} color={COLORS.cardBorder} />
+                                <Feather name="briefcase" size={moderateScale(40)} color={COLORS.cardBorder} />
                                 <Text style={styles.emptyStateText}>No partner universities available</Text>
                             </View>
                         )}
@@ -389,21 +511,7 @@ export default function AgencyDetails() {
                 <View style={styles.bottomSpacing} />
             </Animated.ScrollView>
 
-            {/* Fixed Action Button */}
-            <View style={styles.actionBar}>
-                <TouchableOpacity
-                    style={styles.selectBtn}
-                    onPress={handleSelectAgency}
-                    disabled={loading}
-                    activeOpacity={0.8}
-                >
-                    {loading ? (
-                        <ActivityIndicator color="#FFF" />
-                    ) : (
-                        <Text style={styles.selectText}>Select This Agency</Text>
-                    )}
-                </TouchableOpacity>
-            </View>
+            {renderActionBar()}
         </SafeAreaView>
     );
 }
@@ -436,6 +544,17 @@ const styles = StyleSheet.create({
         paddingHorizontal: moderateScale(60),
         borderBottomWidth: 1,
         borderBottomColor: COLORS.cardBorder,
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.05,
+                shadowRadius: 4,
+            },
+            android: {
+                elevation: 2,
+            },
+        }),
     },
     animatedHeaderText: {
         fontSize: moderateScale(16),
@@ -444,10 +563,10 @@ const styles = StyleSheet.create({
         textAlign: 'center',
     },
     scrollContent: {
-        paddingBottom: moderateScale(120),
+        paddingBottom: moderateScale(100),
     },
     headerSection: {
-        marginBottom: moderateScale(16),
+        marginBottom: moderateScale(20),
         position: 'relative',
     },
     banner: {
@@ -459,35 +578,55 @@ const styles = StyleSheet.create({
         width: '100%',
         height: '100%',
     },
-    bannerGradient: {
+    bannerOverlay: {
         position: 'absolute',
         bottom: 0,
         left: 0,
         right: 0,
-        height: '60%',
-        backgroundColor: 'transparent',
+        height: '50%',
+        backgroundColor: 'rgba(0,0,0,0.1)',
     },
     agencyCard: {
         marginHorizontal: moderateScale(16),
-        marginTop: -moderateScale(60),
+        marginTop: -moderateScale(50),
         backgroundColor: COLORS.cardBg,
-        borderRadius: moderateScale(20),
+        borderRadius: moderateScale(16),
         padding: moderateScale(16),
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.1,
+                shadowRadius: 12,
+            },
+            android: {
+                elevation: 6,
+            },
+        }),
     },
-    agencyCardHeader: {
+    agencyCardContent: {
         flexDirection: 'row',
         gap: moderateScale(14),
     },
     agencyLogoContainer: {
-        width: moderateScale(80),
-        height: moderateScale(80),
-        borderRadius: moderateScale(16),
+        width: moderateScale(72),
+        height: moderateScale(72),
+        borderRadius: moderateScale(14),
         backgroundColor: COLORS.lightBg,
         overflow: 'hidden',
-        borderWidth: 3,
+        borderWidth: 2,
         borderColor: COLORS.cardBg,
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.08,
+                shadowRadius: 4,
+            },
+            android: {
+                elevation: 3,
+            },
+        }),
     },
     agencyLogo: {
         width: '100%',
@@ -496,13 +635,32 @@ const styles = StyleSheet.create({
     agencyInfo: {
         flex: 1,
         justifyContent: 'center',
+        gap: moderateScale(4),
     },
     agencyName: {
-        fontSize: moderateScale(20),
+        fontSize: moderateScale(19),
         fontWeight: '700',
         color: COLORS.heading,
-        marginBottom: moderateScale(6),
-        lineHeight: moderateScale(26),
+        marginBottom: moderateScale(2),
+        lineHeight: moderateScale(25),
+    },
+    yourAgencyBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: moderateScale(5),
+        backgroundColor: COLORS.locked,
+        alignSelf: 'flex-start',
+        paddingHorizontal: moderateScale(10),
+        paddingVertical: moderateScale(4),
+        borderRadius: moderateScale(20),
+        borderWidth: 1,
+        borderColor: COLORS.lockedBorder,
+        marginBottom: moderateScale(4),
+    },
+    yourAgencyBadgeText: {
+        fontSize: moderateScale(11),
+        fontWeight: '700',
+        color: COLORS.lockedText,
     },
     agencyMeta: {
         flexDirection: 'row',
@@ -513,11 +671,11 @@ const styles = StyleSheet.create({
     metaItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: moderateScale(4),
+        gap: moderateScale(5),
     },
     metaDivider: {
         width: 1,
-        height: moderateScale(12),
+        height: moderateScale(14),
         backgroundColor: COLORS.border,
     },
     metaText: {
@@ -525,17 +683,42 @@ const styles = StyleSheet.create({
         color: COLORS.textSecondary,
         fontWeight: '500',
     },
+    // Lock banner inside content
+    lockedBanner: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: moderateScale(10),
+        backgroundColor: '#FFEBEE',
+        borderRadius: moderateScale(12),
+        padding: moderateScale(14),
+        borderWidth: 1,
+        borderColor: '#FFCDD2',
+    },
+    lockedBannerText: {
+        flex: 1,
+        fontSize: moderateScale(13),
+        color: '#C62828',
+        lineHeight: moderateScale(19),
+    },
     contentContainer: {
         paddingHorizontal: moderateScale(16),
-        marginTop: moderateScale(8),
+        gap: moderateScale(16),
     },
     section: {
         backgroundColor: COLORS.cardBg,
         borderRadius: moderateScale(16),
         padding: moderateScale(16),
-        marginBottom: moderateScale(16),
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.05,
+                shadowRadius: 3,
+            },
+            android: {
+                elevation: 1,
+            },
+        }),
     },
     sectionHeader: {
         flexDirection: 'row',
@@ -543,49 +726,38 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         marginBottom: moderateScale(16),
     },
-    sectionTitleContainer: {
+    sectionTitleRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: moderateScale(10),
         flex: 1,
     },
     iconBadge: {
-        width: moderateScale(32),
-        height: moderateScale(32),
-        borderRadius: moderateScale(8),
+        width: moderateScale(34),
+        height: moderateScale(34),
+        borderRadius: moderateScale(10),
         backgroundColor: COLORS.accentLight,
         alignItems: 'center',
         justifyContent: 'center',
     },
     sectionTitle: {
-        fontSize: moderateScale(17),
+        fontSize: moderateScale(16),
         fontWeight: '700',
         color: COLORS.heading,
         flex: 1,
     },
-    viewMoreBtn: {
+    viewAllBtn: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: moderateScale(4),
         paddingVertical: moderateScale(6),
-        paddingHorizontal: moderateScale(10),
-        borderRadius: moderateScale(8),
-        backgroundColor: COLORS.accentLight,
+        paddingLeft: moderateScale(10),
+        paddingRight: moderateScale(6),
     },
-    viewMoreText: {
+    viewAllText: {
         fontSize: moderateScale(13),
         fontWeight: '600',
         color: COLORS.primary,
-    },
-    sectionContent: {
-        marginTop: moderateScale(4),
-    },
-    aboutCard: {
-        backgroundColor: COLORS.lightBg,
-        padding: moderateScale(14),
-        borderRadius: moderateScale(12),
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
     },
     aboutText: {
         fontSize: moderateScale(14),
@@ -595,31 +767,23 @@ const styles = StyleSheet.create({
     servicesGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: moderateScale(10),
+        gap: moderateScale(8),
     },
     serviceChip: {
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: COLORS.accentLight,
-        paddingHorizontal: moderateScale(14),
-        paddingVertical: moderateScale(10),
+        paddingHorizontal: moderateScale(12),
+        paddingVertical: moderateScale(8),
         borderRadius: moderateScale(20),
-        gap: moderateScale(8),
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
-    },
-    serviceIcon: {
-        width: moderateScale(18),
-        height: moderateScale(18),
-        borderRadius: moderateScale(9),
-        backgroundColor: COLORS.cardBg,
-        alignItems: 'center',
-        justifyContent: 'center',
+        gap: moderateScale(6),
+        flexShrink: 1,
     },
     serviceChipText: {
         fontSize: moderateScale(13),
         color: COLORS.primary,
         fontWeight: '600',
+        flexShrink: 1,
     },
     processContainer: {
         gap: 0,
@@ -627,119 +791,225 @@ const styles = StyleSheet.create({
     processItem: {
         flexDirection: 'row',
         alignItems: 'flex-start',
+        marginBottom: moderateScale(12),
     },
-    processLeft: {
+    processNumberWrapper: {
         alignItems: 'center',
-        marginRight: moderateScale(14),
+        marginRight: moderateScale(12),
+        paddingTop: moderateScale(2),
     },
     processNumber: {
-        width: moderateScale(32),
-        height: moderateScale(32),
-        borderRadius: moderateScale(16),
+        width: moderateScale(28),
+        height: moderateScale(28),
+        borderRadius: moderateScale(14),
         backgroundColor: COLORS.primary,
         alignItems: 'center',
         justifyContent: 'center',
     },
     processNumberText: {
-        fontSize: moderateScale(14),
+        fontSize: moderateScale(13),
         fontWeight: '700',
         color: '#FFFFFF',
     },
-    processLine: {
+    processConnector: {
         width: 2,
         flex: 1,
-        minHeight: moderateScale(40),
+        minHeight: moderateScale(30),
         backgroundColor: COLORS.cardBorder,
         marginVertical: moderateScale(4),
     },
-    processRight: {
+    processContent: {
         flex: 1,
         backgroundColor: COLORS.lightBg,
-        padding: moderateScale(14),
-        borderRadius: moderateScale(12),
-        marginBottom: moderateScale(12),
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
-        minHeight: moderateScale(60),
+        padding: moderateScale(12),
+        borderRadius: moderateScale(10),
+        minHeight: moderateScale(50),
         justifyContent: 'center',
     },
-    processStepText: {
-        fontSize: moderateScale(14),
+    processText: {
+        fontSize: moderateScale(13),
         color: COLORS.text,
-        lineHeight: moderateScale(20),
+        lineHeight: moderateScale(19),
         fontWeight: '500',
     },
     partnersList: {
-        paddingVertical: moderateScale(8),
+        paddingVertical: moderateScale(4),
     },
-    partnerTile: {
-        width: moderateScale(110),
-        minHeight: moderateScale(130),
-        borderRadius: moderateScale(14),
+    partnerCard: {
+        width: moderateScale(140),
+        height: moderateScale(140),
+        borderRadius: moderateScale(16),
+        backgroundColor: COLORS.cardBg,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+    },
+    partnerLogo: {
+        width: '100%',
+        height: '100%',
+    },
+    partnerPlaceholder: {
+        width: '100%',
+        height: '100%',
         backgroundColor: COLORS.lightBg,
         alignItems: 'center',
         justifyContent: 'center',
-        padding: moderateScale(12),
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
         gap: moderateScale(8),
+        padding: moderateScale(12),
     },
-    partnerLogo: {
-        width: moderateScale(60),
-        height: moderateScale(60),
-        borderRadius: moderateScale(10),
+    placeholderText: {
+        fontSize: moderateScale(12),
+        color: COLORS.textSecondary,
+        fontWeight: '600',
+        textAlign: 'center',
+        lineHeight: moderateScale(16),
     },
-    partnerPlaceholder: {
-        width: moderateScale(60),
-        height: moderateScale(60),
-        borderRadius: moderateScale(10),
-        backgroundColor: COLORS.cardBg,
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
+    partnerNameOverlay: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        paddingVertical: moderateScale(8),
+        paddingHorizontal: moderateScale(10),
+        borderTopWidth: 1,
+        borderTopColor: COLORS.cardBorder,
     },
     partnerName: {
         fontSize: moderateScale(11),
         color: COLORS.text,
-        fontWeight: '600',
+        fontWeight: '700',
         textAlign: 'center',
+        lineHeight: moderateScale(14),
     },
     emptyState: {
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: moderateScale(32),
-        gap: moderateScale(8),
+        paddingVertical: moderateScale(40),
+        gap: moderateScale(12),
     },
     emptyStateText: {
         fontSize: moderateScale(14),
         color: COLORS.textSecondary,
         fontWeight: '500',
     },
+    // Action bar variants
     actionBar: {
         position: 'absolute',
         left: 0,
         right: 0,
         bottom: 0,
         backgroundColor: COLORS.cardBg,
-        paddingHorizontal: moderateScale(20),
-        paddingVertical: moderateScale(20),
+        paddingHorizontal: moderateScale(16),
+        paddingTop: moderateScale(12),
+        paddingBottom: moderateScale(16),
         borderTopWidth: 1,
         borderTopColor: COLORS.border,
+        gap: moderateScale(8),
+        ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: -2 },
+                shadowOpacity: 0.05,
+                shadowRadius: 8,
+            },
+            android: {
+                elevation: 8,
+            },
+        }),
     },
+    // Normal "Select" button
     selectBtn: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: moderateScale(18),
-        borderRadius: moderateScale(14),
+        paddingVertical: moderateScale(16),
+        borderRadius: moderateScale(12),
         backgroundColor: COLORS.primary,
+        gap: moderateScale(8),
+        ...Platform.select({
+            ios: {
+                shadowColor: COLORS.primary,
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 8,
+            },
+            android: {
+                elevation: 4,
+            },
+        }),
     },
-    selectText: {
+    selectBtnText: {
         color: '#FFFFFF',
         fontWeight: '700',
         fontSize: moderateScale(16),
-        letterSpacing: 0.5,
+    },
+    // Disabled/locked select button (different agency selected)
+    selectBtnDisabled: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: moderateScale(16),
+        borderRadius: moderateScale(12),
+        backgroundColor: COLORS.disabledBg,
+        gap: moderateScale(8),
+        borderWidth: 1,
+        borderColor: COLORS.border,
+    },
+    selectBtnDisabledText: {
+        color: COLORS.disabled,
+        fontWeight: '700',
+        fontSize: moderateScale(16),
+    },
+    // "Go to Dashboard" button (this agency already selected)
+    goToDashboardBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: moderateScale(16),
+        borderRadius: moderateScale(12),
+        backgroundColor: COLORS.success,
+        gap: moderateScale(8),
+        ...Platform.select({
+            ios: {
+                shadowColor: COLORS.success,
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 8,
+            },
+            android: {
+                elevation: 4,
+            },
+        }),
+    },
+    goToDashboardBtnText: {
+        color: '#FFFFFF',
+        fontWeight: '700',
+        fontSize: moderateScale(16),
+    },
+    // Lock notices above buttons
+    lockedNotice: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: moderateScale(6),
+    },
+    lockedNoticeText: {
+        fontSize: moderateScale(13),
+        color: COLORS.lockedText,
+        fontWeight: '600',
+    },
+    lockedWarning: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: moderateScale(6),
+    },
+    lockedWarningText: {
+        fontSize: moderateScale(12),
+        color: '#C62828',
+        flex: 1,
+        textAlign: 'center',
     },
     bottomSpacing: {
         height: moderateScale(20),

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
-    ScrollView, RefreshControl, Linking, Alert
+    ScrollView, RefreshControl, Linking, Alert, Modal
 } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,57 +12,31 @@ import { Config } from '../../../../config';
 import { useRouter } from 'expo-router';
 
 // ========================================
-// CONSISTENT COLOR PALETTE
+// ORIGINAL COLOR PALETTE - Only status colors made lighter
 // ========================================
 const COLORS = {
-    // Primary - Your brand blue (#769FCD)
     primary: '#769FCD',
     primaryLight: 'rgba(118, 159, 205, 0.1)',
-    primaryExtraLight: 'rgba(118, 159, 205, 0.05)',
-    
-    // Neutrals - Warm Gray
+    primaryMedium: 'rgba(118, 159, 205, 0.2)',
     background: '#F8FAFD',
     surface: '#FFFFFF',
     border: '#EEF2F7',
-    divider: '#F0F2F5',
-    
-    // Text
     textPrimary: '#2D3748',
     textSecondary: '#718096',
     textTertiary: '#A0AEC0',
     white: '#FFFFFF',
     
-    // Status - Using primary with opacity
-    pending: {
-        bg: 'rgba(118, 159, 205, 0.1)',
-        text: '#769FCD',
-    },
-    under_review: {
-        bg: 'rgba(118, 159, 205, 0.08)',
-        text: '#5C7C9A',
-    },
-    reupload: {
-        bg: 'rgba(246, 173, 85, 0.1)',
-        text: '#B38F5C',
-    },
-    rejected: {
-        bg: 'rgba(255, 107, 107, 0.1)',
-        text: '#FF6B6B',
-    },
-    approved: {
-        bg: 'rgba(72, 187, 120, 0.1)',
-        text: '#48BB78',
-    },
-    
-    // Accents
-    success: '#48BB78',
-    warning: '#F6AD55',
-    error: '#FF6B6B',
-    info: '#5C7C9A',
-    
-    // Progress
-    progressTrack: '#EDF2F7',
-    progressFill: '#769FCD',
+    // Lighter status colors only
+    success: '#9FC9AF', // Lighter version of #48BB78
+    successLight: 'rgba(159, 201, 175, 0.1)',
+    warning: '#FAD3A8', // Lighter version of #F6AD55
+    warningLight: 'rgba(250, 211, 168, 0.1)',
+    error: '#FFB5B5', // Lighter version of #FF6B6B
+    errorLight: 'rgba(255, 181, 181, 0.1)',
+    info: '#769FCD',
+    infoLight: 'rgba(118, 159, 205, 0.1)',
+    purple: '#9F7AEA',
+    purpleLight: 'rgba(159, 122, 234, 0.1)',
 };
 
 // ========================================
@@ -70,70 +44,62 @@ const COLORS = {
 // ========================================
 const STATUS_CONFIG = {
     pending: {
-        label: 'Pending',
-        icon: 'cloud-upload-outline',
-        bgColor: COLORS.pending.bg,
-        textColor: COLORS.pending.text,
+        label: 'Not Uploaded',
+        bgColor: COLORS.infoLight,
+        textColor: COLORS.info,
+        borderColor: COLORS.info,
+        iconName: 'cloud-outline',
+        showActions: { upload: true, view: false, reupload: false }
     },
     under_review: {
         label: 'Under Review',
-        icon: 'time-outline',
-        bgColor: COLORS.under_review.bg,
-        textColor: COLORS.under_review.text,
+        bgColor: COLORS.purpleLight,
+        textColor: COLORS.purple,
+        borderColor: COLORS.purple,
+        iconName: 'time-outline',
+        showActions: { upload: false, view: true, reupload: false }
     },
     reupload: {
         label: 'Reupload Required',
-        icon: 'refresh-outline',
-        bgColor: COLORS.reupload.bg,
-        textColor: COLORS.reupload.text,
+        bgColor: COLORS.warningLight,
+        textColor: COLORS.warning,
+        borderColor: COLORS.warning,
+        iconName: 'refresh-outline',
+        showActions: { upload: false, view: true, reupload: true }
     },
     rejected: {
         label: 'Rejected',
-        icon: 'close-circle-outline',
-        bgColor: COLORS.rejected.bg,
-        textColor: COLORS.rejected.text,
+        bgColor: COLORS.errorLight,
+        textColor: COLORS.error,
+        borderColor: COLORS.error,
+        iconName: 'close-circle-outline',
+        showActions: { upload: false, view: true, reupload: true }
     },
     approved: {
         label: 'Approved',
-        icon: 'checkmark-circle-outline',
-        bgColor: COLORS.approved.bg,
-        textColor: COLORS.approved.text,
+        bgColor: COLORS.successLight,
+        textColor: COLORS.success,
+        borderColor: COLORS.success,
+        iconName: 'checkmark-circle-outline',
+        showActions: { upload: false, view: true, reupload: false }
     },
 };
 
 // ========================================
-// DOCUMENT CATEGORY CONFIGURATION
+// STAGE CONFIGURATION
 // ========================================
-const DOCUMENT_CATEGORIES = {
-    COE: {
-        key: 'COE',
-        label: 'Confirmation of Enrollment',
-        icon: 'school-outline',
-        color: COLORS.primary,
-    },
-    offer_letter: {
-        key: 'offer_letter',
-        label: 'Offer Letter',
-        icon: 'mail-outline',
-        color: '#48BB78',
-    },
-    other: {
-        key: 'other',
-        label: 'Other Documents',
-        icon: 'document-text-outline',
-        color: '#F6AD55',
-    },
-};
+const STAGES = [
+    { key: 'admission', label: 'Admission', icon: 'school-outline' },
+    { key: 'document_waitlist', label: 'Waitlist', icon: 'people-outline' },
+    { key: 'visa', label: 'Visa', icon: 'document-text-outline' },
+];
 
 export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
     const insets = useSafeAreaInsets();
     const router = useRouter();
     const { userToken } = useAuth();
 
-    // State for admission/visa stage documents (checklist)
-    const [documents, setDocuments] = useState([]);
-    
-    // State for document waitlist stage (COE, offer_letter, other)
+    const [checklistDocuments, setChecklistDocuments] = useState([]);
     const [agencyDocuments, setAgencyDocuments] = useState({
         COE: [],
         offer_letter: [],
@@ -141,17 +107,94 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
     });
     
     const [loading, setLoading] = useState(false);
-    const [refreshing, setRefreshing] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [isInitialLoad, setIsInitialLoad] = useState(true);
     const [uploadingDocId, setUploadingDocId] = useState(null);
+    const [showStageModal, setShowStageModal] = useState(false);
+    const [allStagesStatus, setAllStagesStatus] = useState({
+        admission: { total: 0, approved: 0, uploaded: 0 },
+        document_waitlist: { total: 0, uploaded: 0 },
+        visa: { total: 0, approved: 0, uploaded: 0 }
+    });
+
+    // Format date safely
+    const formatDate = (dateString) => {
+        if (!dateString) return 'Date not available';
+        try {
+            const date = new Date(dateString);
+            if (isNaN(date.getTime())) return 'Date not available';
+            return date.toLocaleDateString('en-US', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric'
+            });
+        } catch (error) {
+            return 'Date not available';
+        }
+    };
+
+    // Fetch all stages status for overview
+    const fetchAllStagesStatus = useCallback(async () => {
+        try {
+            // Fetch admission stage status
+            const admissionRes = await fetch(
+                `${Config.API_BASE_URL}/students/documents/status?stage=admission`,
+                { headers: { 'Authorization': `Bearer ${userToken}` } }
+            );
+            const admissionData = await admissionRes.json();
+            
+            // Fetch visa stage status
+            const visaRes = await fetch(
+                `${Config.API_BASE_URL}/students/documents/status?stage=visa`,
+                { headers: { 'Authorization': `Bearer ${userToken}` } }
+            );
+            const visaData = await visaRes.json();
+            
+            // Fetch agency documents
+            const agencyRes = await fetch(
+                `${Config.API_BASE_URL}/students/documents`,
+                { headers: { 'Authorization': `Bearer ${userToken}` } }
+            );
+            const agencyData = await agencyRes.json();
+
+            const agencyUploads = agencyData.data?.filter(doc => {
+                const uploaderModel = doc.uploaderModel?.toLowerCase();
+                return uploaderModel === 'agent' || uploaderModel === 'agency';
+            }) || [];
+
+            setAllStagesStatus({
+                admission: {
+                    total: admissionData.data?.length || 0,
+                    approved: admissionData.data?.filter(d => d.status === 'approved').length || 0,
+                    uploaded: admissionData.data?.filter(d => d.status !== 'pending').length || 0,
+                },
+                document_waitlist: {
+                    total: agencyUploads.length,
+                    uploaded: agencyUploads.length,
+                },
+                visa: {
+                    total: visaData.data?.length || 0,
+                    approved: visaData.data?.filter(d => d.status === 'approved').length || 0,
+                    uploaded: visaData.data?.filter(d => d.status !== 'pending').length || 0,
+                }
+            });
+        } catch (error) {
+            console.error('Error fetching all stages status:', error);
+        }
+    }, [userToken]);
 
     // Fetch documents based on stage
-    const fetchDocuments = useCallback(async () => {
+    const fetchDocuments = useCallback(async (isPullRefresh = false) => {
+        if (!stage) return;
+        
         console.log(`📡 Fetching documents for stage: ${stage}`);
-        setRefreshing(true);
+        
+        if (isPullRefresh) {
+            setRefreshing(true);
+        }
 
         try {
             if (stage === 'document_waitlist') {
-                // DOCUMENT WAITLIST STAGE - fetch agency documents categorized by type
                 const res = await fetch(
                     `${Config.API_BASE_URL}/students/documents`,
                     {
@@ -161,53 +204,21 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
 
                 const json = await res.json();
                 
-                if (res.ok && json.data && json.data.length > 0) {
-                    // Filter for agency-uploaded documents only
+                if (res.ok && json.data) {
                     const agencyUploads = json.data.filter(doc => {
                         const uploaderModel = doc.uploaderModel?.toLowerCase();
-                        return uploaderModel === 'agent' || 
-                               uploaderModel === 'agency' ||
-                               uploaderModel === 'admin';
+                        return uploaderModel === 'agent' || uploaderModel === 'agency';
                     });
 
-                    // Categorize documents by type
                     const categorized = {
-                        COE: [],
-                        offer_letter: [],
-                        other: [],
+                        COE: agencyUploads.filter(doc => doc.documentCategory === 'COE'),
+                        offer_letter: agencyUploads.filter(doc => doc.documentCategory === 'offer_letter'),
+                        other: agencyUploads.filter(doc => !doc.documentCategory || doc.documentCategory === 'other'),
                     };
 
-                    agencyUploads.forEach(doc => {
-                        const category = doc.documentCategory || doc.type;
-                        const normalizedCategory = category?.toLowerCase();
-                        
-                        const formattedDoc = {
-                            id: doc._id,
-                            name: doc.requiredDocument?.name || doc.documentName || 'Document',
-                            uploadedAt: doc.createdAt,
-                            fileUrl: doc.fileURL,
-                            category: category,
-                        };
-
-                        if (normalizedCategory === 'coe') {
-                            categorized.COE.push(formattedDoc);
-                        } else if (normalizedCategory === 'offer_letter' || normalizedCategory === 'offerletter') {
-                            categorized.offer_letter.push(formattedDoc);
-                        } else if (normalizedCategory === 'other') {
-                            categorized.other.push(formattedDoc);
-                        }
-                    });
-
                     setAgencyDocuments(categorized);
-                } else {
-                    setAgencyDocuments({
-                        COE: [],
-                        offer_letter: [],
-                        other: [],
-                    });
                 }
-            } else if (stage === 'admission' || stage === 'visa') {
-                // ADMISSION/VISA STAGE - document checklist
+            } else {
                 const res = await fetch(
                     `${Config.API_BASE_URL}/students/documents/status?stage=${stage}`,
                     {
@@ -219,25 +230,27 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
 
                 if (res.ok && json.data) {
                     const formattedDocs = json.data.map(item => ({
-                        checklistId: item._id,
-                        requiredDocumentId: item.requiredDocument?._id || item.requiredDocumentId,
+                        id: item._id,
+                        requiredDocumentId: item.requiredDocument?._id,
                         name: item.requiredDocument?.name || 'Document',
-                        description: item.requiredDocument?.description || 'Required document',
-                        type: item.requiredDocument?.type || item.requiredDocument?.name,
-                        uploadedDocumentId: item.uploadedDocument?._id,
+                        description: item.requiredDocument?.description || '',
                         status: item.status || 'pending',
-                        fileUrl: item.uploadedDocument?.fileURL || item.fileURL,
-                        fileName: item.uploadedDocument?.fileName,
                         rejectionReason: item.rejectionReason,
-                        uploadedAt: item.uploadedAt || item.createdAt,
-                        id: item.uploadedDocument?._id || item.requiredDocument?._id || item._id
+                        document: item.document ? {
+                            id: item.document._id,
+                            fileName: item.document.fileName,
+                            fileURL: item.document.fileURL,
+                            uploadedAt: item.document.createdAt || item.uploadedAt,
+                        } : null,
                     }));
 
-                    setDocuments(formattedDocs);
-                } else {
-                    setDocuments([]);
+                    setChecklistDocuments(formattedDocs);
                 }
             }
+            
+            // Also fetch all stages status for the overview modal
+            await fetchAllStagesStatus();
+            
         } catch (error) {
             console.error(`❌ Fetch error [${stage}]:`, error);
             Toast.show({
@@ -247,27 +260,26 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
             });
             
             if (stage === 'document_waitlist') {
-                setAgencyDocuments({
-                    COE: [],
-                    offer_letter: [],
-                    other: [],
-                });
+                setAgencyDocuments({ COE: [], offer_letter: [], other: [] });
             } else {
-                setDocuments([]);
+                setChecklistDocuments([]);
             }
         } finally {
             setRefreshing(false);
+            setIsInitialLoad(false);
         }
-    }, [stage, userToken]);
+    }, [stage, userToken, fetchAllStagesStatus]);
 
     useEffect(() => {
-        fetchDocuments();
-    }, [fetchDocuments]);
+        if (stage) {
+            setIsInitialLoad(true);
+            fetchDocuments(false);
+        }
+    }, [stage]);
 
-    // Handle document upload for admission/visa stages
     const handleUpload = async (document) => {
         try {
-            setUploadingDocId(document.checklistId || document.id);
+            setUploadingDocId(document.id);
 
             const result = await DocumentPicker.getDocumentAsync({
                 type: 'application/pdf',
@@ -285,7 +297,7 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
             const sasPayload = {
                 mimeType: asset.mimeType || 'application/pdf',
                 size: asset.size,
-                documentType: document.type || document.name,
+                documentType: document.name,
                 stage: stage,
                 requiredDocumentId: document.requiredDocumentId
             };
@@ -329,9 +341,9 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
                 mimeType: asset.mimeType || 'application/pdf',
                 size: asset.size,
                 fileName: asset.name,
-                documentType: document.type || document.name,
+                documentType: document.name,
                 requiredDocumentId: document.requiredDocumentId,
-                checklistId: document.checklistId,
+                checklistId: document.id,
                 stage: stage
             };
 
@@ -352,10 +364,10 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
             Toast.show({
                 type: 'success',
                 text1: 'Upload Successful',
-                text2: 'Document uploaded and under review'
+                text2: 'Your document has been uploaded and is under review'
             });
 
-            await fetchDocuments();
+            await fetchDocuments(false);
 
         } catch (error) {
             console.error('❌ Upload error:', error);
@@ -369,93 +381,397 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
         }
     };
 
-    // Handle refresh
-    const handleRefresh = () => {
-        fetchDocuments();
+    const handleRefresh = useCallback(() => {
+        console.log(`🔄 Refreshing current stage: ${stage}`);
+        fetchDocuments(true);
         if (onRefresh) onRefresh();
+    }, [stage, fetchDocuments, onRefresh]);
+
+    const handleViewDocument = (fileUrl) => {
+        Linking.openURL(fileUrl).catch(() => {
+            Toast.show({
+                type: 'error',
+                text1: 'Cannot Open Document',
+                text2: 'Please try again later'
+            });
+        });
     };
 
-    // Check if all documents are approved (for admission/visa stages)
-    const allApproved = documents.length > 0 && documents.every(doc => doc.status === 'approved');
-    const hasDocuments = documents.length > 0;
-
-    // Check if document can be uploaded
-    const canUploadDocument = (doc) => {
-        return doc.status === 'pending' ||
-            doc.status === 'reupload' ||
-            doc.status === 'rejected' ||
-            !doc.fileUrl;
+    const getStageTitle = () => {
+        switch(stage) {
+            case 'admission':
+                return 'Admission Documents';
+            case 'visa':
+                return 'Visa Documents';
+            case 'document_waitlist':
+                return 'Agency Documents';
+            default:
+                return 'Documents';
+        }
     };
 
-    // Get the correct ID for upload tracking
-    const getUploadingId = (doc) => {
-        return doc.checklistId || doc.id;
+    const getStageIcon = () => {
+        switch(stage) {
+            case 'admission':
+                return 'school-outline';
+            case 'visa':
+                return 'document-text-outline';
+            case 'document_waitlist':
+                return 'people-outline';
+            default:
+                return 'document-text-outline';
+        }
     };
 
-    // Calculate total documents in waitlist
-    const getTotalWaitlistDocuments = () => {
-        return agencyDocuments.COE.length + 
-               agencyDocuments.offer_letter.length + 
-               agencyDocuments.other.length;
+    const calculateProgress = () => {
+        if (checklistDocuments.length === 0) return 0;
+        const uploaded = checklistDocuments.filter(d => d.status !== 'pending').length;
+        return Math.round((uploaded / checklistDocuments.length) * 100);
+    };
+
+    const getUploadedCount = () => checklistDocuments.filter(d => d.status !== 'pending').length;
+    const getApprovedCount = () => checklistDocuments.filter(d => d.status === 'approved').length;
+    const getRejectedCount = () => checklistDocuments.filter(d => d.status === 'rejected' || d.status === 'reupload').length;
+
+    const getStageIndex = () => {
+        return STAGES.findIndex(s => s.key === stage);
     };
 
     // ========================================
-    // RENDER DOCUMENT CATEGORY SECTION - CLEAN & PROFESSIONAL
+    // STAGE OVERVIEW MODAL
     // ========================================
-    const renderDocumentCategory = (categoryKey) => {
-        const categoryConfig = DOCUMENT_CATEGORIES[categoryKey];
-        const documents = agencyDocuments[categoryKey];
-        const hasDocuments = documents && documents.length > 0;
+    const renderStageOverviewModal = () => (
+        <Modal
+            visible={showStageModal}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => setShowStageModal(false)}
+        >
+            <TouchableOpacity 
+                style={styles.modalOverlay}
+                activeOpacity={1}
+                onPress={() => setShowStageModal(false)}
+            >
+                <View style={styles.modalContent}>
+                    <View style={styles.modalHeader}>
+                        <Text style={styles.modalTitle}>Application Overview</Text>
+                        <TouchableOpacity onPress={() => setShowStageModal(false)}>
+                            <Ionicons name="close" size={24} color={COLORS.textSecondary} />
+                        </TouchableOpacity>
+                    </View>
+
+                    {STAGES.map((stageItem, index) => {
+                        const status = allStagesStatus[stageItem.key];
+                        const isCurrent = stageItem.key === stage;
+                        const progress = stageItem.key === 'document_waitlist' 
+                            ? (status.total > 0 ? 100 : 0)
+                            : (status.total > 0 ? Math.round((status.uploaded / status.total) * 100) : 0);
+                        
+                        return (
+                            <View key={stageItem.key} style={[styles.modalStageItem, isCurrent && styles.currentStageItem]}>
+                                <View style={styles.modalStageHeader}>
+                                    <View style={styles.modalStageTitleContainer}>
+                                        <View style={[styles.modalStageIcon, isCurrent && { backgroundColor: COLORS.primaryLight }]}>
+                                            <Ionicons 
+                                                name={stageItem.icon} 
+                                                size={20} 
+                                                color={isCurrent ? COLORS.primary : COLORS.textSecondary} 
+                                            />
+                                        </View>
+                                        <Text style={[styles.modalStageTitle, isCurrent && styles.currentStageText]}>
+                                            {stageItem.label}
+                                        </Text>
+                                    </View>
+                                    {isCurrent && (
+                                        <View style={styles.currentBadge}>
+                                            <Text style={styles.currentBadgeText}>Current</Text>
+                                        </View>
+                                    )}
+                                </View>
+
+                                <View style={styles.modalStageStats}>
+                                    {stageItem.key === 'document_waitlist' ? (
+                                        <Text style={styles.modalStageStatText}>
+                                            {status.uploaded} document{status.uploaded !== 1 ? 's' : ''} uploaded
+                                        </Text>
+                                    ) : (
+                                        <Text style={styles.modalStageStatText}>
+                                            {status.uploaded}/{status.total} uploaded • {status.approved} approved
+                                        </Text>
+                                    )}
+                                </View>
+
+                                <View style={styles.modalProgressTrack}>
+                                    <View style={[styles.modalProgressFill, { width: `${progress}%` }]} />
+                                </View>
+                            </View>
+                        );
+                    })}
+                </View>
+            </TouchableOpacity>
+        </Modal>
+    );
+
+    // ========================================
+    // RENDER ADMISSION/VISA STAGE
+    // ========================================
+    const renderDocumentStage = () => {
+        if (isInitialLoad) {
+            return (
+                <View style={styles.fullScreenLoader}>
+                    <ActivityIndicator size="large" color={COLORS.primary} />
+                    <Text style={styles.loadingText}>Loading {getStageTitle()}...</Text>
+                </View>
+            );
+        }
+
+        const progress = calculateProgress();
+        const uploadedCount = getUploadedCount();
+        const approvedCount = getApprovedCount();
+        const rejectedCount = getRejectedCount();
 
         return (
-            <View style={styles.categorySection} key={categoryKey}>
-                <View style={styles.categoryHeader}>
-                    <View style={[styles.categoryIcon, { backgroundColor: `${categoryConfig.color}10` }]}>
-                        <Ionicons name={categoryConfig.icon} size={18} color={categoryConfig.color} />
-                    </View>
-                    <View style={styles.categoryHeaderText}>
-                        <Text style={styles.categoryTitle}>{categoryConfig.label}</Text>
-                        <Text style={styles.categoryBadge}>
-                            {documents.length} {documents.length === 1 ? 'document' : 'documents'}
-                        </Text>
-                    </View>
-                </View>
+            <View style={styles.flexOne}>
+                <ScrollView
+                    style={styles.scrollView}
+                    contentContainerStyle={styles.scrollContent}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={handleRefresh}
+                            tintColor={COLORS.primary}
+                            colors={[COLORS.primary]}
+                        />
+                    }
+                    showsVerticalScrollIndicator={false}
+                >
+                    {/* Progress Overview Card */}
+                    <TouchableOpacity 
+                        style={styles.progressOverviewCard}
+                        onPress={() => setShowStageModal(true)}
+                        activeOpacity={0.7}
+                    >
+                        <View style={styles.progressHeader}>
+                            <View style={styles.progressTitleContainer}>
+                                <View style={styles.iconCircle}>
+                                    <Ionicons name={getStageIcon()} size={22} color={COLORS.primary} />
+                                </View>
+                                <View>
+                                    <Text style={styles.progressTitle}>{getStageTitle()}</Text>
+                                    <Text style={styles.progressSubtitle}>
+                                        {checklistDocuments.length} Required Documents
+                                    </Text>
+                                </View>
+                            </View>
+                            <Ionicons name="chevron-forward" size={20} color={COLORS.textTertiary} />
+                        </View>
 
-                {hasDocuments ? (
-                    <View style={styles.categoryDocuments}>
-                        {documents.map((doc) => (
-                            <TouchableOpacity
-                                key={doc.id}
-                                style={styles.categoryDocumentCard}
-                                onPress={() => doc.fileUrl && Linking.openURL(doc.fileUrl)}
-                                activeOpacity={0.7}
-                            >
-                                <View style={styles.categoryDocIcon}>
-                                    <MaterialCommunityIcons 
-                                        name="file-pdf-box" 
-                                        size={20} 
-                                        color={categoryConfig.color} 
-                                    />
+                        <View style={styles.statsGrid}>
+                            <View style={styles.statBox}>
+                                <Text style={styles.statNumber}>{uploadedCount}</Text>
+                                <Text style={styles.statLabel}>Uploaded</Text>
+                            </View>
+                            <View style={styles.statDivider} />
+                            <View style={styles.statBox}>
+                                <Text style={[styles.statNumber, { color: COLORS.success }]}>{approvedCount}</Text>
+                                <Text style={styles.statLabel}>Approved</Text>
+                            </View>
+                            <View style={styles.statDivider} />
+                            <View style={styles.statBox}>
+                                <Text style={[styles.statNumber, { color: COLORS.warning }]}>{rejectedCount}</Text>
+                                <Text style={styles.statLabel}>Needs Action</Text>
+                            </View>
+                        </View>
+
+                        <View style={styles.progressSection}>
+                            <View style={styles.progressHeaderRow}>
+                                <Text style={styles.progressLabel}>Stage Progress</Text>
+                                <Text style={styles.progressPercent}>{progress}%</Text>
+                            </View>
+                            <View style={styles.progressTrack}>
+                                <View style={[styles.progressFill, { width: `${progress}%` }]} />
+                            </View>
+                        </View>
+                    </TouchableOpacity>
+
+                    {/* Documents List */}
+                    <View style={styles.documentsSection}>
+                        <Text style={styles.sectionTitle}>Document Checklist</Text>
+                        
+                        {checklistDocuments.length === 0 ? (
+                            <View style={styles.emptyStateCard}>
+                                <View style={styles.emptyStateIcon}>
+                                    <Ionicons name="document-text-outline" size={40} color={COLORS.textTertiary} />
                                 </View>
-                                <View style={styles.categoryDocContent}>
-                                    <Text style={styles.categoryDocName} numberOfLines={1}>
-                                        {doc.name}
-                                    </Text>
-                                    <Text style={styles.categoryDocMeta}>
-                                        {new Date(doc.uploadedAt).toLocaleDateString('en-US', {
-                                            day: 'numeric',
-                                            month: 'short',
-                                            year: 'numeric'
-                                        })}
-                                    </Text>
-                                </View>
-                                <Ionicons name="open-outline" size={18} color={COLORS.textTertiary} />
-                            </TouchableOpacity>
-                        ))}
+                                <Text style={styles.emptyStateTitle}>No Documents Required</Text>
+                                <Text style={styles.emptyStateDescription}>
+                                    There are no documents required for this stage yet.
+                                </Text>
+                            </View>
+                        ) : (
+                            checklistDocuments.map((doc) => {
+                                const statusInfo = STATUS_CONFIG[doc.status] || STATUS_CONFIG.pending;
+                                const isUploading = uploadingDocId === doc.id;
+                                const hasDocument = !!doc.document;
+
+                                return (
+                                    <View
+                                        key={doc.id}
+                                        style={[
+                                            styles.documentCard,
+                                            { borderLeftColor: statusInfo.borderColor }
+                                        ]}
+                                    >
+                                        {/* Document Header */}
+                                        <View style={styles.documentHeader}>
+                                            <View style={styles.documentTitleRow}>
+                                                <View style={[styles.documentIconContainer, { backgroundColor: `${statusInfo.textColor}10` }]}>
+                                                    <MaterialCommunityIcons 
+                                                        name="file-document-outline" 
+                                                        size={24} 
+                                                        color={statusInfo.textColor} 
+                                                    />
+                                                </View>
+                                                <View style={styles.documentInfo}>
+                                                    <Text style={styles.documentName}>{doc.name}</Text>
+                                                    {doc.description ? (
+                                                        <Text style={styles.documentDescription} numberOfLines={1}>
+                                                            {doc.description}
+                                                        </Text>
+                                                    ) : null}
+                                                </View>
+                                            </View>
+                                            
+                                            <View style={[styles.statusBadge, { backgroundColor: statusInfo.bgColor }]}>
+                                                <Ionicons name={statusInfo.iconName} size={12} color={statusInfo.textColor} />
+                                                <Text style={[styles.statusText, { color: statusInfo.textColor }]}>
+                                                    {statusInfo.label}
+                                                </Text>
+                                            </View>
+                                        </View>
+
+                                        {/* Uploaded Document Info */}
+                                        {hasDocument && (
+                                            <TouchableOpacity
+                                                style={styles.uploadedFileCard}
+                                                onPress={() => handleViewDocument(doc.document.fileURL)}
+                                                activeOpacity={0.7}
+                                            >
+                                                <View style={[styles.fileIcon, { backgroundColor: `${statusInfo.textColor}10` }]}>
+                                                    <MaterialCommunityIcons 
+                                                        name="file-pdf-box" 
+                                                        size={28} 
+                                                        color={statusInfo.textColor} 
+                                                    />
+                                                </View>
+                                                <View style={styles.fileInfo}>
+                                                    <Text style={styles.fileName} numberOfLines={1}>
+                                                        {doc.name}
+                                                    </Text>
+                                                    <View style={styles.fileMetaRow}>
+                                                        <Ionicons name="calendar-outline" size={12} color={COLORS.textTertiary} />
+                                                        <Text style={styles.fileMeta}>
+                                                            {formatDate(doc.document.uploadedAt)}
+                                                        </Text>
+                                                    </View>
+                                                </View>
+                                                <View style={styles.viewButtonIcon}>
+                                                    <Ionicons name="eye-outline" size={20} color={statusInfo.textColor} />
+                                                </View>
+                                            </TouchableOpacity>
+                                        )}
+
+                                        {/* Rejection Reason */}
+                                        {(doc.status === 'rejected' || doc.status === 'reupload') && doc.rejectionReason && (
+                                            <View style={styles.rejectionContainer}>
+                                                <View style={styles.rejectionHeader}>
+                                                    <Ionicons name="alert-circle" size={16} color={COLORS.error} />
+                                                    <Text style={styles.rejectionTitle}>Reason:</Text>
+                                                </View>
+                                                <Text style={styles.rejectionText}>{doc.rejectionReason}</Text>
+                                            </View>
+                                        )}
+
+                                        {/* Action Buttons */}
+                                        {isUploading ? (
+                                            <View style={styles.uploadingContainer}>
+                                                <ActivityIndicator size="small" color={COLORS.primary} />
+                                                <Text style={styles.uploadingText}>Uploading document...</Text>
+                                            </View>
+                                        ) : (
+                                            <View style={styles.actionButtons}>
+                                                {/* View Button */}
+                                                {hasDocument && statusInfo.showActions.view && (
+                                                    <TouchableOpacity
+                                                        style={[
+                                                            styles.actionButton,
+                                                            styles.viewButton,
+                                                            { borderColor: statusInfo.textColor }
+                                                        ]}
+                                                        onPress={() => handleViewDocument(doc.document.fileURL)}
+                                                    >
+                                                        <Ionicons name="eye-outline" size={16} color={statusInfo.textColor} />
+                                                        <Text style={[styles.viewButtonText, { color: statusInfo.textColor }]}>
+                                                            View
+                                                        </Text>
+                                                    </TouchableOpacity>
+                                                )}
+
+                                                {/* Upload/Reupload Button */}
+                                                {((!hasDocument && statusInfo.showActions.upload) || 
+                                                  (hasDocument && statusInfo.showActions.reupload)) && (
+                                                    <TouchableOpacity
+                                                        style={[
+                                                            styles.actionButton,
+                                                            styles.uploadButton,
+                                                            { backgroundColor: statusInfo.textColor }
+                                                        ]}
+                                                        onPress={() => handleUpload(doc)}
+                                                    >
+                                                        <Ionicons 
+                                                            name={hasDocument ? "refresh-outline" : "cloud-upload-outline"} 
+                                                            size={16} 
+                                                            color={COLORS.white} 
+                                                        />
+                                                        <Text style={styles.uploadButtonText}>
+                                                            {hasDocument ? 'Re-upload' : 'Upload'}
+                                                        </Text>
+                                                    </TouchableOpacity>
+                                                )}
+                                            </View>
+                                        )}
+                                    </View>
+                                );
+                            })
+                        )}
                     </View>
-                ) : (
-                    <View style={styles.categoryEmptyState}>
-                        <Text style={styles.categoryEmptyText}>No documents yet</Text>
+                    
+                    {/* Extra space at bottom for sticky button */}
+                    <View style={{ height: 80 }} />
+                </ScrollView>
+
+                {/* Sticky Continue Button */}
+                {checklistDocuments.length > 0 && checklistDocuments.every(doc => doc.status === 'approved') && (
+                    <View style={[styles.stickyButtonContainer, { paddingBottom: insets.bottom || 16 }]}>
+                        <TouchableOpacity
+                            style={styles.continueButton}
+                            onPress={() => {
+                                if (stage === 'admission') {
+                                    onStageChange('document_waitlist');
+                                } else if (stage === 'visa') {
+                                    Alert.alert(
+                                        'Congratulations!',
+                                        'All your visa documents have been approved. Your application is now complete.',
+                                        [{ text: 'OK' }]
+                                    );
+                                }
+                            }}
+                        >
+                            <Text style={styles.continueButtonText}>
+                                {stage === 'admission' ? 'Continue to Next Stage' : 'Complete Application'}
+                            </Text>
+                            <Ionicons name="arrow-forward" size={20} color={COLORS.white} />
+                        </TouchableOpacity>
                     </View>
                 )}
             </View>
@@ -463,267 +779,115 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
     };
 
     // ========================================
-    // RENDER ADMISSION/VISA STAGE
+    // RENDER DOCUMENT WAITLIST STAGE
     // ========================================
-    const renderDocumentStage = () => {
-        if (!hasDocuments && !refreshing) {
-            return (
+    const renderDocumentWaitlist = () => {
+        const renderCategory = (title, icon, color, docs) => (
+            <View style={styles.agencyCategory}>
+                <View style={styles.agencyCategoryHeader}>
+                    <View style={[styles.agencyCategoryIcon, { backgroundColor: `${color}15` }]}>
+                        <Ionicons name={icon} size={20} color={color} />
+                    </View>
+                    <Text style={styles.agencyCategoryTitle}>{title}</Text>
+                    <View style={[styles.agencyCategoryBadge, { backgroundColor: `${color}15` }]}>
+                        <Text style={[styles.agencyCategoryBadgeText, { color }]}>{docs.length}</Text>
+                    </View>
+                </View>
+
+                {docs.length === 0 ? (
+                    <View style={styles.agencyEmptyState}>
+                        <MaterialCommunityIcons name="file-document-outline" size={32} color={COLORS.textTertiary} />
+                        <Text style={styles.agencyEmptyText}>No documents uploaded yet</Text>
+                    </View>
+                ) : (
+                    docs.map((doc) => (
+                        <TouchableOpacity
+                            key={doc._id}
+                            style={styles.agencyDocumentCard}
+                            onPress={() => handleViewDocument(doc.fileURL)}
+                            activeOpacity={0.7}
+                        >
+                            <View style={[styles.agencyDocIcon, { backgroundColor: `${color}10` }]}>
+                                <MaterialCommunityIcons name="file-pdf-box" size={24} color={color} />
+                            </View>
+                            <View style={styles.agencyDocInfo}>
+                                <Text style={styles.agencyDocName} numberOfLines={1}>
+                                    {doc.documentCategory === 'COE' ? 'Confirmation of Enrollment' :
+                                     doc.documentCategory === 'offer_letter' ? 'Offer Letter' : 
+                                     'Other Document'}
+                                </Text>
+                                <Text style={styles.agencyDocDate}>
+                                    {formatDate(doc.createdAt)}
+                                </Text>
+                            </View>
+                            <View style={styles.viewButtonIcon}>
+                                <Ionicons name="eye-outline" size={20} color={color} />
+                            </View>
+                        </TouchableOpacity>
+                    ))
+                )}
+            </View>
+        );
+
+        return (
+            <View style={styles.flexOne}>
                 <ScrollView
                     style={styles.scrollView}
-                    contentContainerStyle={styles.centerContent}
+                    contentContainerStyle={styles.scrollContent}
                     refreshControl={
                         <RefreshControl
                             refreshing={refreshing}
                             onRefresh={handleRefresh}
                             tintColor={COLORS.primary}
+                            colors={[COLORS.primary]}
                         />
                     }
+                    showsVerticalScrollIndicator={false}
                 >
-                    <View style={styles.emptyStateContainer}>
-                        <View style={styles.emptyStateIcon}>
-                            <Ionicons
-                                name={stage === 'admission' ? 'school-outline' : 'passport-outline'}
-                                size={40}
-                                color={COLORS.primary}
-                            />
-                        </View>
-                        <Text style={styles.emptyStateTitle}>
-                            {stage === 'admission' ? 'No Documents Yet' : 'No Visa Documents Yet'}
-                        </Text>
-                        <Text style={styles.emptyStateDescription}>
-                            {stage === 'admission'
-                                ? 'Waiting for admission officer to assign document checklist'
-                                : 'Waiting for visa officer to assign visa document checklist'
-                            }
-                        </Text>
-                        <View style={styles.emptyBadge}>
-                            <Ionicons name="time-outline" size={16} color={COLORS.primary} />
-                            <Text style={styles.emptyBadgeText}>Check back later</Text>
-                        </View>
-                    </View>
-                </ScrollView>
-            );
-        }
-
-        const approvedCount = documents.filter(d => d.status === 'approved').length;
-        const progressPercent = hasDocuments ? Math.round((approvedCount / documents.length) * 100) : 0;
-
-        return (
-            <ScrollView
-                style={styles.scrollView}
-                contentContainerStyle={styles.scrollContent}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={handleRefresh}
-                        tintColor={COLORS.primary}
-                    />
-                }
-            >
-                {/* Progress Card */}
-                {hasDocuments && (
-                    <View style={styles.progressCard}>
-                        <View style={styles.progressHeader}>
-                            <Text style={styles.progressLabel}>Document Progress</Text>
-                            <Text style={styles.progressCount}>{approvedCount}/{documents.length}</Text>
-                        </View>
-                        <View style={styles.progressTrack}>
-                            <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
-                        </View>
-                    </View>
-                )}
-
-                {/* Document List */}
-                {hasDocuments && (
-                    <View style={styles.checklistSection}>
-                        <View style={styles.sectionHeader}>
-                            <Ionicons name="document-text-outline" size={18} color={COLORS.textSecondary} />
-                            <Text style={styles.sectionTitle}>Required Documents</Text>
-                        </View>
-
-                        {documents.map((doc, index) => {
-                            const statusInfo = STATUS_CONFIG[doc.status] || STATUS_CONFIG.pending;
-                            const isUploading = uploadingDocId === getUploadingId(doc);
-                            const canUpload = canUploadDocument(doc);
-
-                            return (
-                                <TouchableOpacity
-                                    key={doc.checklistId || doc.id}
-                                    style={styles.documentCard}
-                                    onPress={() => {
-                                        if (doc.fileUrl && !canUpload) {
-                                            Linking.openURL(doc.fileUrl);
-                                        } else if (canUpload && !isUploading) {
-                                            handleUpload(doc);
-                                        }
-                                    }}
-                                    activeOpacity={0.7}
-                                    disabled={isUploading}
-                                >
-                                    {/* Left Accent */}
-                                    <View style={[styles.documentAccent, { backgroundColor: statusInfo.bgColor }]} />
-                                    
-                                    <View style={styles.documentContent}>
-                                        {/* Header Row */}
-                                        <View style={styles.documentHeader}>
-                                            <View style={styles.documentTitleContainer}>
-                                                <Text style={styles.documentName}>{doc.name}</Text>
-                                                <Text style={styles.documentDescription} numberOfLines={1}>
-                                                    {doc.description}
-                                                </Text>
-                                            </View>
-                                            
-                                            {/* Status Badge */}
-                                            <View style={[
-                                                styles.statusBadge,
-                                                { backgroundColor: statusInfo.bgColor }
-                                            ]}>
-                                                <Ionicons
-                                                    name={statusInfo.icon}
-                                                    size={12}
-                                                    color={statusInfo.textColor}
-                                                />
-                                                <Text style={[
-                                                    styles.statusText,
-                                                    { color: statusInfo.textColor }
-                                                ]}>
-                                                    {statusInfo.label}
-                                                </Text>
-                                            </View>
-                                        </View>
-
-                                        {/* File Info */}
-                                        {doc.fileName && !canUpload && (
-                                            <View style={styles.fileInfo}>
-                                                <MaterialCommunityIcons
-                                                    name="file-pdf-box"
-                                                    size={14}
-                                                    color={COLORS.primary}
-                                                />
-                                                <Text style={styles.fileName} numberOfLines={1}>
-                                                    {doc.fileName}
-                                                </Text>
-                                            </View>
-                                        )}
-
-                                        {/* Rejection Reason */}
-                                        {(doc.status === 'rejected' || doc.status === 'reupload') && doc.rejectionReason && (
-                                            <View style={styles.rejectionContainer}>
-                                                <Ionicons name="information-circle-outline" size={14} color={COLORS.error} />
-                                                <Text style={styles.rejectionText}>{doc.rejectionReason}</Text>
-                                            </View>
-                                        )}
-
-                                        {/* Action */}
-                                        <View style={styles.actionContainer}>
-                                            {isUploading ? (
-                                                <View style={styles.uploadingContainer}>
-                                                    <ActivityIndicator size="small" color={COLORS.primary} />
-                                                    <Text style={styles.uploadingText}>Uploading...</Text>
-                                                </View>
-                                            ) : doc.fileUrl && !canUpload ? (
-                                                <View style={styles.viewContainer}>
-                                                    <Text style={styles.viewText}>
-                                                        {doc.status === 'approved' ? 'View document' : 'Under review'}
-                                                    </Text>
-                                                    <Ionicons name="chevron-forward" size={16} color={COLORS.primary} />
-                                                </View>
-                                            ) : (
-                                                <View style={styles.uploadContainer}>
-                                                    <MaterialCommunityIcons
-                                                        name="cloud-upload-outline"
-                                                        size={16}
-                                                        color={COLORS.primary}
-                                                    />
-                                                    <Text style={styles.uploadText}>Upload document</Text>
-                                                </View>
-                                            )}
-                                        </View>
-                                    </View>
-                                </TouchableOpacity>
-                            );
-                        })}
-                    </View>
-                )}
-
-                {/* Continue Button */}
-                {allApproved && (
-                    <TouchableOpacity
-                        style={styles.applyButton}
-                        onPress={() => {
-                            if (stage === 'admission') {
-                                onStageChange('document_waitlist');
-                            } else if (stage === 'visa') {
-                                onStageChange('complete');
-                                Toast.show({
-                                    type: 'success',
-                                    text1: 'Visa Stage Complete',
-                                    text2: 'All visa documents approved!'
-                                });
-                            }
-                        }}
-                        activeOpacity={0.8}
+                    <TouchableOpacity 
+                        style={styles.waitlistHeader}
+                        onPress={() => setShowStageModal(true)}
+                        activeOpacity={0.7}
                     >
-                        <Text style={styles.applyButtonText}>
-                            {stage === 'admission' ? 'Proceed to Document Waitlist' : 'Complete Visa Stage'}
+                        <View style={styles.waitlistHeaderContent}>
+                            <View style={styles.iconCircle}>
+                                <Ionicons name="people-outline" size={24} color={COLORS.primary} />
+                            </View>
+                            <View style={styles.waitlistHeaderText}>
+                                <Text style={styles.waitlistTitle}>Agency Documents</Text>
+                                <Text style={styles.waitlistSubtitle}>Documents uploaded by your agency</Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={20} color={COLORS.textTertiary} />
+                        </View>
+                        <Text style={styles.waitlistDescription}>
+                            Your agency will upload important documents here. You can view them once they're available.
                         </Text>
-                        <Ionicons name="arrow-forward" size={20} color={COLORS.white} />
                     </TouchableOpacity>
-                )}
-            </ScrollView>
-        );
-    };
 
-    // ========================================
-    // RENDER DOCUMENT WAITLIST STAGE - REDESIGNED
-    // ========================================
-    const renderDocumentWaitlist = () => {
-        const totalDocuments = getTotalWaitlistDocuments();
+                    {renderCategory('Confirmation of Enrollment', 'school-outline', COLORS.primary, agencyDocuments.COE)}
+                    {renderCategory('Offer Letter', 'mail-outline', COLORS.success, agencyDocuments.offer_letter)}
+                    {renderCategory('Other Documents', 'document-text-outline', COLORS.warning, agencyDocuments.other)}
+                    
+                    {/* Extra space at bottom for sticky button */}
+                    <View style={{ height: 80 }} />
+                </ScrollView>
 
-        return (
-            <ScrollView
-                style={styles.scrollView}
-                contentContainerStyle={styles.scrollContent}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={handleRefresh}
-                        tintColor={COLORS.primary}
-                    />
-                }
-            >
-                {/* Simple Header */}
-                <View style={styles.waitlistHeader}>
-                    <Text style={styles.waitlistTitle}>Documents from Your Agency</Text>
-                    <Text style={styles.waitlistDescription}>
-                        Your agency will upload required documents here. You can view them once available.
-                    </Text>
+                {/* Sticky Proceed Button */}
+                <View style={[styles.stickyButtonContainer, { paddingBottom: insets.bottom || 16 }]}>
+                    <TouchableOpacity
+                        style={styles.proceedButton}
+                        onPress={() => onStageChange('visa')}
+                    >
+                        <Text style={styles.proceedButtonText}>Continue to Visa Stage</Text>
+                        <Ionicons name="arrow-forward" size={18} color={COLORS.white} />
+                    </TouchableOpacity>
                 </View>
-
-                {/* Document Categories */}
-                {renderDocumentCategory('COE')}
-                {renderDocumentCategory('offer_letter')}
-                {renderDocumentCategory('other')}
-
-                {/* Proceed Button */}
-                <TouchableOpacity
-                    style={styles.proceedButton}
-                    onPress={() => onStageChange('visa')}
-                    activeOpacity={0.8}
-                >
-                    <Text style={styles.proceedButtonText}>Continue to Visa Stage</Text>
-                    <Ionicons name="arrow-forward" size={18} color={COLORS.white} />
-                </TouchableOpacity>
-            </ScrollView>
+            </View>
         );
     };
 
-    // ========================================
-    // MAIN RENDER
-    // ========================================
     return (
         <View style={[styles.container, { paddingTop: insets.top }]}>
-            {/* Consistent Blue Header */}
             <View style={styles.header}>
                 <View style={styles.headerContent}>
                     <TouchableOpacity
@@ -732,31 +896,38 @@ export default function DocumentUpload({ stage, onStageChange, onRefresh }) {
                     >
                         <Ionicons name="chevron-back" size={24} color={COLORS.white} />
                     </TouchableOpacity>
-                    <Text style={styles.headerTitle}>
-                        {stage === 'admission' && 'Admission Documents'}
-                        {stage === 'document_waitlist' && 'Document Waitlist'}
-                        {stage === 'visa' && 'Visa Documents'}
-                    </Text>
+                    <Text style={styles.headerTitle}>{getStageTitle()}</Text>
                     <View style={{ width: 40 }} />
                 </View>
             </View>
 
-            {/* Content */}
             {stage === 'document_waitlist' ? renderDocumentWaitlist() : renderDocumentStage()}
+            {renderStageOverviewModal()}
         </View>
     );
 }
 
 // ========================================
-// STYLES
+// STYLES (Unchanged)
 // ========================================
 const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: COLORS.background,
     },
-
-    // Header
+    flexOne: {
+        flex: 1,
+    },
+    fullScreenLoader: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 12,
+    },
+    loadingText: {
+        fontSize: 14,
+        color: COLORS.textSecondary,
+    },
     header: {
         backgroundColor: COLORS.primary,
         paddingHorizontal: 20,
@@ -764,6 +935,11 @@ const styles = StyleSheet.create({
         paddingBottom: 20,
         borderBottomLeftRadius: 25,
         borderBottomRightRadius: 25,
+        elevation: 4,
+        shadowColor: COLORS.primary,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
     },
     headerContent: {
         flexDirection: 'row',
@@ -779,110 +955,159 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     headerTitle: {
-        fontSize: 22,
+        fontSize: 20,
         fontWeight: '700',
         color: COLORS.white,
     },
-
-    // Scroll
     scrollView: {
         flex: 1,
     },
     scrollContent: {
-        padding: 20,
-    },
-    centerContent: {
-        flexGrow: 1,
-        justifyContent: 'center',
-        padding: 20,
+        padding: 16,
+        paddingBottom: 20,
     },
 
-    // Section Header
-    sectionHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 16,
-    },
-    sectionTitle: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-        marginLeft: 8,
-    },
-
-    // Progress Card
-    progressCard: {
+    // Progress Overview Card
+    progressOverviewCard: {
         backgroundColor: COLORS.surface,
         borderRadius: 16,
         padding: 16,
-        marginBottom: 24,
+        marginBottom: 20,
         borderWidth: 1,
         borderColor: COLORS.border,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
     },
     progressHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 12,
+        marginBottom: 16,
+    },
+    progressTitleContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    iconCircle: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        backgroundColor: COLORS.primaryLight,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    progressTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+        marginBottom: 2,
+    },
+    progressSubtitle: {
+        fontSize: 12,
+        color: COLORS.textTertiary,
+    },
+    statsGrid: {
+        flexDirection: 'row',
+        backgroundColor: COLORS.background,
+        borderRadius: 12,
+        padding: 12,
+        marginBottom: 16,
+    },
+    statBox: {
+        flex: 1,
+        alignItems: 'center',
+    },
+    statDivider: {
+        width: 1,
+        backgroundColor: COLORS.border,
+    },
+    statNumber: {
+        fontSize: 22,
+        fontWeight: '700',
+        color: COLORS.primary,
+        marginBottom: 2,
+    },
+    statLabel: {
+        fontSize: 11,
+        color: COLORS.textTertiary,
+    },
+    progressSection: {
+        gap: 8,
+    },
+    progressHeaderRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
     },
     progressLabel: {
-        fontSize: 14,
+        fontSize: 13,
         color: COLORS.textSecondary,
     },
-    progressCount: {
-        fontSize: 16,
+    progressPercent: {
+        fontSize: 14,
         fontWeight: '600',
         color: COLORS.primary,
     },
     progressTrack: {
         height: 6,
-        backgroundColor: COLORS.progressTrack,
+        backgroundColor: COLORS.border,
         borderRadius: 3,
         overflow: 'hidden',
     },
     progressFill: {
         height: '100%',
-        backgroundColor: COLORS.progressFill,
+        backgroundColor: COLORS.primary,
         borderRadius: 3,
     },
 
-    // Checklist Section
-    checklistSection: {
-        marginBottom: 20,
-        backgroundColor: COLORS.surface,
-        borderRadius: 16,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: COLORS.border,
+    // Documents Section
+    documentsSection: {
+        marginBottom: 16,
+    },
+    sectionTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+        marginBottom: 12,
     },
 
     // Document Card
     documentCard: {
         backgroundColor: COLORS.surface,
         borderRadius: 12,
+        padding: 16,
         marginBottom: 12,
         borderWidth: 1,
         borderColor: COLORS.border,
-        flexDirection: 'row',
-        overflow: 'hidden',
-    },
-    documentAccent: {
-        width: 4,
-        height: '100%',
-    },
-    documentContent: {
-        flex: 1,
-        padding: 14,
+        borderLeftWidth: 4,
+        elevation: 1,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.02,
+        shadowRadius: 4,
     },
     documentHeader: {
+        marginBottom: 12,
+    },
+    documentTitleRow: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
+        alignItems: 'center',
         marginBottom: 8,
     },
-    documentTitleContainer: {
+    documentIconContainer: {
+        width: 36,
+        height: 36,
+        borderRadius: 8,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 10,
+    },
+    documentInfo: {
         flex: 1,
-        marginRight: 12,
     },
     documentName: {
         fontSize: 15,
@@ -891,285 +1116,435 @@ const styles = StyleSheet.create({
         marginBottom: 2,
     },
     documentDescription: {
-        fontSize: 13,
-        color: COLORS.textSecondary,
+        fontSize: 12,
+        color: COLORS.textTertiary,
     },
-
-    // Status Badge
     statusBadge: {
         flexDirection: 'row',
         alignItems: 'center',
+        alignSelf: 'flex-start',
         paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 20,
+        paddingVertical: 4,
+        borderRadius: 12,
+        gap: 4,
     },
     statusText: {
-        fontSize: 12,
-        fontWeight: '500',
-        marginLeft: 4,
+        fontSize: 11,
+        fontWeight: '600',
     },
 
-    // File Info
-    fileInfo: {
+    // Uploaded File Card
+    uploadedFileCard: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 8,
-        paddingVertical: 6,
-        paddingHorizontal: 10,
-        backgroundColor: COLORS.primaryLight,
-        borderRadius: 6,
-        alignSelf: 'flex-start',
+        backgroundColor: COLORS.background,
+        borderRadius: 10,
+        padding: 10,
+        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+    },
+    fileIcon: {
+        width: 44,
+        height: 44,
+        borderRadius: 8,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 10,
+    },
+    fileInfo: {
+        flex: 1,
     },
     fileName: {
-        fontSize: 12,
-        color: COLORS.primary,
-        marginLeft: 6,
-        flexShrink: 1,
+        fontSize: 13,
+        fontWeight: '500',
+        color: COLORS.textPrimary,
+        marginBottom: 4,
+    },
+    fileMetaRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    fileMeta: {
+        fontSize: 10,
+        color: COLORS.textTertiary,
+    },
+    viewButtonIcon: {
+        width: 32,
+        height: 32,
+        borderRadius: 8,
+        backgroundColor: COLORS.background,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
 
-    // Rejection
+    // Rejection Container
     rejectionContainer: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        backgroundColor: COLORS.rejected.bg,
-        padding: 12,
+        backgroundColor: COLORS.errorLight,
         borderRadius: 8,
+        padding: 10,
         marginBottom: 10,
     },
+    rejectionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginBottom: 4,
+    },
+    rejectionTitle: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: COLORS.error,
+    },
     rejectionText: {
-        flex: 1,
         fontSize: 12,
         color: COLORS.error,
-        marginLeft: 8,
         lineHeight: 16,
+        paddingLeft: 22,
     },
 
-    // Actions
-    actionContainer: {
-        paddingTop: 12,
-        borderTopWidth: 1,
-        borderTopColor: COLORS.border,
-    },
+    // Action Buttons
     uploadingContainer: {
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 10,
+        gap: 8,
+        backgroundColor: COLORS.background,
+        borderRadius: 10,
     },
     uploadingText: {
         fontSize: 13,
         color: COLORS.textSecondary,
-        marginLeft: 8,
     },
-    viewContainer: {
+    actionButtons: {
         flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
+        gap: 8,
     },
-    viewText: {
-        fontSize: 13,
-        color: COLORS.primary,
-        fontWeight: '500',
-    },
-    uploadContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    uploadText: {
-        fontSize: 13,
-        fontWeight: '600',
-        color: COLORS.primary,
-        marginLeft: 6,
-    },
-
-    // Apply Button
-    applyButton: {
-        backgroundColor: COLORS.primary,
-        borderRadius: 16,
-        paddingVertical: 18,
+    actionButton: {
+        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 10,
-        elevation: 2,
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        marginTop: 8,
+        paddingVertical: 10,
+        paddingHorizontal: 12,
+        borderRadius: 10,
+        gap: 6,
     },
-    applyButtonText: {
-        fontSize: 17,
-        fontWeight: '700',
+    viewButton: {
+        backgroundColor: COLORS.white,
+        borderWidth: 1,
+    },
+    viewButtonText: {
+        fontSize: 13,
+        fontWeight: '600',
+    },
+    uploadButton: {
+        elevation: 1,
+    },
+    uploadButtonText: {
+        fontSize: 13,
+        fontWeight: '600',
         color: COLORS.white,
     },
 
-    // Empty States
-    emptyStateContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 32,
-    },
-    emptyStateIcon: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        backgroundColor: COLORS.primaryLight,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 20,
-    },
-    emptyStateTitle: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: COLORS.textPrimary,
-        marginBottom: 8,
-        textAlign: 'center',
-    },
-    emptyStateDescription: {
-        fontSize: 14,
-        color: COLORS.textSecondary,
-        textAlign: 'center',
-        lineHeight: 20,
-        marginBottom: 16,
-    },
-    emptyBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        backgroundColor: COLORS.primaryLight,
-        borderRadius: 20,
-    },
-    emptyBadgeText: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: COLORS.primary,
-        marginLeft: 6,
-    },
-
-    // ========================================
-    // DOCUMENT WAITLIST STYLES - CLEAN & MINIMAL
-    // ========================================
-    waitlistHeader: {
-        marginBottom: 24,
-        paddingHorizontal: 4,
-    },
-    waitlistTitle: {
-        fontSize: 20,
-        fontWeight: '700',
-        color: COLORS.textPrimary,
-        marginBottom: 8,
-    },
-    waitlistDescription: {
-        fontSize: 14,
-        color: COLORS.textSecondary,
-        lineHeight: 20,
-    },
-
-    // Category Section - Clean
-    categorySection: {
-        backgroundColor: COLORS.surface,
-        borderRadius: 16,
-        padding: 16,
-        marginBottom: 16,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-    },
-    categoryHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 16,
-    },
-    categoryIcon: {
-        width: 36,
-        height: 36,
-        borderRadius: 10,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 12,
-    },
-    categoryHeaderText: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
-    categoryTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-    },
-    categoryBadge: {
-        fontSize: 14,
-        color: COLORS.textSecondary,
-        fontWeight: '500',
-    },
-
-    // Document Cards - Minimal
-    categoryDocuments: {
-        gap: 8,
-    },
-    categoryDocumentCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 12,
-        paddingHorizontal: 12,
+    // Sticky Button Container
+    stickyButtonContainer: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
         backgroundColor: COLORS.background,
+        paddingHorizontal: 16,
+        paddingTop: 12,
+        borderTopWidth: 1,
+        borderTopColor: COLORS.border,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -3 },
+        shadowOpacity: 0.05,
+        shadowRadius: 6,
+        elevation: 8,
+    },
+
+    // Continue Button
+    continueButton: {
+        backgroundColor: COLORS.success,
         borderRadius: 12,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-    },
-    categoryDocIcon: {
-        width: 36,
-        height: 36,
-        borderRadius: 8,
-        backgroundColor: COLORS.surface,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 12,
-    },
-    categoryDocContent: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
-    categoryDocName: {
-        fontSize: 14,
-        fontWeight: '500',
-        color: COLORS.textPrimary,
-        flex: 1,
-        marginRight: 12,
-    },
-    categoryDocMeta: {
-        fontSize: 12,
-        color: COLORS.textSecondary,
-    },
-
-    // Empty State - Minimal
-    categoryEmptyState: {
-        alignItems: 'center',
-        paddingVertical: 20,
-    },
-    categoryEmptyText: {
-        fontSize: 14,
-        color: COLORS.textSecondary,
-    },
-
-    // Proceed Button
-    proceedButton: {
-        backgroundColor: COLORS.primary,
-        borderRadius: 14,
         paddingVertical: 16,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
-        marginTop: 8,
+        elevation: 2,
+        shadowColor: COLORS.success,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
     },
-    proceedButtonText: {
-        fontSize: 16,
+    continueButtonText: {
+        fontSize: 15,
         fontWeight: '600',
         color: COLORS.white,
+    },
+
+    // Empty State
+    emptyStateCard: {
+        backgroundColor: COLORS.surface,
+        borderRadius: 12,
+        padding: 32,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        borderStyle: 'dashed',
+    },
+    emptyStateIcon: {
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        backgroundColor: COLORS.background,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    emptyStateTitle: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+        marginBottom: 8,
+        textAlign: 'center',
+    },
+    emptyStateDescription: {
+        fontSize: 13,
+        color: COLORS.textTertiary,
+        textAlign: 'center',
+        lineHeight: 18,
+    },
+
+    // Document Waitlist Styles
+    waitlistHeader: {
+        backgroundColor: COLORS.surface,
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+    },
+    waitlistHeaderContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        marginBottom: 12,
+    },
+    waitlistHeaderText: {
+        flex: 1,
+    },
+    waitlistTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+        marginBottom: 2,
+    },
+    waitlistSubtitle: {
+        fontSize: 12,
+        color: COLORS.textTertiary,
+    },
+    waitlistDescription: {
+        fontSize: 13,
+        color: COLORS.textSecondary,
+        lineHeight: 18,
+        paddingLeft: 56,
+    },
+    agencyCategory: {
+        backgroundColor: COLORS.surface,
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+    },
+    agencyCategoryHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    agencyCategoryIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: 10,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
+    },
+    agencyCategoryTitle: {
+        flex: 1,
+        fontSize: 15,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+    },
+    agencyCategoryBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+    },
+    agencyCategoryBadgeText: {
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    agencyDocumentCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: COLORS.background,
+        borderRadius: 10,
+        padding: 12,
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+    },
+    agencyDocIcon: {
+        width: 44,
+        height: 44,
+        borderRadius: 8,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
+    },
+    agencyDocInfo: {
+        flex: 1,
+    },
+    agencyDocName: {
+        fontSize: 13,
+        fontWeight: '500',
+        color: COLORS.textPrimary,
+        marginBottom: 4,
+    },
+    agencyDocDate: {
+        fontSize: 11,
+        color: COLORS.textTertiary,
+    },
+    agencyEmptyState: {
+        alignItems: 'center',
+        paddingVertical: 24,
+        gap: 8,
+    },
+    agencyEmptyText: {
+        fontSize: 13,
+        color: COLORS.textTertiary,
+    },
+    proceedButton: {
+        backgroundColor: COLORS.primary,
+        borderRadius: 12,
+        paddingVertical: 16,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        elevation: 2,
+        shadowColor: COLORS.primary,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+    },
+    proceedButtonText: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: COLORS.white,
+    },
+
+    // Modal Styles
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    modalContent: {
+        backgroundColor: COLORS.surface,
+        borderRadius: 20,
+        padding: 20,
+        width: '90%',
+        maxWidth: 400,
+        maxHeight: '80%',
+    },
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 20,
+        paddingBottom: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: COLORS.border,
+    },
+    modalTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: COLORS.textPrimary,
+    },
+    modalStageItem: {
+        marginBottom: 16,
+        padding: 12,
+        borderRadius: 12,
+        backgroundColor: COLORS.background,
+    },
+    currentStageItem: {
+        backgroundColor: COLORS.primaryExtraLight,
+        borderWidth: 1,
+        borderColor: COLORS.primaryLight,
+    },
+    modalStageHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    modalStageTitleContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    modalStageIcon: {
+        width: 32,
+        height: 32,
+        borderRadius: 8,
+        backgroundColor: COLORS.background,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    modalStageTitle: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: COLORS.textSecondary,
+    },
+    currentStageText: {
+        color: COLORS.primary,
+    },
+    currentBadge: {
+        backgroundColor: COLORS.primary,
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 10,
+    },
+    currentBadgeText: {
+        color: COLORS.white,
+        fontSize: 10,
+        fontWeight: '600',
+    },
+    modalStageStats: {
+        marginBottom: 8,
+    },
+    modalStageStatText: {
+        fontSize: 12,
+        color: COLORS.textTertiary,
+    },
+    modalProgressTrack: {
+        height: 4,
+        backgroundColor: COLORS.border,
+        borderRadius: 2,
+        overflow: 'hidden',
+    },
+    modalProgressFill: {
+        height: '100%',
+        backgroundColor: COLORS.primary,
+        borderRadius: 2,
     },
 });
