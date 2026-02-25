@@ -30,7 +30,7 @@ export default function Settings() {
     const router = useRouter();
     const { signOut } = useAuth();
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
         Alert.alert(
             "Log Out",
             "Are you sure you want to log out?",
@@ -39,7 +39,26 @@ export default function Settings() {
                 { 
                     text: "Log Out", 
                     style: "destructive", 
-                    onPress: signOut 
+                    onPress: async () => {
+                        try {
+                            // Show loading indicator or disable button
+                            console.log('[Settings] Logging out...');
+                            
+                            // Call signOut and wait for it to complete
+                            await signOut();
+                            
+                            console.log('[Settings] Sign out complete, navigating to register');
+                            
+                            // Force navigation to register page
+                            // Use a small timeout to ensure state updates are processed
+                            setTimeout(() => {
+                                router.replace("/auth/register");
+                            }, 100);
+                            
+                        } catch (error) {
+                            console.error('[Settings] Logout error:', error);
+                        }
+                    }
                 }
             ]
         );

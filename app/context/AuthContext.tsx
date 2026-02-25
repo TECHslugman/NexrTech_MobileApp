@@ -18,10 +18,12 @@ interface AuthContextType {
   setActiveAgency: (agency: ActiveAgency | null) => Promise<void>;
   signIn: (token: string) => Promise<ActiveAgency | null>;
   signOut: () => Promise<void>;
+  refreshUserProfile: () => Promise<ActiveAgency | null>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 const AGENCY_STORAGE_KEY = 'activeAgency';
+const TOKEN_STORAGE_KEY = 'userToken';
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -29,119 +31,176 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userToken, setUserToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeAgency, setActiveAgencyState] = useState<ActiveAgency | null>(null);
+  const [authStateVersion, setAuthStateVersion] = useState(0); // Add version trigger
+
+  // Function to fetch user profile and get registered agency
+  const fetchUserProfile = async (token: string): Promise<{ agencyId: string | null; agencyDetails?: any }> => {
+    try {
+      console.log('[AUTH] Fetching user profile...');
+      const response = await fetch(`${Config.API_BASE_URL}/students/profile`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        console.log('[AUTH] Profile fetch failed:', response.status);
+        return { agencyId: null };
+      }
+
+      const data = await response.json();
+      console.log('[AUTH] Profile data:', data);
+
+      const agencyId = data.profile?.registeredAgency || null;
+      console.log('[AUTH] registeredAgency from API:', agencyId);
+
+      return { agencyId, agencyDetails: data };
+    } catch (error) {
+      console.error('[AUTH] Error fetching profile:', error);
+      return { agencyId: null };
+    }
+  };
+
+  // Function to fetch agency details
+  const fetchAgencyDetails = async (token: string, agencyId: string): Promise<ActiveAgency | null> => {
+    try {
+      console.log('[AUTH] Fetching agency details for ID:', agencyId);
+      const response = await fetch(`${Config.API_BASE_URL}/agency/profile/${agencyId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        console.log('[AUTH] Agency details fetch failed:', response.status);
+        return {
+          id: String(agencyId),
+          name: 'Your Agency',
+          logo: ''
+        };
+      }
+
+      const data = await response.json();
+      const fullProfile = data.agency || data.profile || data;
+
+      return {
+        id: String(agencyId),
+        name: fullProfile.organizationName || 'Your Agency',
+        logo: fullProfile.logo || '',
+      };
+    } catch (error) {
+      console.error('[AUTH] Error fetching agency details:', error);
+      return {
+        id: String(agencyId),
+        name: 'Your Agency',
+        logo: ''
+      };
+    }
+  };
+
+  // Main function to restore agency from API
+  const restoreAgencyFromAPI = async (token: string): Promise<ActiveAgency | null> => {
+    try {
+      const { agencyId } = await fetchUserProfile(token);
+
+      if (!agencyId) {
+        console.log('[AUTH] No registered agency found in profile');
+        return null;
+      }
+
+      const agency = await fetchAgencyDetails(token, agencyId);
+
+      if (agency) {
+        console.log('[AUTH] Agency restored from API:', agency.name);
+        return agency;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('[AUTH] Error in restoreAgencyFromAPI:', error);
+      return null;
+    }
+  };
+
+  const refreshUserProfile = async (): Promise<ActiveAgency | null> => {
+    if (!userToken) return null;
+    console.log('[AUTH] Refreshing user profile...');
+    const agency = await restoreAgencyFromAPI(userToken);
+    
+    if (agency) {
+      await SecureStore.setItemAsync(AGENCY_STORAGE_KEY, JSON.stringify(agency));
+      setActiveAgencyState(agency);
+      setAuthStateVersion(v => v + 1); // Trigger update
+    }
+    
+    return agency;
+  };
 
   useEffect(() => {
     const loadSession = async () => {
       console.log('[AUTH] App startup — loading session...');
       try {
-        const token = await SecureStore.getItemAsync('userToken');
+        const token = await SecureStore.getItemAsync(TOKEN_STORAGE_KEY);
         console.log('[AUTH] Token in storage:', token ? '✅ found' : '❌ none');
 
         if (token) {
-          await restoreAgencyFromServer(token);
           setUserToken(token);
+
+          const storedAgency = await SecureStore.getItemAsync(AGENCY_STORAGE_KEY);
+          if (storedAgency) {
+            try {
+              const parsedAgency = JSON.parse(storedAgency);
+              console.log('[AUTH] ✅ Found agency in local storage:', parsedAgency.name);
+              setActiveAgencyState(parsedAgency);
+            } catch (e) {
+              console.error('[AUTH] Failed to parse stored agency:', e);
+            }
+          }
+
+          setIsLoading(false);
+          console.log('[AUTH] isLoading → false (UI can render now)');
+
+          restoreAgencyFromAPI(token).then(agency => {
+            if (agency) {
+              console.log('[AUTH] Background API sync completed:', agency.name);
+              
+              const currentAgencyId = activeAgency?.id;
+              if (currentAgencyId !== agency.id) {
+                console.log('[AUTH] API has different agency, updating...');
+                SecureStore.setItemAsync(AGENCY_STORAGE_KEY, JSON.stringify(agency)).then(() => {
+                  setActiveAgencyState(agency);
+                  setAuthStateVersion(v => v + 1); // Trigger update
+                });
+              }
+            } else {
+              console.log('[AUTH] Background API sync found no agency');
+              if (storedAgency) {
+                console.log('[AUTH] Clearing stale agency data');
+                SecureStore.deleteItemAsync(AGENCY_STORAGE_KEY).then(() => {
+                  setActiveAgencyState(null);
+                  setAuthStateVersion(v => v + 1); // Trigger update
+                });
+              }
+            }
+          }).catch(err => {
+            console.error('[AUTH] Background API sync error:', err);
+          });
+
         } else {
           await SecureStore.deleteItemAsync(AGENCY_STORAGE_KEY);
+          setActiveAgencyState(null);
+          setIsLoading(false);
+          console.log('[AUTH] isLoading → false (no token)');
         }
       } catch (e) {
         console.error('[AUTH] Failed to load session:', e);
-      } finally {
         setIsLoading(false);
-        console.log('[AUTH] isLoading → false');
       }
     };
     loadSession();
   }, []);
-
-  /**
-   * Fetches profile to get registeredAgency.
-   * 
-   * RETRY LOGIC: The backend sometimes returns registeredAgency: null
-   * immediately after login even though the field exists in the DB.
-   * This appears to be a backend caching/timing issue where the JWT is
-   * issued before the registeredAgency field is included in the response.
-   * 
-   * Fix: if the first call returns null, wait 1.5s and try once more
-   * before concluding the user genuinely has no agency.
-   * 
-   * @param token - JWT access token
-   * @param isRetry - internal flag to prevent infinite recursion
-   */
-  const restoreAgencyFromServer = async (
-    token: string,
-    isRetry: boolean = false
-  ): Promise<ActiveAgency | null> => {
-    console.log(`[AUTH] restoreAgencyFromServer — calling /students/profile... ${isRetry ? '(retry)' : ''}`);
-    try {
-      const profileRes = await fetch(`${Config.API_BASE_URL}/students/profile`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      console.log('[AUTH] /students/profile status:', profileRes.status);
-
-      if (!profileRes.ok) {
-        console.warn('[AUTH] Profile fetch failed — cannot restore agency');
-        return null;
-      }
-
-      const profileData = await profileRes.json();
-      const agencyId = profileData.registeredAgency;
-      console.log('[AUTH] registeredAgency from profile:', agencyId ?? 'null');
-
-      // No agency found — but if this is the first attempt, retry once
-      // to account for backend returning stale data immediately post-login
-      if (!agencyId) {
-        if (!isRetry) {
-          console.log('[AUTH] registeredAgency is null — waiting 1.5s and retrying once...');
-          await delay(1500);
-          return restoreAgencyFromServer(token, true);
-        }
-        // Confirmed null after retry — genuinely a new user
-        console.log('[AUTH] Confirmed no agency after retry — new user');
-        await SecureStore.deleteItemAsync(AGENCY_STORAGE_KEY);
-        setActiveAgencyState(null);
-        return null;
-      }
-
-      // Agency ID found — fetch full details
-      console.log('[AUTH] Fetching agency details for ID:', agencyId);
-      const agencyRes = await fetch(`${Config.API_BASE_URL}/agency/profile/${agencyId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      console.log('[AUTH] /agency/profile status:', agencyRes.status);
-
-      let agency: ActiveAgency;
-
-      if (!agencyRes.ok) {
-        console.warn('[AUTH] Agency detail fetch failed — using minimal lock data');
-        agency = { id: String(agencyId), name: 'Your Agency', logo: '' };
-      } else {
-        const agencyData = await agencyRes.json();
-        const fullProfile = agencyData.agency || agencyData.profile || agencyData;
-        agency = {
-          id: String(agencyId),
-          name: fullProfile.organizationName || 'Your Agency',
-          logo: fullProfile.logo || '',
-        };
-      }
-
-      await SecureStore.setItemAsync(AGENCY_STORAGE_KEY, JSON.stringify(agency));
-      setActiveAgencyState(agency);
-      console.log('[AUTH] ✅ activeAgency set to:', JSON.stringify(agency));
-      return agency;
-
-    } catch (e) {
-      console.error('[AUTH] restoreAgencyFromServer error:', e);
-      return null;
-    }
-  };
 
   const setActiveAgency = async (agency: ActiveAgency | null) => {
     try {
@@ -151,29 +210,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await SecureStore.deleteItemAsync(AGENCY_STORAGE_KEY);
       }
       setActiveAgencyState(agency);
+      setAuthStateVersion(v => v + 1); // Trigger update
       console.log('[AUTH] setActiveAgency called:', agency ? agency.name : 'null');
     } catch (e) {
       console.error('[AUTH] Failed to persist active agency:', e);
     }
   };
 
-  /**
-   * Restores agency BEFORE setting userToken state so the layout
-   * effect fires once with both token + agency already resolved.
-   */
   const signIn = async (token: string): Promise<ActiveAgency | null> => {
     console.log('[AUTH] signIn called — saving token to storage...');
     try {
       const tokenString = typeof token === 'string' ? token : JSON.stringify(token);
-      await SecureStore.setItemAsync('userToken', tokenString);
-      console.log('[AUTH] Token saved — restoring agency (with retry if needed)...');
 
-      const agency = await restoreAgencyFromServer(tokenString);
-      console.log('[AUTH] Agency resolved:', agency ? agency.name : 'null — routing to decision');
-
-      // Set token last — layout effect fires with correct agency value
+      await SecureStore.setItemAsync(TOKEN_STORAGE_KEY, tokenString);
       setUserToken(tokenString);
+
+      console.log('[AUTH] Checking API for registered agency...');
+      const agency = await restoreAgencyFromAPI(tokenString);
+
+      if (agency) {
+        await SecureStore.setItemAsync(AGENCY_STORAGE_KEY, JSON.stringify(agency));
+        setActiveAgencyState(agency);
+      }
+
+      setAuthStateVersion(v => v + 1); // Trigger update
+      console.log('[AUTH] Agency resolved from API:', agency ? agency.name : 'null');
       return agency;
+
     } catch (e) {
       console.error('[AUTH] signIn error:', e);
       throw e;
@@ -194,11 +257,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       await GoogleSignin.signOut();
-      await SecureStore.deleteItemAsync('userToken');
+
+      await SecureStore.deleteItemAsync(TOKEN_STORAGE_KEY);
       await SecureStore.deleteItemAsync(AGENCY_STORAGE_KEY);
 
       setUserToken(null);
       setActiveAgencyState(null);
+      setAuthStateVersion(v => v + 1); // Force layout to re-check
 
       console.log('[AUTH] ✅ signOut complete — token and agency cleared');
     } catch (e) {
@@ -215,6 +280,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setActiveAgency,
         signIn,
         signOut,
+        refreshUserProfile,
       }}
     >
       {children}

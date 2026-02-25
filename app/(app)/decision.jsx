@@ -93,18 +93,28 @@ function CityButton({ label, selected, onPress }) {
 export default function Dashboard() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { signOut, userToken, activeAgency } = useAuth();
+  // FIX: Add isLoading to the destructuring
+  const { signOut, userToken, activeAgency, isLoading } = useAuth();
 
   // --- EARLY REDIRECT: if student already has an agency, skip this page ---
   useEffect(() => {
+    // FIX: Don't redirect while auth is still loading
+    if (isLoading) {
+      console.log('[DECISION] Auth is loading, waiting...');
+      return;
+    }
+    
     if (activeAgency?.id) {
       console.log('[DECISION] Agency already selected — redirecting to', activeAgency.name);
       router.replace({
         pathname: `/agency/selected/${activeAgency.id}`,
-        params: { name: activeAgency.name, agencyLogo: activeAgency.profileUrl},
+        params: { name: activeAgency.name, agencyLogo: activeAgency.logo },
       });
+    } else {
+      console.log('[DECISION] No agency selected, showing decision page');
     }
-  }, [activeAgency]);
+    // FIX: Add isLoading to dependencies
+  }, [activeAgency, isLoading]);
 
   // --- STATE ---
   const [dynamicOptions, setDynamicOptions] = useState({ countries: [], levels: [], cities: [] });
@@ -256,12 +266,12 @@ export default function Dashboard() {
     }
   };
 
-  // If agency is known, render a blank screen while redirect fires
-  // This prevents the agency list from flashing before navigation completes
-  if (activeAgency?.id) {
+  // FIX: Show loading spinner while auth is loading
+  if (isLoading) {
     return (
       <View style={{ flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color={COLORS.accent} />
+        <Text style={{ marginTop: moderateScale(12), color: COLORS.textMuted }}>Loading your session...</Text>
       </View>
     );
   }

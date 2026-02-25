@@ -23,6 +23,7 @@ const COLORS = {
     available: '#718096',
     selected: '#38A169',
     disabled: '#A0AEC0',
+    success: '#48BB78',
 };
 
 // MODAL 2: CONFIRMATION SUMMARY
@@ -117,7 +118,6 @@ const SeatingChartModal = ({ visible, onClose, seats, onConfirm, registering, ev
                     type: sData.ticketTypes?.name || 'Standard'
                 }]);
 
-                // Optional: Subtle feedback that a seat was added
                 Toast.show({
                     type: 'success',
                     text1: 'Seat Added',
@@ -159,7 +159,7 @@ const SeatingChartModal = ({ visible, onClose, seats, onConfirm, registering, ev
                         </View>
                         
                         <View style={styles.alreadyRegisteredContainer}>
-                            <Ionicons name="checkmark-circle" size={80} color={COLORS.success || '#48BB78'} />
+                            <Ionicons name="checkmark-circle" size={80} color={COLORS.success} />
                             <Text style={styles.alreadyRegisteredTitle}>You're Already Registered!</Text>
                             <Text style={styles.alreadyRegisteredText}>
                                 You have already registered for this event. You cannot register again.
@@ -254,69 +254,94 @@ export default function EventDetail() {
     const { id, eventImage } = useLocalSearchParams();
     const { userToken } = useAuth();
     const [loading, setLoading] = useState(true);
-    const [checkingRegistration, setCheckingRegistration] = useState(true);
     const [registering, setRegistering] = useState(false);
     const [data, setData] = useState(null);
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [isRegistered, setIsRegistered] = useState(false);
+    const [registrationChecked, setRegistrationChecked] = useState(false);
 
-    // Check if user is already registered for this event
+    // Single useEffect to fetch all data
     useEffect(() => {
-        const checkRegistrationStatus = async () => {
-            if (!userToken || !id) return;
-            
-            setCheckingRegistration(true);
-            try {
-                const response = await fetch(`${Config.API_BASE_URL}/students/events/registration/status/${id}`, {
-                    headers: { 'Authorization': `Bearer ${userToken}` }
-                });
-                
-                if (response.ok) {
-                    const json = await response.json();
-                    setIsRegistered(json.isRegistered || false);
-                }
-            } catch (error) {
-                console.log("Registration check error:", error);
-                // Don't show error to user, just assume not registered
-                setIsRegistered(false);
-            } finally {
-                setCheckingRegistration(false);
-            }
-        };
-
-        checkRegistrationStatus();
+        if (id && userToken) {
+            fetchAllData();
+        }
     }, [id, userToken]);
 
-    useEffect(() => {
-        const fetchDetail = async () => {
-            try {
-                const response = await fetch(`${Config.API_BASE_URL}/agency/events/profile/${id}`, {
-                    headers: { 'Authorization': `Bearer ${userToken}` }
-                });
+    const checkRegistrationStatus = async () => {
+        try {
+            // Since the status endpoint returns 404, we'll try to get registered events instead
+            const response = await fetch(`${Config.API_BASE_URL}/students/events/registered`, {
+                headers: { 'Authorization': `Bearer ${userToken}` }
+            });
+            
+            if (response.ok) {
                 const json = await response.json();
-                if (response.ok && json.event) {
-                    const e = json.event;
+                console.log("Registered events:", json);
+                
+                // Check if current event is in the list of registered events
+                // Adjust this based on your API response structure
+                const registeredEvents = json.events || json.registeredEvents || [];
+                const isEventRegistered = registeredEvents.some(event => 
+                    event._id === id || event.id === id
+                );
+                
+                setIsRegistered(isEventRegistered);
+            }
+        } catch (error) {
+            console.log("Registration check error:", error);
+            setIsRegistered(false);
+        } finally {
+            setRegistrationChecked(true);
+        }
+    };
+
+    const fetchAllData = async () => {
+        try {
+            setLoading(true);
+            setRegistrationChecked(false);
+            console.log("Fetching data for event ID:", id);
+            
+            // Fetch event details
+            const eventResponse = await fetch(`${Config.API_BASE_URL}/agency/events/profile/${id}`, {
+                headers: { 'Authorization': `Bearer ${userToken}` }
+            });
+
+            // Handle event data
+            if (eventResponse.ok) {
+                const eventJson = await eventResponse.json();
+                console.log("Event data received:", eventJson);
+                if (eventJson.event) {
+                    const e = eventJson.event;
                     setData({
-                        id: e._id, title: e.title, subtitle: e.subtitle,
+                        id: e._id, 
+                        title: e.title, 
+                        subtitle: e.subtitle,
                         image: e.bannerImageUrl || eventImage,
-                        startAt: e.startAt, endAt: e.endAt,
+                        startAt: e.startAt, 
+                        endAt: e.endAt,
                         venueName: e.location?.venueName,
                         addressLine: e.location?.addressLine,
-                        description: e.description, about: e.about,
+                        description: e.description, 
+                        about: e.about,
                         whoShouldAttend: e.whoShouldAttend,
                         agenda: e.agendaItems || [],
                         mode: e.meetings?.[0]?.mode || 'offline',
                         seats: e.seats || []
                     });
                 }
-            } catch (error) { 
-                console.log("Fetch Error:", error); 
-            } finally { 
-                setLoading(false); 
             }
-        };
-        fetchDetail();
-    }, [id]);
+
+            // Check registration status
+            await checkRegistrationStatus();
+
+        } catch (error) { 
+            console.log("Fetch Error:", error);
+            setIsRegistered(false);
+            setRegistrationChecked(true);
+        } finally { 
+            setLoading(false); 
+        }
+    };
 
     const formatDateTime = (dateString) => {
         if (!dateString) return { date: "TBA", time: "", day: "" };
@@ -341,8 +366,10 @@ export default function EventDetail() {
             });
 
             const result = await res.json();
+            console.log("Registration result:", result);
+            
             if (res.ok) {
-                setIsRegistered(true); // Update registration status
+                setIsRegistered(true);
                 Toast.show({
                     type: 'success',
                     text1: 'Registration Successful!',
@@ -350,20 +377,30 @@ export default function EventDetail() {
                     visibilityTime: 2000
                 });
 
-                // Smooth transition: close modal and go back after toast shows
                 setTimeout(() => {
                     setIsModalVisible(false);
                     router.back();
                 }, 2100);
-
             } else {
-                Toast.show({
-                    type: 'error',
-                    text1: 'Registration Failed',
-                    text2: result.message || "Something went wrong."
-                });
+                // If it says already registered, update the state
+                if (result.message === "Already registered") {
+                    setIsRegistered(true);
+                    Toast.show({
+                        type: 'info',
+                        text1: 'Already Registered',
+                        text2: 'You have already registered for this event.',
+                        visibilityTime: 2000
+                    });
+                } else {
+                    Toast.show({
+                        type: 'error',
+                        text1: 'Registration Failed',
+                        text2: result.message || "Something went wrong."
+                    });
+                }
             }
         } catch (e) {
+            console.log("Registration error:", e);
             Toast.show({
                 type: 'error',
                 text1: 'Server Error',
@@ -375,8 +412,9 @@ export default function EventDetail() {
     };
 
     const handleRegisterPress = () => {
+        console.log("Register pressed. isRegistered:", isRegistered);
+        
         if (isRegistered) {
-            // Show already registered message
             Toast.show({
                 type: 'info',
                 text1: 'Already Registered',
@@ -386,14 +424,14 @@ export default function EventDetail() {
             return;
         }
         
-        if (data.mode === 'seated') {
+        if (data?.mode === 'seated') {
             setIsModalVisible(true);
         } else {
             handleConfirmRegistration();
         }
     };
 
-    if (loading || checkingRegistration || !data) {
+    if (loading || !data || !registrationChecked) {
         return (
             <View style={styles.center}>
                 <ActivityIndicator size="large" color={COLORS.primary} />
@@ -402,21 +440,19 @@ export default function EventDetail() {
         );
     }
 
+    console.log("Rendering with isRegistered:", isRegistered);
+
     const startInfo = formatDateTime(data.startAt);
     const endInfo = formatDateTime(data.endAt);
-
-    // Determine button state
-    const isButtonDisabled = isRegistered || registering;
-    const buttonText = isRegistered 
-        ? 'Already Registered' 
-        : (data.mode === 'seated' ? 'Select Seats & Register' : 'Register for Event');
 
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()}><Ionicons name="chevron-back" size={24} color="#FFF" /></TouchableOpacity>
                 <Text style={styles.headerTitle}>Event Details</Text>
-                <View style={{ width: 24 }} />
+                <TouchableOpacity onPress={fetchAllData}>
+                    <Ionicons name="refresh" size={22} color="#FFF" />
+                </TouchableOpacity>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false}>
@@ -437,7 +473,7 @@ export default function EventDetail() {
                         </View>
                         {data.mode !== 'online' && (
                             <View style={styles.infoCard}>
-                                <View style={[styles.infoIcon, { backgroundColor: '#F0FFF4' }]}><Feather name="map-pin" size={18} color="#48BB78" /></View>
+                                <View style={[styles.infoIcon, { backgroundColor: '#F0FFF4' }]}><Feather name="map-pin" size={18} color={COLORS.success} /></View>
                                 <View><Text style={styles.infoLabel}>LOCATION</Text><Text style={styles.infoValue}>{data.venueName}</Text><Text style={styles.infoSub}>{data.addressLine}</Text></View>
                             </View>
                         )}
@@ -459,10 +495,9 @@ export default function EventDetail() {
                         </View>
                     )}
                     
-                    {/* Show registration status badge if registered */}
                     {isRegistered && (
                         <View style={styles.registeredBadge}>
-                            <Ionicons name="checkmark-circle" size={20} color="#48BB78" />
+                            <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
                             <Text style={styles.registeredBadgeText}>You have registered for this event</Text>
                         </View>
                     )}
@@ -484,14 +519,23 @@ export default function EventDetail() {
 
             <View style={styles.stickyFooter}>
                 <TouchableOpacity
-                    style={[styles.mainBtn, isButtonDisabled && styles.disabledBtn]}
+                    style={[
+                        styles.mainBtn, 
+                        { backgroundColor: isRegistered ? COLORS.disabled : COLORS.primary },
+                        (isRegistered || registering) && styles.disabledBtn
+                    ]}
                     onPress={handleRegisterPress}
-                    disabled={isButtonDisabled}
+                    disabled={isRegistered || registering}
                 >
                     {registering ? (
                         <ActivityIndicator color="#FFF" />
                     ) : (
-                        <Text style={styles.mainBtnText}>{buttonText}</Text>
+                        <Text style={styles.mainBtnText}>
+                            {isRegistered 
+                                ? 'Already Registered' 
+                                : (data.mode === 'seated' ? 'Select Seats & Register' : 'Register for Event')
+                            }
+                        </Text>
                     )}
                 </TouchableOpacity>
             </View>
@@ -523,8 +567,8 @@ const styles = StyleSheet.create({
     agendaRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
     agendaDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.primary, marginRight: 10 },
     stickyFooter: { position: 'absolute', bottom: 0, width: '100%', padding: 20, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: COLORS.border },
-    mainBtn: { backgroundColor: COLORS.primary, height: 50, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-    disabledBtn: { backgroundColor: COLORS.disabled, opacity: 0.7 },
+    mainBtn: { height: 50, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+    disabledBtn: { opacity: 0.7 },
     mainBtnText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
     registeredBadge: { 
         flexDirection: 'row', 
@@ -543,7 +587,7 @@ const styles = StyleSheet.create({
         fontWeight: '500'
     },
     
-    // Modal Styles
+    // Modal Styles (keep all existing modal styles)
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
     modalContent: { backgroundColor: '#FFF', height: '85%', borderTopLeftRadius: 30, borderTopRightRadius: 30 },
     modalHeader: { flexDirection: 'row', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#F0F0F0', justifyContent: 'space-between' },

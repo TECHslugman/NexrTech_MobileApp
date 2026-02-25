@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -9,7 +9,7 @@ import {
     ActivityIndicator,
     StatusBar,
 } from 'react-native';
-import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router'; // Remove useFocusEffect
 import Toast from 'react-native-toast-message';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
@@ -39,69 +39,81 @@ export default function CourseDetail() {
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [courseData, setCourseData] = useState(null);
-    // ✅ null = not yet checked, true = selected, false = not selected
-    const [isAlreadySelected, setIsAlreadySelected] = useState(null);
+    const [isAlreadySelected, setIsAlreadySelected] = useState(false); // Start with false instead of null
 
-    // ✅ useFocusEffect fires every time this screen comes into focus
-    useFocusEffect(
-        useCallback(() => {
-            const fetchCourseAndStatus = async () => {
-                try {
-                    setLoading(true);
-                    setIsAlreadySelected(null); // Reset to checking state on each focus
+    // Use useEffect like the mentor example - FIXED: changed 'id' to 'courseId'
+    useEffect(() => {
+        if (courseId) {
+            fetchAllData();
+        }
+    }, [courseId]); // Only re-run if courseId changes
 
-                    const [courseRes, profileRes] = await Promise.all([
-                        fetch(`${Config.API_BASE_URL}/agency/courses/${courseId}`, {
-                            headers: {
-                                'Authorization': `Bearer ${userToken}`,
-                                'Content-Type': 'application/json',
-                            },
-                        }),
-                        fetch(`${Config.API_BASE_URL}/students/profile`, {
-                            headers: {
-                                'Authorization': `Bearer ${userToken}`,
-                                'Content-Type': 'application/json',
-                            },
-                        }),
-                    ]);
+    const fetchAllData = async () => {
+        try {
+            setLoading(true);
+            
+            // 1. Fetch Course Details
+            const courseRes = await fetch(`${Config.API_BASE_URL}/agency/courses/${courseId}`, {
+                headers: {
+                    'Authorization': `Bearer ${userToken}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+            
+            // 2. Fetch Student Profile
+            const profileRes = await fetch(`${Config.API_BASE_URL}/students/profile`, {
+                headers: {
+                    'Authorization': `Bearer ${userToken}`,
+                    'Content-Type': 'application/json',
+                },
+            });
 
-                    if (courseRes.ok) {
-                        const courseJson = await courseRes.json();
-                        setCourseData(courseJson.course || getFallbackData());
-                    } else {
-                        setCourseData(getFallbackData());
-                    }
-                   
-                    if (profileRes.ok) {
-                        const profileJson = await profileRes.json();
-                        const selectedCourseId =
-                            profileJson.selectedCourse ||
-                            profileJson.data?.selectedCourse;
-
-                        const isThisCourseSelected =
-                            selectedCourseId &&
-                            String(selectedCourseId) === String(courseId);
-
-                        // ✅ Server is always the source of truth
-                        setIsAlreadySelected(!!isThisCourseSelected);
-                    } else {
-                        setIsAlreadySelected(false);
-                    }
-                } catch (error) {
-                    setCourseData(getFallbackData());
-                    setIsAlreadySelected(false);
-                } finally {
-                    setLoading(false);
-                }
-            };
-
-            if (userToken) {
-                fetchCourseAndStatus();
+            // Handle course data
+            if (courseRes.ok) {
+                const courseJson = await courseRes.json();
+                setCourseData(courseJson.course || getFallbackData());
+            } else {
+                setCourseData(getFallbackData());
             }
-        }, [courseId, userToken])
-    );
+           
+            // Handle profile data - exactly like mentor example logic
+            if (profileRes.ok) {
+                const profileJson = await profileRes.json();
+                // Get selected course - adjust based on your API response structure
+                const selectedCourseId = profileJson.selectedCourse || 
+                                        profileJson.data?.selectedCourse ||
+                                        profileJson.profile?.selectedCourse;
+                
+                // Logic: Block if student has any selected course
+                if (selectedCourseId) {
+                    if (String(selectedCourseId) === String(courseId)) {
+                        // This specific course is selected
+                        setIsAlreadySelected(true);
+                    } else {
+                        // Another course is selected
+                        setIsAlreadySelected(true); // Still true because they have SOME course selected
+                    }
+                } else {
+                    // No course selected at all
+                    setIsAlreadySelected(false);
+                }
+            } else {
+                // Profile fetch failed, assume not selected
+                setIsAlreadySelected(false);
+            }
+        } catch (error) {
+            console.error("Fetch Error:", error);
+            setCourseData(getFallbackData());
+            setIsAlreadySelected(false);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleApplyNow = async () => {
+        // Don't allow if already has a selected course
+        if (isAlreadySelected) return;
+
         try {
             setSubmitting(true);
             const response = await fetch(
@@ -182,6 +194,31 @@ export default function CourseDetail() {
         return `${courseData.intakes} seats available`;
     };
 
+    // Helper function to determine button state - like getButtonConfig in mentor example
+    const getButtonConfig = () => {
+        if (courseData?.status !== 'open') {
+            return { 
+                text: 'APPLICATIONS CLOSED', 
+                disabled: true,
+                color: COLORS.textSecondary 
+            };
+        }
+        
+        if (isAlreadySelected) {
+            return { 
+                text: 'APPLICATION IN PROGRESS', 
+                disabled: true,
+                color: COLORS.textSecondary 
+            };
+        }
+        
+        return { 
+            text: 'APPLY NOW', 
+            disabled: false,
+            color: COLORS.primaryBlue 
+        };
+    };
+
     if (loading) {
         return (
             <View style={[styles.center, { paddingTop: insets.top }]}>
@@ -190,6 +227,8 @@ export default function CourseDetail() {
             </View>
         );
     }
+
+    const buttonConfig = getButtonConfig();
 
     return (
         <View style={[styles.container, { backgroundColor: COLORS.bg }]}>
@@ -341,25 +380,27 @@ export default function CourseDetail() {
                 <TouchableOpacity
                     style={[
                         styles.applyButton,
-                        (courseData.status !== 'open' || submitting || isAlreadySelected === null || isAlreadySelected) &&
-                            styles.applyButtonDisabled,
+                        { backgroundColor: buttonConfig.color },
+                        buttonConfig.disabled && styles.applyButtonDisabled,
                     ]}
-                    disabled={courseData.status !== 'open' || submitting || isAlreadySelected === null || isAlreadySelected}
+                    disabled={buttonConfig.disabled || submitting}
                     onPress={handleApplyNow}
                 >
-                    {/*  Show spinner while checking OR while submitting */}
-                    {submitting || isAlreadySelected === null ? (
+                    {submitting ? (
                         <ActivityIndicator color="#FFF" />
                     ) : (
                         <Text style={styles.applyText}>
-                            {isAlreadySelected
-                                ? 'APPLICATION IN PROGRESS'
-                                : courseData.status === 'open'
-                                ? 'APPLY NOW'
-                                : 'APPLICATIONS CLOSED'}
+                            {buttonConfig.text}
                         </Text>
                     )}
                 </TouchableOpacity>
+                
+                {/* Show message if another course is selected - like blockedText in mentor example */}
+                {isAlreadySelected && courseData?.status === 'open' && (
+                    <Text style={styles.blockedText}>
+                        You already have an active course application.
+                    </Text>
+                )}
             </View>
         </View>
     );
@@ -395,14 +436,9 @@ const styles = StyleSheet.create({
     universityInfo: { alignItems: 'center' },
     universityName: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 8, textAlign: 'center' },
     universityNote: { fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 20 },
-    trackerLinkContainer: { paddingHorizontal: 20, marginBottom: 10 },
-    trackerBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#EBF2FA', padding: 15, borderRadius: 16, borderWidth: 1, borderColor: '#D0E1F5' },
-    trackerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    trackerIconCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center' },
-    trackerTitle: { fontSize: 14, fontWeight: '700', color: COLORS.textPrimary },
-    trackerSub: { fontSize: 12, color: COLORS.primaryBlue, fontWeight: '500', marginTop: 2 },
     bottomBar: { padding: 20, backgroundColor: COLORS.bg, borderTopWidth: 1, borderTopColor: COLORS.border },
-    applyButton: { backgroundColor: COLORS.primaryBlue, height: 55, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 5 },
-    applyButtonDisabled: { backgroundColor: COLORS.textSecondary },
+    applyButton: { height: 55, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 5 },
+    applyButtonDisabled: { opacity: 0.7 },
     applyText: { color: '#FFF', fontWeight: 'bold', fontSize: 15, letterSpacing: 1 },
+    blockedText: { textAlign: 'center', color: COLORS.textSecondary, marginTop: 10, fontSize: 12 },
 });

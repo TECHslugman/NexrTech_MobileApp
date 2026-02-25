@@ -1,5 +1,5 @@
 // app/_layout.tsx
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Slot, useRouter, useSegments } from "expo-router";
 import { View, ActivityIndicator, Text, StyleSheet, Platform, Alert } from "react-native";
 import { AuthProvider, useAuth } from "./context/AuthContext";
@@ -58,10 +58,18 @@ const toastConfig = {
 };
 
 function RootLayoutNav() {
-  // ← also pull activeAgency from context
   const { userToken, isLoading, activeAgency } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  const hasRedirected = useRef(false);
+  const isMounted = useRef(true);
+  const [authVersion, setAuthVersion] = useState(0);
+
+  // Force re-render when auth state changes
+  useEffect(() => {
+    setAuthVersion(v => v + 1);
+    console.log('[LAYOUT] Auth state changed, version:', authVersion + 1);
+  }, [userToken, activeAgency]);
 
   const notificationListener = useRef<Notifications.EventSubscription | null>(null);
   const responseListener = useRef<Notifications.EventSubscription | null>(null);
@@ -115,43 +123,124 @@ function RootLayoutNav() {
     });
 
     return () => {
+      isMounted.current = false;
       if (notificationListener.current) notificationListener.current.remove();
       if (responseListener.current) responseListener.current.remove();
     };
   }, [userToken]);
 
+  // Reset hasRedirected when userToken becomes null (logout)
   useEffect(() => {
-    // Wait until auth + agency are fully resolved before making any routing decision
-    if (isLoading) return;
-
-    const inAuthGroup = (segments as string[]).includes("auth");
-    console.log('[LAYOUT] routing effect fired — userToken:', userToken ? '✅' : '❌', '| activeAgency:', activeAgency?.name ?? 'null', '| inAuthGroup:', inAuthGroup);
-
     if (!userToken) {
-      // Not logged in — send to auth
-      if (!inAuthGroup) router.replace("/auth/register");
-      return;
+      console.log('[LAYOUT] User logged out, resetting redirect flag');
+      hasRedirected.current = false;
     }
+  }, [userToken]);
 
-    // Logged in but still on an auth screen — redirect into the app
-    if (inAuthGroup) {
-      if (activeAgency?.id) {
-        // Student already has an agency — go straight to their home
+// MAIN ROUTING LOGIC - Runs on every render
+useEffect(() => {
+  // Log the trigger
+  console.log('[LAYOUT] Effect triggered with userToken:', userToken);
+
+  // Don't do anything if component unmounted
+  if (!isMounted.current) return;
+
+  // Don't do anything while auth is loading
+  if (isLoading) {
+    console.log('[LAYOUT] Auth is loading, waiting...');
+    return;
+  }
+
+  const inAuthGroup = (segments as string[]).includes("auth");
+  const currentPath = segments.join('/');
+  
+  console.log('[LAYOUT] ===== ROUTING DECISION =====');
+  console.log('[LAYOUT] userToken:', userToken ? '✅' : '❌');
+  console.log('[LAYOUT] activeAgency:', activeAgency ? JSON.stringify(activeAgency) : 'null');
+  console.log('[LAYOUT] hasRedirected:', hasRedirected.current);
+  console.log('[LAYOUT] inAuthGroup:', inAuthGroup);
+  console.log('[LAYOUT] current path:', currentPath);
+  console.log('[LAYOUT] authVersion:', authVersion);
+  console.log('[LAYOUT] ============================');
+
+  // CASE 1: NOT LOGGED IN - ALWAYS redirect to auth if not already there
+  if (!userToken) {
+    if (!inAuthGroup) {
+      console.log('[LAYOUT] No token, redirecting to auth');
+      hasRedirected.current = true;
+      setTimeout(() => {
+        if (isMounted.current) {
+          router.replace("/auth/register");
+        }
+      }, 100);
+    }
+    return;
+  }
+
+  // CASE 2: LOGGED IN BUT ON AUTH SCREEN
+  if (inAuthGroup && !hasRedirected.current) {
+    if (activeAgency?.id) {
+      console.log('[LAYOUT] Logged in with agency on auth screen, going to home');
+      hasRedirected.current = true;
+      setTimeout(() => {
+        if (isMounted.current) {
+          router.replace({
+            pathname: `/agency/selected/${activeAgency.id}` as any,
+            params: { name: activeAgency.name, agencyLogo: activeAgency.logo },
+          });
+        }
+      }, 100);
+    } else {
+      console.log('[LAYOUT] Logged in without agency on auth screen, going to decision');
+      hasRedirected.current = true;
+      setTimeout(() => {
+        if (isMounted.current) {
+          router.replace("/(app)/decision");
+        }
+      }, 100);
+    }
+    return;
+  }
+
+  // CASE 3: LOGGED IN AND TRYING TO ACCESS DECISION PAGE WITH AGENCY
+  if (currentPath.includes('decision') && activeAgency?.id && !hasRedirected.current) {
+    console.log('[LAYOUT] On decision page but have agency, redirecting to home');
+    hasRedirected.current = true;
+    setTimeout(() => {
+      if (isMounted.current) {
         router.replace({
           pathname: `/agency/selected/${activeAgency.id}` as any,
           params: { name: activeAgency.name, agencyLogo: activeAgency.logo },
         });
-      } else {
-        // New user or no agency selected yet — go to decision page
-        router.replace("/(app)/decision");
       }
-    }
-  }, [userToken, isLoading, activeAgency, segments]);
+    }, 100);
+    return;
+  }
 
+  // CASE 4: LOGGED IN AND IN APP - all good
+  console.log('[LAYOUT] Logged in and in app, no redirect needed');
+  
+}, [userToken, isLoading, activeAgency, segments, authVersion]);
+
+  // Show loading spinner while auth is loading
   if (isLoading) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#F7FAFC" }}>
+        <View style={{
+          width: 80,
+          height: 80,
+          borderRadius: 40,
+          backgroundColor: '#769FCD',
+          justifyContent: 'center',
+          alignItems: 'center',
+          marginBottom: 20,
+        }}>
+          <Text style={{ fontSize: 40, color: '#FFF' }}>🎓</Text>
+        </View>
         <ActivityIndicator size="large" color="#769FCD" />
+        <Text style={{ marginTop: 16, color: '#718096', fontSize: 16 }}>
+          Loading your session...
+        </Text>
       </View>
     );
   }

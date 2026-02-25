@@ -73,6 +73,14 @@ class SocketService {
 
         this._bindCoreEvents();
         this._reattachEventListeners();
+        
+        // Immediately request conversation list after connection
+        setTimeout(() => {
+            if (this.socket?.connected) {
+                console.log("📤 Requesting conversation list after connection");
+                this.socket.emit("conversation_list");
+            }
+        }, 500);
     }
 
     _reattachEventListeners() {
@@ -89,6 +97,9 @@ class SocketService {
             this.isConnecting      = false;
             this.reconnectAttempts = 0;
             this._broadcastConn(true);
+            
+            // Request conversation list on reconnect
+            this.socket.emit("conversation_list");
         });
 
         this.socket.on("connect_error", (err) => {
@@ -291,6 +302,8 @@ class SocketService {
     onMessageDeleted(cb)       { return this._registerListener("message_deleted",       cb); }
     onUserTyping(cb)           { return this._registerListener("user_typing",           cb); }
     onUserStoppedTyping(cb)    { return this._registerListener("user_stopped_typing",   cb); }
+    // NEW: Message status updated event (seen, delivered)
+    onMessageStatusUpdated(cb) { return this._registerListener("message_status_updated", cb); }
 
     // ═══════════════════════════════════════════════════════
     //  CONNECTION-STATE SUBSCRIPTION

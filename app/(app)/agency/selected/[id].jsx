@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
     FlatList, Image, useWindowDimensions, ActivityIndicator, StatusBar, Linking,
-    RefreshControl  // Add this import
+    RefreshControl, Alert  // Add Alert here
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -73,10 +73,11 @@ export default function SelectedAgencyHome() {
     const router = useRouter();
     const { width } = useWindowDimensions();
     const { id, name, agencyLogo } = useLocalSearchParams();
-    const { userToken, setActiveAgency } = useAuth();
+    const { userToken, setActiveAgency, refreshUserProfile } = useAuth(); // Add refreshUserProfile
 
     const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false); // Add refreshing state
+    const [refreshing, setRefreshing] = useState(false);
+    const [verifying, setVerifying] = useState(false); // Add verifying state
     const [notificationCount, setNotificationCount] = useState(0);
     const [agencyData, setAgencyData] = useState(null);
     const [courses, setCourses] = useState([]);
@@ -94,10 +95,114 @@ export default function SelectedAgencyHome() {
         event.title?.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
+    // ============= ADD VERIFICATION FUNCTION =============
+    const verifyAgencyWithBackend = async () => {
+        if (!userToken || !id) return false;
+
+        setVerifying(true);
+        try {
+            console.log('[VERIFY] Checking if agency is registered in backend...');
+            const response = await fetch(`${Config.API_BASE_URL}/students/profile`, {
+                headers: {
+                    'Authorization': `Bearer ${userToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                console.log('[VERIFY] Profile fetch failed:', response.status);
+                return false;
+            }
+
+            const data = await response.json();
+            console.log('[VERIFY] Profile data:', data);
+
+            // FIX: Access registeredAgency from data.profile
+            const backendAgencyId = data.profile?.registeredAgency;
+            console.log('[VERIFY] registeredAgency from API:', backendAgencyId);
+
+            if (!backendAgencyId) {
+                console.log('[VERIFY] ❌ No agency registered in backend!');
+                Alert.alert(
+                    'Agency Not Registered',
+                    'Your agency selection was not saved on the server. Please select your agency again.',
+                    [
+                        {
+                            text: 'Go to Agency Selection',
+                            onPress: () => {
+                                router.replace('/(app)/decision');
+                            }
+                        }
+                    ]
+                );
+                return false;
+            }
+
+            if (backendAgencyId !== id) {
+                console.log('[VERIFY] ❌ Agency mismatch! Backend has different agency:', backendAgencyId);
+                console.log('[VERIFY] Current agency ID:', id);
+
+                // Fetch the correct agency details
+                try {
+                    const agencyRes = await fetch(`${Config.API_BASE_URL}/agency/profile/${backendAgencyId}`, {
+                        headers: {
+                            'Authorization': `Bearer ${userToken}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    if (agencyRes.ok) {
+                        const agencyData = await agencyRes.json();
+                        const fullProfile = agencyData.agency || agencyData.profile || agencyData;
+
+                        // Update context with correct agency
+                        await setActiveAgency({
+                            id: backendAgencyId,
+                            name: fullProfile.organizationName || 'Your Agency',
+                            logo: fullProfile.logo || '',
+                        });
+
+                        Alert.alert(
+                            'Agency Mismatch',
+                            `You were redirected to the wrong agency. Taking you to your registered agency: ${fullProfile.organizationName || 'Your Agency'}`,
+                            [
+                                {
+                                    text: 'Go to Correct Agency',
+                                    onPress: () => {
+                                        router.replace({
+                                            pathname: `/agency/selected/${backendAgencyId}`,
+                                            params: {
+                                                name: fullProfile.organizationName,
+                                                agencyLogo: fullProfile.logo
+                                            }
+                                        });
+                                    }
+                                }
+                            ]
+                        );
+                    }
+                } catch (error) {
+                    console.error('[VERIFY] Error fetching correct agency:', error);
+                }
+                return false;
+            }
+
+            console.log('[VERIFY] ✅ Agency verified with backend!');
+            return true;
+
+        } catch (error) {
+            console.error('[VERIFY] Error verifying agency:', error);
+            return false;
+        } finally {
+            setVerifying(false);
+        }
+    };
+    // ============= END VERIFICATION FUNCTION =============
+
     // Separate fetch function to be reused
     const fetchAllData = async (isRefreshing = false) => {
         if (!userToken || !id) return;
-        
+
         if (!isRefreshing) {
             setLoading(true);
         }
@@ -150,7 +255,7 @@ export default function SelectedAgencyHome() {
                 setActiveAgency({
                     id: id,
                     name: profile.organizationName || profile.name || "Agency",
-                    logo: profile.profileUrl|| agencyLogo
+                    logo: profile.profileUrl || agencyLogo
                 });
             }
 
@@ -225,7 +330,7 @@ export default function SelectedAgencyHome() {
                         : "Professional mentor for higher education"
                 }));
                 setMentors(formattedMentors);
-                
+
             }
 
             // 7. Notification Count
@@ -244,16 +349,30 @@ export default function SelectedAgencyHome() {
             console.error("❌ FetchAllData Error:", error);
         } finally {
             setLoading(false);
-            setRefreshing(false); // Stop refreshing
+            setRefreshing(false);
         }
     };
 
     useFocusEffect(
         React.useCallback(() => {
             fetchAllData(false);
-            return () => {};
+            return () => { };
         }, [id, userToken])
     );
+
+    // ============= ADD VERIFICATION ON LOAD =============
+    useEffect(() => {
+        // Wait for initial load to complete
+        if (!loading && userToken && id) {
+            // Small delay to let everything settle
+            const timer = setTimeout(() => {
+                verifyAgencyWithBackend();
+            }, 1500);
+
+            return () => clearTimeout(timer);
+        }
+    }, [loading, userToken, id]);
+    // ============= END VERIFICATION ON LOAD =============
 
     // Add refresh handler
     const onRefresh = React.useCallback(() => {
@@ -281,6 +400,15 @@ export default function SelectedAgencyHome() {
     return (
         <SafeAreaView style={styles.safe} edges={['top']}>
             <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
+
+            {/* ============= ADD VERIFICATION BANNER ============= */}
+            {verifying && (
+                <View style={styles.verificationBanner}>
+                    <ActivityIndicator size="small" color={COLORS.white} />
+                    <Text style={styles.verificationText}>Verifying agency with server...</Text>
+                </View>
+            )}
+            {/* ============= END VERIFICATION BANNER ============= */}
 
             {/* HEADER */}
             <View style={styles.header}>
@@ -959,12 +1087,12 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: COLORS.border,
         overflow: 'hidden',
-        padding: 0,  
+        padding: 0,
     },
     uniImg: {
         width: '100%',
         height: '100%',
-        resizeMode: 'cover',  
+        resizeMode: 'cover',
     },
     uniPlaceholder: {
         width: '100%',
@@ -1025,4 +1153,21 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '500',
     },
+
+    // ============= ADD VERIFICATION BANNER STYLES =============
+    verificationBanner: {
+        backgroundColor: COLORS.primary,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: SPACING.sm,
+        paddingHorizontal: SPACING.lg,
+        gap: SPACING.sm,
+    },
+    verificationText: {
+        color: COLORS.white,
+        fontSize: 13,
+        fontWeight: '600',
+    },
+    // ============= END VERIFICATION BANNER STYLES =============
 });

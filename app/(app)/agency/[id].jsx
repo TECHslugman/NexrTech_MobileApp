@@ -154,6 +154,10 @@ export default function AgencyDetails() {
 
         try {
             setSelecting(true);
+            console.log('[AGENCY_SELECT] ========== STARTING AGENCY SELECTION ==========');
+            console.log('[AGENCY_SELECT] Agency ID:', id);
+            console.log('[AGENCY_SELECT] Agency Name:', agencyData?.name || paramName);
+
             const response = await fetch(`${Config.API_BASE_URL}/students/select-agency`, {
                 method: 'POST',
                 headers: {
@@ -163,9 +167,25 @@ export default function AgencyDetails() {
                 body: JSON.stringify({ agencyId: id })
             });
 
-            const json = await response.json();
+            console.log('[AGENCY_SELECT] Response status:', response.status);
+            const responseText = await response.text();
+            console.log('[AGENCY_SELECT] Raw response:', responseText);
+
+            let json;
+            try {
+                json = JSON.parse(responseText);
+            } catch (e) {
+                console.error('[AGENCY_SELECT] Failed to parse response:', e);
+                Toast.show({
+                    type: 'error',
+                    text1: 'Server Error',
+                    text2: 'Invalid response from server'
+                });
+                return;
+            }
 
             if (!response.ok) {
+                console.error('[AGENCY_SELECT] Server error:', json);
                 Toast.show({
                     type: 'error',
                     text1: 'Server Error',
@@ -174,12 +194,43 @@ export default function AgencyDetails() {
                 return;
             }
 
-            // Lock the student into this agency — persisted to SecureStore
-            await setActiveAgency({
+            console.log('[AGENCY_SELECT] Selection API Success!');
+
+            // CRITICAL: Wait a moment for backend to update
+            console.log('[AGENCY_SELECT] Waiting 1 second for backend to update...');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // Verify the profile was updated
+            console.log('[AGENCY_SELECT] Verifying profile update...');
+            const profileRes = await fetch(`${Config.API_BASE_URL}/students/profile`, {
+                headers: {
+                    'Authorization': `Bearer ${userToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (profileRes.ok) {
+                const profileData = await profileRes.json();
+                console.log('[AGENCY_SELECT] Profile after selection:', profileData);
+                // FIX: Access registeredAgency from profileData.profile
+                const registeredAgency = profileData.profile?.registeredAgency;
+                console.log('[AGENCY_SELECT] registeredAgency after selection:', registeredAgency);
+
+                if (registeredAgency !== id) {
+                    console.warn('[AGENCY_SELECT] ❌ registeredAgency mismatch! Expected:', id, 'Got:', registeredAgency);
+                } else {
+                    console.log('[AGENCY_SELECT] ✅ registeredAgency verified!');
+                }
+            }
+            // Set the agency in context
+            const selectedAgency = {
                 id: String(id),
                 name: agencyData?.name || paramName || '',
                 logo: agencyData?.imageUri || '',
-            });
+            };
+
+            console.log('[AGENCY_SELECT] Setting active agency:', selectedAgency);
+            await setActiveAgency(selectedAgency);
 
             Toast.show({
                 type: 'success',
@@ -187,15 +238,17 @@ export default function AgencyDetails() {
                 text2: `Welcome to ${agencyData?.name || 'the agency'}!`
             });
 
-            setTimeout(() => {
-                router.replace({
-                    pathname: `/agency/selected/${id}`,
-                    params: { name: agencyData?.name, agencyLogo: agencyData?.imageUri }
-                });
-            }, 500);
+            console.log('[AGENCY_SELECT] Navigating to agency home...');
+            router.replace({
+                pathname: `/agency/selected/${id}`,
+                params: {
+                    name: agencyData?.name,
+                    agencyLogo: agencyData?.imageUri
+                }
+            });
 
         } catch (error) {
-            console.error("Network Error:", error);
+            console.error("[AGENCY_SELECT] Network Error:", error);
             Toast.show({
                 type: 'error',
                 text1: 'Connection Error',

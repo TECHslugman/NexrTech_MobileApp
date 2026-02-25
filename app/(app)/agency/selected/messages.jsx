@@ -135,7 +135,12 @@ function formatConversation(raw, myId) {
     let timestamp   = raw.updatedAt || raw.createdAt || new Date().toISOString();
 
     if (raw.lastMessage) {
-        lastMessage = raw.lastMessage.content || lastMessage;
+        // Check if message is deleted
+        if (raw.lastMessage.isDeleted) {
+            lastMessage = 'This message was deleted';
+        } else {
+            lastMessage = raw.lastMessage.content || lastMessage;
+        }
         timestamp   = raw.lastMessage.createdAt || timestamp;
     }
 
@@ -150,6 +155,7 @@ function formatConversation(raw, myId) {
         lastMessage,
         timestamp,
         unreadCount:    raw.unreadCount || 0,
+        lastMessageDeleted: raw.lastMessage?.isDeleted || false,
     };
 }
 
@@ -299,6 +305,8 @@ export default function MessagesScreen() {
 
     const mountedRef  = useRef(false);
     const fetchingRef = useRef(false);
+    // Track which conversations have been opened to reset unread count
+    const openedConversationsRef = useRef(new Set());
 
     // ── Refresh from cache ──
     const refreshFromCache = useCallback(() => {
@@ -410,6 +418,7 @@ export default function MessagesScreen() {
                         lastMessage:    msg.content   || '',
                         timestamp:      msg.createdAt || new Date().toISOString(),
                         unreadCount:    1,
+                        lastMessageDeleted: false,
                     };
 
                     const next  = [newConv, ...prev];
@@ -423,6 +432,7 @@ export default function MessagesScreen() {
                     lastMessage: msg.content   || updated[idx].lastMessage,
                     timestamp:   msg.createdAt || new Date().toISOString(),
                     unreadCount: (updated[idx].unreadCount || 0) + 1,
+                    lastMessageDeleted: false,
                 };
 
                 const [moved] = updated.splice(idx, 1);
@@ -451,7 +461,8 @@ export default function MessagesScreen() {
                         ...updated[idx],
                         lastMessage: msg.content   || updated[idx].lastMessage,
                         timestamp:   msg.createdAt || new Date().toISOString(),
-                        unreadCount: 0,
+                        unreadCount: 0, // Reset unread count for own messages
+                        lastMessageDeleted: false,
                     };
 
                     const [moved] = updated.splice(idx, 1);
@@ -475,6 +486,7 @@ export default function MessagesScreen() {
                     lastMessage:    msg.content   || '',
                     timestamp:      msg.createdAt || new Date().toISOString(),
                     unreadCount:    0,
+                    lastMessageDeleted: false,
                 };
 
                 const next  = [newConv, ...prev];
@@ -493,12 +505,19 @@ export default function MessagesScreen() {
                 const idx = prev.findIndex(c => c.conversationId === updId);
                 if (idx === -1) return prev;
 
+                // Check if last message is deleted
+                const isDeleted = upd.lastMessage?.isDeleted || false;
+                const lastMessage = isDeleted 
+                    ? 'This message was deleted' 
+                    : (upd.lastMessage?.content || prev[idx].lastMessage);
+
                 const updated = [...prev];
                 updated[idx]  = {
                     ...updated[idx],
-                    lastMessage: upd.lastMessage?.content  || updated[idx].lastMessage,
+                    lastMessage,
                     timestamp:   upd.lastMessage?.createdAt || updated[idx].timestamp,
                     unreadCount: upd.unreadCount ?? updated[idx].unreadCount,
+                    lastMessageDeleted: isDeleted,
                 };
 
                 const sorted = [...updated].sort(
@@ -507,6 +526,88 @@ export default function MessagesScreen() {
 
                 _builtConvs = sorted;
                 return sorted;
+            });
+        });
+
+        // FIX: Handle message deleted event for conversations list
+        const unsubDeleted = socketService.onMessageDeleted(data => {
+            if (!mountedRef.current) return;
+            
+            const msgId = String(data.messageId || '');
+            const convId = String(data.conversationId || '');
+            const deleteFor = data.deleteFor || 'me';
+            
+            console.log(`📥 message_deleted for conv: ${convId}, deleteFor: ${deleteFor}`);
+            
+            // Update the conversation in the list to show deleted message
+            setConversations(prev => {
+                const idx = prev.findIndex(c => c.conversationId === convId);
+                if (idx === -1) return prev;
+                
+                const updated = [...prev];
+                
+                // If deleted for everyone, update the last message to show "This message was deleted"
+                if (deleteFor === 'everyone') {
+                    updated[idx] = {
+                        ...updated[idx],
+                        lastMessage: 'This message was deleted',
+                        lastMessageDeleted: true,
+                    };
+                } else {
+                    // For "delete for me", we need to check if this was the last message
+                    // If it was, we might want to show a different message or fetch updated conversation
+                    // For now, trigger a refresh
+                    setTimeout(() => {
+                        if (mountedRef.current) {
+                            socketService.socket?.emit("conversation_list");
+                        }
+                    }, 500);
+                }
+                
+                // Sort again to ensure correct order
+                const sorted = [...updated].sort(
+                    (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
+                );
+                
+                _builtConvs = sorted;
+                return sorted;
+            });
+
+            // Force a re-render by creating a new reference
+            setConversations(current => {
+                return current.map(conv => conv);
+            });
+
+            // Also refresh from server to ensure consistency
+            setTimeout(() => {
+                if (mountedRef.current) {
+                    socketService.socket?.emit("conversation_list");
+                }
+            }, 300);
+        });
+
+        // NEW: Handle message edited event for conversations list
+        const unsubEdited = socketService.onMessageEdited(edited => {
+            if (!mountedRef.current) return;
+            
+            const msgId = String(edited._id || edited.id || '');
+            const convId = String(edited.conversationId || '');
+            
+            if (!convId) return;
+            
+            setConversations(prev => {
+                const idx = prev.findIndex(c => c.conversationId === convId);
+                if (idx === -1) return prev;
+                
+                // Only update if this was the last message
+                // We don't know for sure, so we'll refresh
+                setTimeout(() => {
+                    if (mountedRef.current) {
+                        socketService.socket?.emit("conversation_list");
+                    }
+                }, 300);
+                
+                return prev;
             });
         });
 
@@ -522,6 +623,8 @@ export default function MessagesScreen() {
             unsubNew();
             unsubSent();
             unsubUpd();
+            unsubDeleted();
+            unsubEdited();
         };
     }, [userToken, myId]);
 
@@ -530,12 +633,34 @@ export default function MessagesScreen() {
         useCallback(() => {
             if (mountedRef.current) {
                 loadContacts();
+                // Reset opened conversations tracking
+                openedConversationsRef.current.clear();
+                
+                // Refresh conversation list when screen comes into focus
+                if (socketService.isConnected()) {
+                    socketService.socket?.emit("conversation_list");
+                }
             }
         }, [loadContacts])
     );
 
     // ── Navigation ──
     const openChat = (conv) => {
+        // Track that this conversation was opened
+        openedConversationsRef.current.add(conv.conversationId);
+        
+        // Update local state optimistically (remove unread badge immediately)
+        setConversations(prev => {
+            const idx = prev.findIndex(c => c.conversationId === conv.conversationId);
+            if (idx !== -1 && prev[idx].unreadCount > 0) {
+                const updated = [...prev];
+                updated[idx] = { ...updated[idx], unreadCount: 0 };
+                _builtConvs = updated;
+                return updated;
+            }
+            return prev;
+        });
+
         router.push({
             pathname: '/agency/selected/chat',
             params: {
@@ -580,7 +705,13 @@ export default function MessagesScreen() {
                     <Text style={styles.rowTime}>{formatTime(item.timestamp)}</Text>
                 </View>
 
-                <Text style={styles.rowPreview} numberOfLines={1}>
+                <Text 
+                    style={[
+                        styles.rowPreview, 
+                        item.lastMessageDeleted && styles.deletedPreview
+                    ]} 
+                    numberOfLines={1}
+                >
                     {item.lastMessage?.length > 60
                         ? item.lastMessage.slice(0, 60) + '…'
                         : item.lastMessage}
@@ -880,6 +1011,7 @@ const styles = StyleSheet.create({
     rowName:    { fontSize: 15, fontWeight: '600', color: '#2D3748', flex: 1, marginRight: 8 },
     rowTime:    { fontSize: 12, color: C.textSecondary },
     rowPreview: { fontSize: 13, color: C.textSecondary, marginBottom: 6 },
+    deletedPreview: { fontStyle: 'italic', opacity: 0.7 },
     rowBottom:  {
         flexDirection: 'row',
         justifyContent: 'space-between',

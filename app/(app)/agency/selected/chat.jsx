@@ -10,6 +10,7 @@ import { useAuth } from '../../../context/AuthContext';
 import socketService from '../../../services/SocketService';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
+import { Config } from '../../../config';
 
 // ═══════════════════════════════════════════════════════════
 //  THEME
@@ -42,13 +43,12 @@ function validStr(v) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  EDIT MESSAGE MODAL  (cross-platform replacement for Alert.prompt)
+//  EDIT MESSAGE MODAL
 // ═══════════════════════════════════════════════════════════
 
 function EditMessageModal({ visible, initialText, onSave, onCancel }) {
     const [text, setText] = useState(initialText || '');
 
-    // Sync text when modal opens with a new message
     useEffect(() => {
         if (visible) setText(initialText || '');
     }, [visible, initialText]);
@@ -179,6 +179,9 @@ export default function ChatScreen() {
     const recipientModelRef = useRef(validStr(params.recipientModel));
     const activeConvIdRef   = useRef(validStr(params.conversationId));
 
+    // Track seen messages
+    const seenMessagesRef = useRef(new Set());
+
     // Sync params → refs when they change
     useEffect(() => {
         const rid  = validStr(params.recipientId);
@@ -199,6 +202,7 @@ export default function ChatScreen() {
     const [isConnected,   setIsConnected]   = useState(socketService.isConnected());
     const [hasMore,       setHasMore]       = useState(false);
     const [isTyping,      setIsTyping]      = useState(false);
+    const [isRequesting, setIsRequesting] = useState(false);
 
     // ── Edit modal state ──
     const [editModal, setEditModal] = useState({ visible: false, msgId: null, text: '' });
@@ -211,6 +215,7 @@ export default function ChatScreen() {
     const lastTempIdRef   = useRef(null);
     const typingTimerRef  = useRef(null);
     const localTypingRef  = useRef(false);
+    const requestTimeoutRef = useRef(null);
 
     // ── Format raw server message → local shape ──
     const formatMsg = useCallback((raw, forceIsMe = false) => {
@@ -227,27 +232,101 @@ export default function ChatScreen() {
             status = raw.status;
         }
 
+        // Handle deleted messages
+        if (raw.isDeleted) {
+            return {
+                id:         String(raw._id || raw.id),
+                text:       'This message was deleted',
+                createdAt:  raw.createdAt ? new Date(raw.createdAt) : new Date(),
+                isMe,
+                senderName: raw.senderInfo?.name || '',
+                status:     'deleted',
+                isEdited:   raw.isEdited || false,
+                isDeleted:  true,
+                deletedFor: raw.deletedFor || 'everyone',
+            };
+        }
+
         return {
-            id:         String(raw._id || raw.id || `s_${Date.now()}_${Math.random()}`),
+            id:         String(raw._id || raw.id),
             text:       raw.content || '',
             createdAt:  raw.createdAt ? new Date(raw.createdAt) : new Date(),
             isMe,
             senderName: raw.senderInfo?.name || '',
             status,
             isEdited:   raw.isEdited || false,
-            isDeleted:  raw.isDeleted || false,
+            isDeleted:  false,
         };
     }, [myId]);
+
+    // ── Mark messages as seen ──
+    const markMessagesAsSeen = useCallback(() => {
+        const convId = activeConvIdRef.current;
+        if (!convId || !socketService.isConnected()) return;
+
+        const unseenMessages = messages.filter(
+            msg => !msg.isMe && msg.status !== 'seen' && !msg.isDeleted
+        );
+
+        if (unseenMessages.length === 0) return;
+
+        console.log(`👁️ Marking ${unseenMessages.length} messages as seen`);
+        
+        setMessages(prev => 
+            prev.map(msg => 
+                !msg.isMe && msg.status !== 'seen' && !msg.isDeleted
+                    ? { ...msg, status: 'seen' }
+                    : msg
+            )
+        );
+    }, [messages]);
 
     // ── Request messages from server ──
     const fetchInitialMessages = useCallback(() => {
         const convId = activeConvIdRef.current;
-        if (!convId)            return;
+        if (!convId) {
+            console.log('No conversation ID yet');
+            return;
+        }
         if (fetchedRef.current) return;
         if (!socketService.isConnected()) return;
 
         fetchedRef.current = true;
+        console.log(`📥 Fetching initial messages for conversation: ${convId}`);
         socketService.getConversationMessages(convId, null, null, PAGE_SIZE);
+    }, []);
+
+    // ── Request auto message for this recipient ──
+    const requestAutoMessage = useCallback(() => {
+        const recipientId = recipientIdRef.current;
+        const recipientModel = recipientModelRef.current;
+        
+        if (!recipientId || !recipientModel || activeConvIdRef.current || isRequesting) {
+            return;
+        }
+
+        console.log(`🔄 Requesting auto message for ${recipientId} (${recipientModel})`);
+        setIsRequesting(true);
+        setIsLoading(true);
+
+        // Clear any existing timeout
+        if (requestTimeoutRef.current) {
+            clearTimeout(requestTimeoutRef.current);
+        }
+
+        // Set a timeout to stop loading if no response
+        requestTimeoutRef.current = setTimeout(() => {
+            if (mountedRef.current && !activeConvIdRef.current) {
+                console.log('⚠️ No auto message received, showing empty chat');
+                setIsLoading(false);
+                setIsRequesting(false);
+            }
+        }, 10000);
+
+        // Emit get_conversation_messages with the recipient ID
+        // The backend should create/return the conversation and auto message
+        socketService.getConversationMessages(recipientId, null, null, PAGE_SIZE);
+        
     }, []);
 
     const loadMore = useCallback(() => {
@@ -297,22 +376,58 @@ export default function ChatScreen() {
         }
     }, []);
 
+    // ── Force refresh messages after delete ──
+    const refreshMessages = useCallback(() => {
+        const convId = activeConvIdRef.current;
+        if (!convId || !socketService.isConnected()) return;
+        
+        console.log('🔄 Refreshing messages after delete');
+        fetchedRef.current = false; // Reset so we fetch again
+        socketService.getConversationMessages(convId, null, null, PAGE_SIZE);
+    }, []);
+
     // ── Main effect ──
     useEffect(() => {
         mountedRef.current = true;
         fetchedRef.current = false;
 
+        // If we have recipient but no conversation ID, request auto message
+        if (!activeConvIdRef.current && recipientIdRef.current) {
+            requestAutoMessage();
+        }
+
         const unsubConn = socketService.onConnectionChange(connected => {
             if (!mountedRef.current) return;
             setIsConnected(connected);
-            if (connected) fetchInitialMessages();
+            if (connected) {
+                if (activeConvIdRef.current) {
+                    fetchInitialMessages();
+                } else if (recipientIdRef.current) {
+                    requestAutoMessage();
+                }
+            }
         });
 
         const unsubMsgs = socketService.onConversationMessages(data => {
             if (!mountedRef.current) return;
 
+            console.log('📥 Received conversation_messages:', data);
+
+            // If this is the auto message response and we don't have a conversation ID yet
+            if (!activeConvIdRef.current && data?.conversationId) {
+                console.log('🎯 Setting conversation ID from auto message:', data.conversationId);
+                activeConvIdRef.current = data.conversationId;
+                
+                // Clear the timeout
+                if (requestTimeoutRef.current) {
+                    clearTimeout(requestTimeoutRef.current);
+                    requestTimeoutRef.current = null;
+                }
+            }
+
             if (!data?.messages) {
                 setIsLoading(false);
+                setIsRequesting(false);
                 loadingMoreRef.current = false;
                 setIsLoadingMore(false);
                 return;
@@ -339,7 +454,11 @@ export default function ChatScreen() {
             } else {
                 setMessages(formatted);
                 setIsLoading(false);
-                setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 150);
+                setIsRequesting(false);
+                setTimeout(() => {
+                    flatListRef.current?.scrollToEnd({ animated: false });
+                    markMessagesAsSeen();
+                }, 150);
             }
         });
 
@@ -349,8 +468,24 @@ export default function ChatScreen() {
             const msg    = payload.message || payload;
             const convId = String(payload.conversationId || msg.conversationId || '');
 
+            console.log('📥 New message received:', msg);
+
+            // Auto message - if we don't have conversation ID yet, this is it!
             if (!activeConvIdRef.current && convId) {
+                console.log('🎯 Setting conversation ID from new message:', convId);
                 activeConvIdRef.current = convId;
+                
+                // Clear the timeout
+                if (requestTimeoutRef.current) {
+                    clearTimeout(requestTimeoutRef.current);
+                    requestTimeoutRef.current = null;
+                }
+                
+                fetchedRef.current = false; // Reset so we fetch messages
+                fetchInitialMessages();
+                setIsLoading(false);
+                setIsRequesting(false);
+                return; // Don't add the message yet, fetch will get it
             }
 
             if (
@@ -376,7 +511,12 @@ export default function ChatScreen() {
             });
 
             setIsTyping(false);
-            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
+            setTimeout(() => {
+                flatListRef.current?.scrollToEnd({ animated: true });
+                if (!formatted.isMe) {
+                    markMessagesAsSeen();
+                }
+            }, 80);
         });
 
         const unsubSent = socketService.onMessageSent(payload => {
@@ -414,6 +554,7 @@ export default function ChatScreen() {
             if (!mountedRef.current) return;
 
             setIsLoading(false);
+            setIsRequesting(false);
             loadingMoreRef.current = false;
             setIsLoadingMore(false);
             lastTempIdRef.current = null;
@@ -441,10 +582,44 @@ export default function ChatScreen() {
             );
         });
 
+        // FIX: Immediate delete handling with refresh
         const unsubDeleted = socketService.onMessageDeleted(data => {
             if (!mountedRef.current) return;
+            
             const msgId = String(data.messageId || '');
-            setMessages(prev => prev.filter(m => m.id !== msgId));
+            const convId = String(data.conversationId || '');
+            const deleteFor = data.deleteFor || 'me';
+            
+            console.log(`📥 message_deleted: ${msgId} for ${deleteFor}`);
+            
+            setMessages(prev => {
+                const newMessages = [...prev];
+                const index = newMessages.findIndex(m => m.id === msgId);
+                
+                if (index !== -1) {
+                    if (deleteFor === 'everyone') {
+                        newMessages[index] = {
+                            ...newMessages[index],
+                            isDeleted: true,
+                            text: 'This message was deleted',
+                            status: 'deleted',
+                            deletedFor: 'everyone'
+                        };
+                    } else {
+                        newMessages.splice(index, 1);
+                    }
+                }
+                
+                return newMessages;
+            });
+
+            setMessages(current => {
+                return current.map(msg => msg);
+            });
+
+            setTimeout(() => {
+                refreshMessages();
+            }, 100);
         });
 
         const unsubTyping = socketService.onUserTyping(data => {
@@ -461,14 +636,34 @@ export default function ChatScreen() {
             setIsTyping(false);
         });
 
-        if (socketService.isConnected()) {
-            fetchInitialMessages();
-        } else if (!validStr(params.conversationId)) {
-            setIsLoading(false);
+        const unsubStatus = socketService.onMessageStatusUpdated(({ messageId, status, conversationId }) => {
+            if (!mountedRef.current) return;
+            
+            const convId = activeConvIdRef.current;
+            if (convId && String(conversationId) !== String(convId)) return;
+            
+            console.log(`📥 message_status_updated: ${messageId} is ${status}`);
+            
+            setMessages(prev =>
+                prev.map(m =>
+                    m.id === messageId
+                        ? { ...m, status }
+                        : m
+                )
+            );
+        });
+
+        // If socket is already connected, request auto message
+        if (socketService.isConnected() && !activeConvIdRef.current && recipientIdRef.current) {
+            requestAutoMessage();
         }
 
         return () => {
             mountedRef.current = false;
+
+            if (requestTimeoutRef.current) {
+                clearTimeout(requestTimeoutRef.current);
+            }
 
             if (localTypingRef.current) {
                 const rid = recipientIdRef.current;
@@ -488,8 +683,16 @@ export default function ChatScreen() {
             unsubDeleted();
             unsubTyping();
             unsubStopTyping();
+            unsubStatus();
         };
     }, []);
+
+    // Effect to mark messages as seen
+    useEffect(() => {
+        if (messages.length > 0 && !isLoading) {
+            markMessagesAsSeen();
+        }
+    }, [messages.length, isLoading]);
 
     // ── Send message ──
     const sendMessage = useCallback(() => {
@@ -520,6 +723,7 @@ export default function ChatScreen() {
             createdAt: new Date(),
             isMe:      true,
             status:    'pending',
+            isDeleted: false,
         };
 
         setInputText('');
@@ -547,7 +751,6 @@ export default function ChatScreen() {
     }, [isConnected, params.recipientId, params.recipientModel, params.conversationId]);
 
     // ── Long press menu ──
-    // FIX: Replaced Alert.prompt (iOS-only) with cross-platform EditMessageModal
     const handleLongPress = useCallback((msg) => {
         if (msg.status === 'failed') {
             retryMessage(msg);
@@ -563,7 +766,6 @@ export default function ChatScreen() {
                 {
                     text: 'Edit',
                     onPress: () => {
-                        // Dismiss keyboard first so modal appears cleanly
                         Keyboard.dismiss();
                         setEditModal({ visible: true, msgId: msg.id, text: msg.text });
                     },
@@ -586,7 +788,6 @@ export default function ChatScreen() {
     const handleEditSave = useCallback((newText) => {
         if (newText && editModal.msgId) {
             socketService.editMessage(editModal.msgId, newText);
-            // Optimistically update UI immediately
             setMessages(prev =>
                 prev.map(m =>
                     m.id === editModal.msgId
@@ -609,10 +810,22 @@ export default function ChatScreen() {
         if (item.isDeleted) {
             return (
                 <View style={[styles.msgRow, isMe && styles.msgRowRight]}>
+                    {!isMe && (
+                        <View style={styles.msgAvatar}>
+                            {logo ? (
+                                <Image source={{ uri: logo }} style={styles.msgAvatarImg} />
+                            ) : (
+                                <View style={[styles.msgAvatarFallback, { backgroundColor: C.primary }]}>
+                                    <Text style={styles.msgAvatarTxt}>{name[0]?.toUpperCase()}</Text>
+                                </View>
+                            )}
+                        </View>
+                    )}
                     <View style={[styles.msgWrapper, isMe && styles.msgWrapperRight]}>
                         <View style={[styles.bubble, styles.bubbleDeleted]}>
+                            <Ionicons name="ban" size={12} color={C.textSecondary} />
                             <Text style={styles.deletedText}>
-                                <Ionicons name="ban" size={12} /> This message was deleted
+                                This message was deleted
                             </Text>
                         </View>
                     </View>
@@ -643,7 +856,9 @@ export default function ChatScreen() {
                             {item.text}
                         </Text>
                         {item.isEdited && (
-                            <Text style={styles.editedLabel}>(edited)</Text>
+                            <Text style={[styles.editedLabel, isMe && styles.editedLabelMe]}>
+                                (edited)
+                            </Text>
                         )}
                         <View style={styles.bubbleFooter}>
                             <Text style={[styles.timeTxt, isMe && styles.timeTxtMe]}>
@@ -655,16 +870,22 @@ export default function ChatScreen() {
                                         item.status === 'pending'   ? 'time-outline' :
                                         item.status === 'failed'    ? 'alert-circle-outline' :
                                         item.status === 'delivered' ? 'checkmark-done' :
+                                        item.status === 'seen'      ? 'checkmark-done' :
                                         'checkmark'
                                     }
                                     size={12}
                                     color={
                                         item.status === 'failed'
                                             ? C.offline
-                                            : 'rgba(255,255,255,0.7)'
+                                            : item.status === 'seen'
+                                                ? '#4CAF50'
+                                                : 'rgba(255,255,255,0.7)'
                                     }
                                     style={{ marginLeft: 4 }}
                                 />
+                            )}
+                            {!isMe && item.status === 'seen' && (
+                                <Text style={[styles.timeTxt, { marginLeft: 4 }]}>Seen</Text>
                             )}
                         </View>
                     </TouchableOpacity>
@@ -706,39 +927,43 @@ export default function ChatScreen() {
         </View>
     );
 
-    if (isLoading) {
+    // Show loading while waiting for auto message
+    if ((isLoading || isRequesting) && !activeConvIdRef.current) {
         return (
             <View style={[styles.container, { paddingTop: insets.top }]}>
                 <StatusBar barStyle="dark-content" backgroundColor={C.white} />
+                <View style={styles.header}>
+                    <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+                        <Ionicons name="arrow-back" size={22} color={C.textPrimary} />
+                    </TouchableOpacity>
+                    <View style={styles.headerInfo}>
+                        <View style={[styles.headerAvatar, { backgroundColor: C.primary }]}>
+                            {logo ? (
+                                <Image source={{ uri: logo }} style={styles.headerAvatarImg} />
+                            ) : (
+                                <Text style={styles.headerAvatarTxt}>{name[0]?.toUpperCase()}</Text>
+                            )}
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.headerName} numberOfLines={1}>{name}</Text>
+                            <Text style={styles.headerStatus}>Starting conversation...</Text>
+                        </View>
+                    </View>
+                    <View style={{ width: 36 }} />
+                </View>
                 <View style={styles.center}>
                     <ActivityIndicator size="large" color={C.primary} />
-                    <Text style={styles.loadingTxt}>Loading messages…</Text>
+                    <Text style={styles.loadingTxt}>Waiting for welcome message...</Text>
                 </View>
             </View>
         );
     }
 
     return (
-        // ════════════════════════════════════════════════════
-        // FIX 1 — Keyboard layout
-        //
-        // OLD: A single KeyboardAvoidingView wrapping everything
-        //      caused the whole screen (including the header) to
-        //      shift up, leaving a white gap below the input when
-        //      the keyboard was dismissed.
-        //
-        // NEW: The outer View fills the safe-area. The
-        //      KeyboardAvoidingView only wraps the scrollable body
-        //      + input, so the header stays pinned at the top and
-        //      there is never a white gap.  On Android we use
-        //      "height" so the input is pushed up; on iOS we use
-        //      "padding" with a zero offset because the container
-        //      already sits below the header.
-        // ════════════════════════════════════════════════════
         <View style={[styles.container, { paddingTop: insets.top }]}>
             <StatusBar barStyle="dark-content" backgroundColor={C.white} />
 
-            {/* Header — lives OUTSIDE KeyboardAvoidingView so it never moves */}
+            {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
                     <Ionicons name="arrow-back" size={22} color={C.textPrimary} />
@@ -768,7 +993,6 @@ export default function ChatScreen() {
                 </View>
             )}
 
-            {/* KeyboardAvoidingView only wraps messages + input */}
             <KeyboardAvoidingView
                 style={{ flex: 1 }}
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -811,7 +1035,7 @@ export default function ChatScreen() {
                     />
                 </View>
 
-                {/* Input bar — stays anchored above keyboard */}
+                {/* Input bar */}
                 <View style={[styles.inputWrapper, { paddingBottom: Math.max(insets.bottom, 8) }]}>
                     <View style={styles.inputRow}>
                         <TextInput
@@ -839,7 +1063,6 @@ export default function ChatScreen() {
                 </View>
             </KeyboardAvoidingView>
 
-            {/* Edit message modal — cross-platform, replaces Alert.prompt */}
             <EditMessageModal
                 visible={editModal.visible}
                 initialText={editModal.text}
@@ -952,6 +1175,9 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: C.border,
         borderStyle: 'dashed',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
     },
     bubbleTxt:    { fontSize: 14, lineHeight: 20, marginBottom: 2, color: C.textPrimary },
     bubbleTxtMe:  { color: C.white },
@@ -959,6 +1185,7 @@ const styles = StyleSheet.create({
     timeTxt:      { fontSize: 10, color: C.textSecondary },
     timeTxtMe:    { color: 'rgba(255,255,255,0.7)' },
     editedLabel:  { fontSize: 10, color: C.textSecondary, fontStyle: 'italic', marginTop: 2 },
+    editedLabelMe: { color: 'rgba(255,255,255,0.7)' },
     deletedText:  { fontSize: 12, color: C.textSecondary, fontStyle: 'italic' },
     retryBtn:     { marginTop: 4 },
     retryTxt:     { fontSize: 11, color: C.offline },

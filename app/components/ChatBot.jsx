@@ -56,7 +56,7 @@ const ChatBot = ({ agencyId }) => {
         Animated.loop(
             Animated.sequence([
                 Animated.timing(pulseAnim, {
-                    toValue: 1.15,
+                    toValue: 1.1,
                     duration: 1500,
                     useNativeDriver: true,
                 }),
@@ -131,7 +131,6 @@ const ChatBot = ({ agencyId }) => {
         setMessages(prev => [...prev, userMessage]);
         setInputText('');
         setIsBotTyping(true);
-        Keyboard.dismiss();
 
         // Scroll to bottom after user message
         setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
@@ -226,8 +225,8 @@ const ChatBot = ({ agencyId }) => {
             <View style={[styles.messageRow, !isBot && styles.messageRowRight]}>
                 {isBot && (
                     <View style={styles.avatarContainer}>
-                        <View style={[styles.avatarFallback, { backgroundColor: COLORS.primary }]}>
-                            <MaterialCommunityIcons name="robot-outline" size={16} color={COLORS.white} />
+                        <View style={[styles.avatarFallback, { backgroundColor: COLORS.primaryLight }]}>
+                            <Ionicons name="chatbubble-outline" size={14} color={COLORS.primary} />
                         </View>
                     </View>
                 )}
@@ -267,8 +266,8 @@ const ChatBot = ({ agencyId }) => {
     const renderTypingIndicator = () => (
         <View style={styles.messageRow}>
             <View style={styles.avatarContainer}>
-                <View style={[styles.avatarFallback, { backgroundColor: COLORS.primary }]}>
-                    <MaterialCommunityIcons name="robot-outline" size={16} color={COLORS.white} />
+                <View style={[styles.avatarFallback, { backgroundColor: COLORS.primaryLight }]}>
+                    <Ionicons name="chatbubble-outline" size={14} color={COLORS.primary} />
                 </View>
             </View>
             <View style={styles.messageWrapper}>
@@ -305,13 +304,13 @@ const ChatBot = ({ agencyId }) => {
                             {
                                 transform: [{ scale: pulseAnim }],
                                 opacity: pulseAnim.interpolate({
-                                    inputRange: [1, 1.15],
-                                    outputRange: [0.4, 0],
+                                    inputRange: [1, 1.1],
+                                    outputRange: [0.3, 0],
                                 }),
                             },
                         ]}
                     />
-                    <MaterialCommunityIcons name="robot-outline" size={30} color={COLORS.white} />
+                    <Ionicons name="chatbubble-outline" size={26} color={COLORS.white} />
                 </TouchableOpacity>
             </Animated.View>
 
@@ -322,19 +321,25 @@ const ChatBot = ({ agencyId }) => {
                 transparent={false}
                 onRequestClose={() => setIsVisible(false)}
             >
-                <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+                <SafeAreaView style={styles.safeArea} edges={['top']}>
                     <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} />
                     
-                    <View style={styles.modalContainer}>
+                    {/* ✅ KeyboardAvoidingView wraps EVERYTHING below the header */}
+                    <KeyboardAvoidingView
+                        style={styles.keyboardAvoidingContainer}
+                        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                        // On iOS, adjust this offset to match your header height if needed
+                        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+                    >
                         {/* Header */}
-                        <View style={styles.modalHeader}>
-                            <TouchableOpacity style={styles.backButton} onPress={() => setIsVisible(false)}>
+                        <View style={styles.header}>
+                            <TouchableOpacity style={styles.backBtn} onPress={() => setIsVisible(false)}>
                                 <Ionicons name="arrow-back" size={22} color={COLORS.textPrimary} />
                             </TouchableOpacity>
                             
                             <View style={styles.headerInfo}>
-                                <View style={[styles.headerAvatar, { backgroundColor: COLORS.primary }]}>
-                                    <MaterialCommunityIcons name="robot-outline" size={20} color={COLORS.white} />
+                                <View style={[styles.headerAvatar, { backgroundColor: COLORS.primaryLight }]}>
+                                    <Ionicons name="chatbubble-outline" size={20} color={COLORS.primary} />
                                 </View>
                                 <View style={styles.headerText}>
                                     <Text style={styles.headerName} numberOfLines={1}>AI Assistant</Text>
@@ -348,60 +353,54 @@ const ChatBot = ({ agencyId }) => {
                             <View style={{ width: 40 }} />
                         </View>
 
-                        <KeyboardAvoidingView
-                            style={styles.keyboardView}
-                            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-                        >
-                            {/* Messages List */}
-                            <View style={styles.messagesContainer}>
-                                <FlatList
-                                    ref={flatListRef}
-                                    data={messages}
-                                    renderItem={renderMessage}
-                                    keyExtractor={item => item.id}
-                                    contentContainerStyle={styles.messagesList}
-                                    onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-                                    onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
-                                    showsVerticalScrollIndicator={false}
-                                    keyboardShouldPersistTaps="handled"
-                                    ListFooterComponent={isBotTyping ? renderTypingIndicator : null}
-                                />
-                            </View>
+                        {/* ✅ FlatList with flex: 1 so it shrinks when keyboard appears */}
+                        <FlatList
+                            ref={flatListRef}
+                            data={messages}
+                            renderItem={renderMessage}
+                            keyExtractor={item => item.id}
+                            contentContainerStyle={styles.messagesList}
+                            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+                            onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
+                            showsVerticalScrollIndicator={false}
+                            keyboardShouldPersistTaps="handled"
+                            keyboardDismissMode="interactive"
+                            ListFooterComponent={isBotTyping ? renderTypingIndicator : null}
+                            style={styles.flatList}
+                        />
 
-                            {/* Input Area */}
-                            <View style={styles.inputWrapper}>
-                                <View style={styles.inputContainer}>
-                                    <View style={styles.inputContent}>
-                                        <TextInput
-                                            ref={inputRef}
-                                            style={styles.input}
-                                            placeholder="Type your message..."
-                                            placeholderTextColor={COLORS.textSecondary}
-                                            value={inputText}
-                                            onChangeText={setInputText}
-                                            multiline
-                                            maxLength={500}
-                                            editable={!isBotTyping}
-                                            returnKeyType="send"
-                                            onSubmitEditing={sendMessage}
-                                        />
-                                        <TouchableOpacity
-                                            style={[
-                                                styles.sendButton,
-                                                (!inputText.trim() || isBotTyping) && styles.sendButtonDisabled,
-                                            ]}
-                                            onPress={sendMessage}
-                                            disabled={!inputText.trim() || isBotTyping}
-                                            activeOpacity={0.8}
-                                        >
-                                            <Ionicons name="send" size={18} color={COLORS.white} />
-                                        </TouchableOpacity>
-                                    </View>
+                        {/* ✅ Input Area — no longer wrapped in its own KeyboardAvoidingView */}
+                        <View style={styles.inputWrapper}>
+                            <View style={styles.inputContainer}>
+                                <View style={styles.inputContent}>
+                                    <TextInput
+                                        ref={inputRef}
+                                        style={styles.input}
+                                        placeholder="Type your message..."
+                                        placeholderTextColor={COLORS.textSecondary}
+                                        value={inputText}
+                                        onChangeText={setInputText}
+                                        multiline
+                                        maxLength={500}
+                                        editable={!isBotTyping}
+                                        returnKeyType="send"
+                                        onSubmitEditing={sendMessage}
+                                    />
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.sendButton,
+                                            (!inputText.trim() || isBotTyping) && styles.sendButtonDisabled,
+                                        ]}
+                                        onPress={sendMessage}
+                                        disabled={!inputText.trim() || isBotTyping}
+                                        activeOpacity={0.8}
+                                    >
+                                        <Ionicons name="send" size={18} color={COLORS.white} />
+                                    </TouchableOpacity>
                                 </View>
                             </View>
-                        </KeyboardAvoidingView>
-                    </View>
+                        </View>
+                    </KeyboardAvoidingView>
                 </SafeAreaView>
             </Modal>
         </>
@@ -417,56 +416,61 @@ const styles = StyleSheet.create({
         zIndex: 1000,
     },
     floatingButtonInner: {
-        width: 64,
-        height: 64,
-        borderRadius: 32,
+        width: 56,
+        height: 56,
+        borderRadius: 28,
         backgroundColor: COLORS.primary,
         justifyContent: 'center',
         alignItems: 'center',
         elevation: 8,
         shadowColor: COLORS.primary,
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.4,
-        shadowRadius: 12,
+        shadowOpacity: 0.25,
+        shadowRadius: 8,
     },
     pulseRing: {
         position: 'absolute',
-        width: 64,
-        height: 64,
-        borderRadius: 32,
+        width: 56,
+        height: 56,
+        borderRadius: 28,
         backgroundColor: COLORS.primary,
     },
     
-    // Modal Container Styles
+    // Modal / SafeArea
     safeArea: {
         flex: 1,
         backgroundColor: COLORS.white,
     },
-    modalContainer: {
+
+    // ✅ KeyboardAvoidingView fills remaining space and manages layout
+    keyboardAvoidingContainer: {
         flex: 1,
         backgroundColor: COLORS.background,
     },
-    keyboardView: {
+
+    // ✅ FlatList must have flex: 1 to compress when keyboard shows
+    flatList: {
         flex: 1,
     },
     
-    // Header Styles (matching chats.jsx)
-    modalHeader: {
+    // Header Styles
+    header: {
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
         backgroundColor: COLORS.white,
-        paddingHorizontal: 12,
-        paddingVertical: 8,
         borderBottomWidth: 1,
         borderBottomColor: COLORS.border,
     },
-    backButton: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
+    backBtn: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: COLORS.background,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: COLORS.inputBg,
     },
     headerInfo: {
         flex: 1,
@@ -475,10 +479,10 @@ const styles = StyleSheet.create({
         marginLeft: 8,
     },
     headerAvatar: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        marginRight: 10,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        marginRight: 12,
         justifyContent: 'center',
         alignItems: 'center',
         overflow: 'hidden',
@@ -487,7 +491,7 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     headerName: {
-        fontSize: 15,
+        fontSize: 16,
         fontWeight: '600',
         color: COLORS.textPrimary,
         marginBottom: 2,
@@ -503,14 +507,11 @@ const styles = StyleSheet.create({
         marginRight: 4,
     },
     headerStatus: {
-        fontSize: 11,
+        fontSize: 12,
         color: COLORS.textSecondary,
     },
     
-    // Messages Container Styles (matching chats.jsx)
-    messagesContainer: {
-        flex: 1,
-    },
+    // Messages Container
     messagesList: {
         padding: 16,
         paddingBottom: 8,
@@ -590,7 +591,7 @@ const styles = StyleSheet.create({
         color: 'rgba(255,255,255,0.7)',
     },
     
-    // Typing Indicator Styles
+    // Typing Indicator
     typingBubble: {
         paddingVertical: 12,
         paddingHorizontal: 16,
@@ -608,24 +609,18 @@ const styles = StyleSheet.create({
         marginHorizontal: 2,
         opacity: 0.6,
     },
-    dot1: {
-        animation: 'typing 1.4s infinite',
-    },
-    dot2: {
-        animation: 'typing 1.4s infinite 0.2s',
-    },
-    dot3: {
-        animation: 'typing 1.4s infinite 0.4s',
-    },
+    dot1: {},
+    dot2: {},
+    dot3: {},
     
-    // Input Area Styles (matching chats.jsx)
+    // Input Area
     inputWrapper: {
         backgroundColor: COLORS.white,
         borderTopWidth: 1,
         borderTopColor: COLORS.border,
     },
     inputContainer: {
-        paddingHorizontal: 12,
+        paddingHorizontal: 16,
         paddingVertical: 8,
     },
     inputContent: {
