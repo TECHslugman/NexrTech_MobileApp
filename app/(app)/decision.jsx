@@ -162,7 +162,7 @@ export default function Dashboard() {
         ...item,
         id: item._id,
         name: item.organizationName || item.name || "Unknown Agency",
-        imageUri: item.logo || null,
+        imageUri: item.profileUrl || null,
         stats: {
           students: item.studentCount || 0,
           courses: item.courseCount || 0,
@@ -230,7 +230,6 @@ export default function Dashboard() {
       params: { id: item.id, name: item.name, heroUri: item.imageUri || '' },
     });
   };
-
   const getSlideAnim = (id) => {
     if (!slideAnimRefs.current[id]) {
       slideAnimRefs.current[id] = new Animated.Value(0);

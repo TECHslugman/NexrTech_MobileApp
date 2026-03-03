@@ -92,7 +92,13 @@ export default function AgencyDetails() {
                 const partnerJson = await partnerRes.json();
 
                 const fullProfile = profileJson.agency || profileJson.profile || profileJson;
-                const partnerList = partnerJson.university?.partnerUniversities || [];
+                
+                // API returns { university: { partnerUniversities: [...] } }
+                const rawPartners = partnerJson.university?.partnerUniversities || [];
+                // Only keep partners that are Active
+                const partnerList = rawPartners.filter(p => p.status === 'Active' || !p.status);
+
+                console.log('[AGENCY] partnerList:', JSON.stringify(partnerList, null, 2));
 
                 setAgencyData({
                     name: fullProfile.organizationName || paramName,
@@ -102,7 +108,8 @@ export default function AgencyDetails() {
                     services: fullProfile.servicesOffered || [],
                     process: fullProfile.process || [],
                     partners: partnerList,
-                    imageUri: fullProfile.logo || null,
+                    // FIX: check profileUrl first, fallback to logo
+                    imageUri: fullProfile.profileUrl || fullProfile.logo || null,
                 });
 
             } catch (error) {
@@ -115,6 +122,7 @@ export default function AgencyDetails() {
                     services: [],
                     process: [],
                     partners: [],
+                    imageUri: null,
                 });
             } finally {
                 setLoading(false);
@@ -212,7 +220,6 @@ export default function AgencyDetails() {
             if (profileRes.ok) {
                 const profileData = await profileRes.json();
                 console.log('[AGENCY_SELECT] Profile after selection:', profileData);
-                // FIX: Access registeredAgency from profileData.profile
                 const registeredAgency = profileData.profile?.registeredAgency;
                 console.log('[AGENCY_SELECT] registeredAgency after selection:', registeredAgency);
 
@@ -222,6 +229,7 @@ export default function AgencyDetails() {
                     console.log('[AGENCY_SELECT] ✅ registeredAgency verified!');
                 }
             }
+
             // Set the agency in context
             const selectedAgency = {
                 id: String(id),
@@ -265,15 +273,16 @@ export default function AgencyDetails() {
         return defaultHero;
     }, [heroUri, agencyData]);
 
+    // FIX: check profileUrl first, fallback to logo for partner universities
     const renderPartner = ({ item, index }) => (
         <TouchableOpacity
             key={item._id || `p-${index}`}
             style={styles.partnerCard}
             activeOpacity={0.7}
         >
-            {item.logo ? (
+            {item.profileUrl || item.logo ? (
                 <Image
-                    source={{ uri: item.logo }}
+                    source={{ uri: item.profileUrl || item.logo }}
                     style={styles.partnerLogo}
                     resizeMode="cover"
                 />
@@ -287,7 +296,7 @@ export default function AgencyDetails() {
                     )}
                 </View>
             )}
-            {item.logo && item.name && (
+            {(item.profileUrl || item.logo) && item.name && (
                 <View style={styles.partnerNameOverlay}>
                     <Text style={styles.partnerName} numberOfLines={2}>
                         {item.name}
@@ -334,7 +343,6 @@ export default function AgencyDetails() {
                             {agencyData.name}
                         </Text>
 
-                        {/* Show "Your Agency" badge if this is the student's locked agency */}
                         {isThisAgencySelected && (
                             <View style={styles.yourAgencyBadge}>
                                 <Feather name="check-circle" size={moderateScale(13)} color={COLORS.lockedText} />
@@ -391,9 +399,7 @@ export default function AgencyDetails() {
         );
     }
 
-    // Render the correct action bar depending on lock state
     const renderActionBar = () => {
-        // This agency is already selected — show a "Go to Dashboard" button
         if (isThisAgencySelected) {
             return (
                 <View style={styles.actionBar}>
@@ -416,7 +422,6 @@ export default function AgencyDetails() {
             );
         }
 
-        // A different agency is already selected — show a disabled/locked state
         if (isDifferentAgencySelected) {
             return (
                 <View style={styles.actionBar}>
@@ -434,7 +439,6 @@ export default function AgencyDetails() {
             );
         }
 
-        // No agency selected yet — normal select button
         return (
             <View style={styles.actionBar}>
                 <TouchableOpacity
@@ -478,7 +482,6 @@ export default function AgencyDetails() {
                 <HeaderSection />
 
                 <View style={styles.contentContainer}>
-                    {/* Locked-to-different-agency banner inside content */}
                     {isDifferentAgencySelected && (
                         <View style={styles.lockedBanner}>
                             <Feather name="lock" size={moderateScale(16)} color="#C62828" />
@@ -736,7 +739,6 @@ const styles = StyleSheet.create({
         color: COLORS.textSecondary,
         fontWeight: '500',
     },
-    // Lock banner inside content
     lockedBanner: {
         flexDirection: 'row',
         alignItems: 'flex-start',
@@ -946,7 +948,6 @@ const styles = StyleSheet.create({
         color: COLORS.textSecondary,
         fontWeight: '500',
     },
-    // Action bar variants
     actionBar: {
         position: 'absolute',
         left: 0,
@@ -971,7 +972,6 @@ const styles = StyleSheet.create({
             },
         }),
     },
-    // Normal "Select" button
     selectBtn: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -997,7 +997,6 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         fontSize: moderateScale(16),
     },
-    // Disabled/locked select button (different agency selected)
     selectBtnDisabled: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -1014,7 +1013,6 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         fontSize: moderateScale(16),
     },
-    // "Go to Dashboard" button (this agency already selected)
     goToDashboardBtn: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -1040,7 +1038,6 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         fontSize: moderateScale(16),
     },
-    // Lock notices above buttons
     lockedNotice: {
         flexDirection: 'row',
         alignItems: 'center',

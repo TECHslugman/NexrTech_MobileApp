@@ -17,17 +17,17 @@ import { Config } from '../../../config';
 // ═══════════════════════════════════════════════════════════
 
 const C = {
-    primary:       '#769FCD',
-    bg:            '#F8FAFC',
-    white:         '#FFFFFF',
-    textPrimary:   '#1E293B',
+    primary: '#769FCD',
+    bg: '#F8FAFC',
+    white: '#FFFFFF',
+    textPrimary: '#1E293B',
     textSecondary: '#64748B',
-    border:        '#E2E8F0',
-    sentBubble:    '#769FCD',
-    recvBubble:    '#FFFFFF',
-    offline:       '#EF4444',
-    warning:       '#F59E0B',
-    inputBg:       '#F1F5F9',
+    border: '#E2E8F0',
+    sentBubble: '#769FCD',
+    recvBubble: '#FFFFFF',
+    offline: '#EF4444',
+    warning: '#F59E0B',
+    inputBg: '#F1F5F9',
 };
 
 const PAGE_SIZE = 20;
@@ -172,54 +172,54 @@ export default function ChatScreen() {
     const router = useRouter();
     const { user } = useAuth();
     const insets = useSafeAreaInsets();
-    const myId   = String(user?.id || user?._id || '');
+    const myId = String(user?.id || user?._id || '');
 
     // Always-fresh refs (no stale closure issues)
-    const recipientIdRef    = useRef(validStr(params.recipientId));
+    const recipientIdRef = useRef(validStr(params.recipientId));
     const recipientModelRef = useRef(validStr(params.recipientModel));
-    const activeConvIdRef   = useRef(validStr(params.conversationId));
+    const activeConvIdRef = useRef(validStr(params.conversationId));
 
     // Track seen messages
     const seenMessagesRef = useRef(new Set());
 
     // Sync params → refs when they change
     useEffect(() => {
-        const rid  = validStr(params.recipientId);
+        const rid = validStr(params.recipientId);
         const rmod = validStr(params.recipientModel);
-        const cid  = validStr(params.conversationId);
-        if (rid)  recipientIdRef.current    = rid;
+        const cid = validStr(params.conversationId);
+        if (rid) recipientIdRef.current = rid;
         if (rmod) recipientModelRef.current = rmod;
-        if (cid)  activeConvIdRef.current   = cid;
+        if (cid) activeConvIdRef.current = cid;
     }, [params.recipientId, params.recipientModel, params.conversationId]);
 
     const name = validStr(params.name) || 'Support';
     const logo = validStr(params.logo) || '';
 
-    const [messages,      setMessages]      = useState([]);
-    const [inputText,     setInputText]     = useState('');
-    const [isLoading,     setIsLoading]     = useState(!!validStr(params.conversationId));
+    const [messages, setMessages] = useState([]);
+    const [inputText, setInputText] = useState('');
+    const [isLoading, setIsLoading] = useState(!!validStr(params.conversationId));
     const [isLoadingMore, setIsLoadingMore] = useState(false);
-    const [isConnected,   setIsConnected]   = useState(socketService.isConnected());
-    const [hasMore,       setHasMore]       = useState(false);
-    const [isTyping,      setIsTyping]      = useState(false);
+    const [isConnected, setIsConnected] = useState(socketService.isConnected());
+    const [hasMore, setHasMore] = useState(false);
+    const [isTyping, setIsTyping] = useState(false);
     const [isRequesting, setIsRequesting] = useState(false);
 
     // ── Edit modal state ──
     const [editModal, setEditModal] = useState({ visible: false, msgId: null, text: '' });
 
-    const flatListRef     = useRef(null);
+    const flatListRef = useRef(null);
     const oldestCursorRef = useRef(null);
-    const loadingMoreRef  = useRef(false);
-    const mountedRef      = useRef(false);
-    const fetchedRef      = useRef(false);
-    const lastTempIdRef   = useRef(null);
-    const typingTimerRef  = useRef(null);
-    const localTypingRef  = useRef(false);
+    const loadingMoreRef = useRef(false);
+    const mountedRef = useRef(false);
+    const fetchedRef = useRef(false);
+    const lastTempIdRef = useRef(null);
+    const typingTimerRef = useRef(null);
+    const localTypingRef = useRef(false);
     const requestTimeoutRef = useRef(null);
 
     // ── Format raw server message → local shape ──
     const formatMsg = useCallback((raw, forceIsMe = false) => {
-        const senderId    = raw.sender    || raw.senderId    || '';
+        const senderId = raw.sender || raw.senderId || '';
         const senderModel = raw.senderModel || raw.senderInfo?.model || '';
         const isMe = forceIsMe
             || String(senderId) === myId
@@ -235,27 +235,27 @@ export default function ChatScreen() {
         // Handle deleted messages
         if (raw.isDeleted) {
             return {
-                id:         String(raw._id || raw.id),
-                text:       'This message was deleted',
-                createdAt:  raw.createdAt ? new Date(raw.createdAt) : new Date(),
+                id: String(raw._id || raw.id),
+                text: 'This message was deleted',
+                createdAt: raw.createdAt ? new Date(raw.createdAt) : new Date(),
                 isMe,
                 senderName: raw.senderInfo?.name || '',
-                status:     'deleted',
-                isEdited:   raw.isEdited || false,
-                isDeleted:  true,
+                status: 'deleted',
+                isEdited: raw.isEdited || false,
+                isDeleted: true,
                 deletedFor: raw.deletedFor || 'everyone',
             };
         }
 
         return {
-            id:         String(raw._id || raw.id),
-            text:       raw.content || '',
-            createdAt:  raw.createdAt ? new Date(raw.createdAt) : new Date(),
+            id: String(raw._id || raw.id),
+            text: raw.content || '',
+            createdAt: raw.createdAt ? new Date(raw.createdAt) : new Date(),
             isMe,
             senderName: raw.senderInfo?.name || '',
             status,
-            isEdited:   raw.isEdited || false,
-            isDeleted:  false,
+            isEdited: raw.isEdited || false,
+            isDeleted: false,
         };
     }, [myId]);
 
@@ -271,9 +271,9 @@ export default function ChatScreen() {
         if (unseenMessages.length === 0) return;
 
         console.log(`👁️ Marking ${unseenMessages.length} messages as seen`);
-        
-        setMessages(prev => 
-            prev.map(msg => 
+
+        setMessages(prev =>
+            prev.map(msg =>
                 !msg.isMe && msg.status !== 'seen' && !msg.isDeleted
                     ? { ...msg, status: 'seen' }
                     : msg
@@ -300,7 +300,7 @@ export default function ChatScreen() {
     const requestAutoMessage = useCallback(() => {
         const recipientId = recipientIdRef.current;
         const recipientModel = recipientModelRef.current;
-        
+
         if (!recipientId || !recipientModel || activeConvIdRef.current || isRequesting) {
             return;
         }
@@ -326,7 +326,7 @@ export default function ChatScreen() {
         // Emit get_conversation_messages with the recipient ID
         // The backend should create/return the conversation and auto message
         socketService.getConversationMessages(recipientId, null, null, PAGE_SIZE);
-        
+
     }, []);
 
     const loadMore = useCallback(() => {
@@ -380,11 +380,39 @@ export default function ChatScreen() {
     const refreshMessages = useCallback(() => {
         const convId = activeConvIdRef.current;
         if (!convId || !socketService.isConnected()) return;
-        
+
         console.log('🔄 Refreshing messages after delete');
         fetchedRef.current = false; // Reset so we fetch again
         socketService.getConversationMessages(convId, null, null, PAGE_SIZE);
     }, []);
+
+    // ── NEW: Auto message request effect ──
+    useEffect(() => {
+        // If we have recipient but no conversation ID and not already requesting
+        if (!activeConvIdRef.current && recipientIdRef.current && !isRequesting && mountedRef.current) {
+            console.log('🔄 Auto-message: Requesting conversation for:', recipientIdRef.current);
+            
+            // Small delay to ensure socket is ready
+            const timer = setTimeout(() => {
+                if (socketService.isConnected()) {
+                    socketService.getConversationMessages(recipientIdRef.current, null, null, 1);
+                } else {
+                    // If socket not connected, wait for connection
+                    const checkConnection = setInterval(() => {
+                        if (socketService.isConnected()) {
+                            clearInterval(checkConnection);
+                            socketService.getConversationMessages(recipientIdRef.current, null, null, 1);
+                        }
+                    }, 500);
+                    
+                    // Clear interval after 10 seconds
+                    setTimeout(() => clearInterval(checkConnection), 10000);
+                }
+            }, 500);
+            
+            return () => clearTimeout(timer);
+        }
+    }, [recipientIdRef.current, isRequesting]);
 
     // ── Main effect ──
     useEffect(() => {
@@ -417,7 +445,7 @@ export default function ChatScreen() {
             if (!activeConvIdRef.current && data?.conversationId) {
                 console.log('🎯 Setting conversation ID from auto message:', data.conversationId);
                 activeConvIdRef.current = data.conversationId;
-                
+
                 // Clear the timeout
                 if (requestTimeoutRef.current) {
                     clearTimeout(requestTimeoutRef.current);
@@ -438,7 +466,7 @@ export default function ChatScreen() {
 
             if (formatted.length > 0) {
                 oldestCursorRef.current = {
-                    id:        formatted[0].id,
+                    id: formatted[0].id,
                     createdAt: formatted[0].createdAt.toISOString(),
                 };
             }
@@ -465,7 +493,7 @@ export default function ChatScreen() {
         const unsubNew = socketService.onNewMessage(payload => {
             if (!mountedRef.current) return;
 
-            const msg    = payload.message || payload;
+            const msg = payload.message || payload;
             const convId = String(payload.conversationId || msg.conversationId || '');
 
             console.log('📥 New message received:', msg);
@@ -474,13 +502,13 @@ export default function ChatScreen() {
             if (!activeConvIdRef.current && convId) {
                 console.log('🎯 Setting conversation ID from new message:', convId);
                 activeConvIdRef.current = convId;
-                
+
                 // Clear the timeout
                 if (requestTimeoutRef.current) {
                     clearTimeout(requestTimeoutRef.current);
                     requestTimeoutRef.current = null;
                 }
-                
+
                 fetchedRef.current = false; // Reset so we fetch messages
                 fetchInitialMessages();
                 setIsLoading(false);
@@ -496,7 +524,7 @@ export default function ChatScreen() {
                 return;
             }
 
-            const senderId      = String(msg.sender || msg.senderId || '');
+            const senderId = String(msg.sender || msg.senderId || '');
             const myRecipientId = recipientIdRef.current;
 
             if (!activeConvIdRef.current && myRecipientId && senderId !== myRecipientId) {
@@ -522,7 +550,7 @@ export default function ChatScreen() {
         const unsubSent = socketService.onMessageSent(payload => {
             if (!mountedRef.current) return;
 
-            const msg    = payload.message || payload;
+            const msg = payload.message || payload;
             const convId = String(payload.conversationId || msg.conversationId || '');
 
             if (convId && !activeConvIdRef.current) {
@@ -543,9 +571,9 @@ export default function ChatScreen() {
                     lastTempIdRef.current = null;
                 }
 
-                const next      = [...prev];
+                const next = [...prev];
                 const confirmed = formatMsg(msg, true);
-                next[idx]       = { ...confirmed, text: prev[idx].text, status: 'sent' };
+                next[idx] = { ...confirmed, text: prev[idx].text, status: 'sent' };
                 return next;
             });
         });
@@ -564,7 +592,7 @@ export default function ChatScreen() {
             );
 
             Toast.show({
-                type:  'error',
+                type: 'error',
                 text1: 'Message failed',
                 text2: err?.error || err?.message || 'Please try again.',
             });
@@ -585,17 +613,17 @@ export default function ChatScreen() {
         // FIX: Immediate delete handling with refresh
         const unsubDeleted = socketService.onMessageDeleted(data => {
             if (!mountedRef.current) return;
-            
+
             const msgId = String(data.messageId || '');
             const convId = String(data.conversationId || '');
             const deleteFor = data.deleteFor || 'me';
-            
+
             console.log(`📥 message_deleted: ${msgId} for ${deleteFor}`);
-            
+
             setMessages(prev => {
                 const newMessages = [...prev];
                 const index = newMessages.findIndex(m => m.id === msgId);
-                
+
                 if (index !== -1) {
                     if (deleteFor === 'everyone') {
                         newMessages[index] = {
@@ -609,7 +637,7 @@ export default function ChatScreen() {
                         newMessages.splice(index, 1);
                     }
                 }
-                
+
                 return newMessages;
             });
 
@@ -638,12 +666,12 @@ export default function ChatScreen() {
 
         const unsubStatus = socketService.onMessageStatusUpdated(({ messageId, status, conversationId }) => {
             if (!mountedRef.current) return;
-            
+
             const convId = activeConvIdRef.current;
             if (convId && String(conversationId) !== String(convId)) return;
-            
+
             console.log(`📥 message_status_updated: ${messageId} is ${status}`);
-            
+
             setMessages(prev =>
                 prev.map(m =>
                     m.id === messageId
@@ -696,10 +724,10 @@ export default function ChatScreen() {
 
     // ── Send message ──
     const sendMessage = useCallback(() => {
-        const text     = inputText.trim();
-        const receiver = recipientIdRef.current    || validStr(params.recipientId);
-        const model    = recipientModelRef.current || validStr(params.recipientModel);
-        const convId   = activeConvIdRef.current   || validStr(params.conversationId) || null;
+        const text = inputText.trim();
+        const receiver = recipientIdRef.current || validStr(params.recipientId);
+        const model = recipientModelRef.current || validStr(params.recipientModel);
+        const convId = activeConvIdRef.current || validStr(params.conversationId) || null;
 
         if (!text || !isConnected) return;
 
@@ -718,11 +746,11 @@ export default function ChatScreen() {
         lastTempIdRef.current = tempId;
 
         const tempMsg = {
-            id:        tempId,
+            id: tempId,
             text,
             createdAt: new Date(),
-            isMe:      true,
-            status:    'pending',
+            isMe: true,
+            status: 'pending',
             isDeleted: false,
         };
 
@@ -737,9 +765,9 @@ export default function ChatScreen() {
     const retryMessage = useCallback((msg) => {
         if (!isConnected) return;
 
-        const receiver = recipientIdRef.current    || validStr(params.recipientId);
-        const model    = recipientModelRef.current || validStr(params.recipientModel);
-        const convId   = activeConvIdRef.current   || validStr(params.conversationId) || null;
+        const receiver = recipientIdRef.current || validStr(params.recipientId);
+        const model = recipientModelRef.current || validStr(params.recipientModel);
+        const convId = activeConvIdRef.current || validStr(params.conversationId) || null;
 
         setMessages(prev => prev.filter(m => m.id !== msg.id));
 
@@ -867,10 +895,10 @@ export default function ChatScreen() {
                             {isMe && (
                                 <Ionicons
                                     name={
-                                        item.status === 'pending'   ? 'time-outline' :
-                                        item.status === 'failed'    ? 'alert-circle-outline' :
+                                        item.status === 'pending' ? 'time-outline' :
+                                        item.status === 'failed' ? 'alert-circle-outline' :
                                         item.status === 'delivered' ? 'checkmark-done' :
-                                        item.status === 'seen'      ? 'checkmark-done' :
+                                        item.status === 'seen' ? 'checkmark-done' :
                                         'checkmark'
                                     }
                                     size={12}
@@ -879,13 +907,10 @@ export default function ChatScreen() {
                                             ? C.offline
                                             : item.status === 'seen'
                                                 ? '#4CAF50'
-                                                : 'rgba(255,255,255,0.7)'
+                                                : isMe ? 'rgba(255,255,255,0.7)' : C.textSecondary
                                     }
                                     style={{ marginLeft: 4 }}
                                 />
-                            )}
-                            {!isMe && item.status === 'seen' && (
-                                <Text style={[styles.timeTxt, { marginLeft: 4 }]}>Seen</Text>
                             )}
                         </View>
                     </TouchableOpacity>
@@ -1078,8 +1103,8 @@ export default function ChatScreen() {
 // ═══════════════════════════════════════════════════════════
 
 const styles = StyleSheet.create({
-    container:  { flex: 1, backgroundColor: C.bg },
-    center:     { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    container: { flex: 1, backgroundColor: C.bg },
+    center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     loadingTxt: { marginTop: 12, color: C.textSecondary, fontSize: 14 },
 
     header: {
@@ -1116,8 +1141,8 @@ const styles = StyleSheet.create({
     },
     headerAvatarImg: { width: 36, height: 36, borderRadius: 18 },
     headerAvatarTxt: { fontSize: 14, fontWeight: '600', color: C.white },
-    headerName:      { fontSize: 15, fontWeight: '600', color: C.textPrimary, marginBottom: 2 },
-    headerStatus:    { fontSize: 11, color: C.textSecondary },
+    headerName: { fontSize: 15, fontWeight: '600', color: C.textPrimary, marginBottom: 2 },
+    headerStatus: { fontSize: 11, color: C.textSecondary },
 
     offlineBanner: {
         flexDirection: 'row',
@@ -1140,18 +1165,18 @@ const styles = StyleSheet.create({
 
     msgList: { padding: 16, paddingBottom: 8, flexGrow: 1 },
 
-    msgRow:      { flexDirection: 'row', marginBottom: 12, alignItems: 'flex-end' },
+    msgRow: { flexDirection: 'row', marginBottom: 12, alignItems: 'flex-end' },
     msgRowRight: { justifyContent: 'flex-end' },
 
-    msgAvatar:         { width: 28, height: 28, borderRadius: 14, marginRight: 8, overflow: 'hidden' },
-    msgAvatarImg:      { width: 28, height: 28, borderRadius: 14 },
+    msgAvatar: { width: 28, height: 28, borderRadius: 14, marginRight: 8, overflow: 'hidden' },
+    msgAvatarImg: { width: 28, height: 28, borderRadius: 14 },
     msgAvatarFallback: {
         width: 28, height: 28, borderRadius: 14,
         justifyContent: 'center', alignItems: 'center',
     },
     msgAvatarTxt: { fontSize: 11, fontWeight: '600', color: C.white },
 
-    msgWrapper:      { maxWidth: '75%' },
+    msgWrapper: { maxWidth: '75%' },
     msgWrapperRight: { alignItems: 'flex-end' },
 
     bubble: {
@@ -1179,16 +1204,16 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: 4,
     },
-    bubbleTxt:    { fontSize: 14, lineHeight: 20, marginBottom: 2, color: C.textPrimary },
-    bubbleTxtMe:  { color: C.white },
+    bubbleTxt: { fontSize: 14, lineHeight: 20, marginBottom: 2, color: C.textPrimary },
+    bubbleTxtMe: { color: C.white },
     bubbleFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' },
-    timeTxt:      { fontSize: 10, color: C.textSecondary },
-    timeTxtMe:    { color: 'rgba(255,255,255,0.7)' },
-    editedLabel:  { fontSize: 10, color: C.textSecondary, fontStyle: 'italic', marginTop: 2 },
+    timeTxt: { fontSize: 10, color: C.textSecondary },
+    timeTxtMe: { color: 'rgba(255,255,255,0.7)' },
+    editedLabel: { fontSize: 10, color: C.textSecondary, fontStyle: 'italic', marginTop: 2 },
     editedLabelMe: { color: 'rgba(255,255,255,0.7)' },
-    deletedText:  { fontSize: 12, color: C.textSecondary, fontStyle: 'italic' },
-    retryBtn:     { marginTop: 4 },
-    retryTxt:     { fontSize: 11, color: C.offline },
+    deletedText: { fontSize: 12, color: C.textSecondary, fontStyle: 'italic' },
+    retryBtn: { marginTop: 4 },
+    retryTxt: { fontSize: 11, color: C.offline },
 
     emptyBox: {
         flex: 1, minHeight: 400,

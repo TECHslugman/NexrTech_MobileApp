@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
@@ -43,7 +42,7 @@ const C = {
 // ─────────────────────────────────────────
 const STATUS = {
     pending:      { label: 'Not Uploaded',   color: C.ink3,   bg: C.divider,    accent: C.divider, canUpload: true,  canReupload: false },
-    under_review: { label: 'Under Review',   color: C.violet, bg: C.violetSoft, accent: C.violet,  canUpload: false, canReupload: false },
+    under_review: { label: 'Under Review',   color: C.blue,   bg: C.blueSoft,   accent: C.blue,    canUpload: true,  canReupload: true },
     reupload:     { label: 'Needs Reupload', color: C.amber,  bg: C.amberSoft,  accent: C.amber,   canUpload: false, canReupload: true  },
     rejected:     { label: 'Rejected',       color: C.red,    bg: C.redSoft,    accent: C.red,     canUpload: false, canReupload: true  },
     approved:     { label: 'Approved',       color: C.green,  bg: C.greenSoft,  accent: C.green,   canUpload: false, canReupload: false },
@@ -60,7 +59,6 @@ function fmtDate(str) {
 
 // ─────────────────────────────────────────
 // PDF THUMBNAIL
-//
 // Uses react-native-pdf-thumbnail (native module).
 // Given a URL it downloads/accesses the file and renders page 0 to a
 // local image path, which we display in an <Image>.
@@ -238,7 +236,7 @@ function DocCard({ doc, index, uploading, onUpload, onView }) {
                         activeOpacity={0.82}
                     >
                         <Text style={[styles.uploadBtnTxt, cfg.canReupload && { color: cfg.color }]}>
-                            {cfg.canReupload ? 'Re-upload' : 'Upload'}
+                            {cfg.canReupload ? 'Upload' : 'Upload'}
                         </Text>
                     </TouchableOpacity>
                 ) : null}

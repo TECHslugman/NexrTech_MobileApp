@@ -167,9 +167,9 @@ export default function MentorDetails() {
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
                 <View style={styles.profileSection}>
-                    {mentor?.profilepic ? (
+                    {mentor?.profileUrl ? (
                         <Image
-                            source={{ uri: mentor.profilepic }}
+                            source={{ uri: mentor.profileUrl }}
                             style={styles.profileImage}
                         />
                     ) : (

@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TouchableOpacity,
-    ActivityIndicator, Alert, TextInput, Modal, Platform
+    ActivityIndicator, Alert, TextInput, Modal, Platform,
+    KeyboardAvoidingView, Keyboard, TouchableWithoutFeedback
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather, Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuth } from '../../../context/AuthContext';
@@ -17,13 +18,11 @@ const COLORS = {
     primary: '#769FCD',
     primaryLight: 'rgba(118, 159, 205, 0.1)',
     sectionTitle: '#2D3748',
-    viewAll: '#718096',
     white: '#FFFFFF',
     border: '#EEF2F7',
     cardBg: '#FFFFFF',
     textPrimary: '#2D3748',
     textSecondary: '#718096',
-    accent: '#E2E8F0',
     lightBlue: '#E8F1FF',
     danger: '#FF6B6B',
     dangerLight: 'rgba(255, 107, 107, 0.1)',
@@ -34,16 +33,16 @@ const COLORS = {
 const DEFAULT_IMAGE = require('../../../../assets/images/agencies/profile_default.png');
 
 const formatDate = (dateString) => {
-    if (!dateString) return "Not Set";
+    if (!dateString) return 'Not Set';
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return dateString;
     return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
 const formatYearRange = (startYear, endYear) => {
-    if (!startYear) return "Not Set";
-    if (!endYear) return `${startYear} - Present`;
-    return `${startYear} - ${endYear}`;
+    if (!startYear) return 'Not Set';
+    if (!endYear) return `${startYear} – Present`;
+    return `${startYear} – ${endYear}`;
 };
 
 export default function UserProfile() {
@@ -54,24 +53,24 @@ export default function UserProfile() {
 
     const [loading, setLoading] = useState(true);
     const [userData, setUserData] = useState(null);
-    const [isModalVisible, setModalVisible] = useState(false);
-    const [isEducationModalVisible, setEducationModalVisible] = useState(false);
-    const [editField, setEditField] = useState({ name: '', value: '', key: '' });
 
-    // Date picker state
+    // Simple edit modal
+    const [isModalVisible, setModalVisible] = useState(false);
+    const [editField, setEditField] = useState({ name: '', value: '', key: '' });
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [selectedDate, setSelectedDate] = useState(new Date());
 
-    // Education form state
+    // Education modal
+    const [isEducationModalVisible, setEducationModalVisible] = useState(false);
     const [educationForm, setEducationForm] = useState({
-        institution: '',
-        degree: '',
+        institution: '', 
+        degree: '', 
         fieldOfStudy: '',
-        startYear: '',
-        endYear: '',
+        startYear: '', 
+        endYear: '', 
         grade: '',
-        isEditing: false,
-        editIndex: null
+        isEditing: false, 
+        editIndex: null,
     });
 
     useEffect(() => {
@@ -80,135 +79,64 @@ export default function UserProfile() {
 
     const fetchProfile = async () => {
         try {
+            setLoading(true);
             const response = await fetch(`${Config.API_BASE_URL}/students/profile`, {
-                headers: {
-                    'Authorization': `Bearer ${userToken}`,
-                    'Content-Type': 'application/json'
-                }
+                headers: { 'Authorization': `Bearer ${userToken}`, 'Content-Type': 'application/json' },
             });
-            console.log("Fetching profile - Status:", response.status);
-
             const json = await response.json();
-            if (response.ok) {
-                setUserData(json.profile);
-                console.log("✅ Profile fetched successfully - Image URL:", json.profile.profileUrl);
-                console.log("✅ Profile fetched successfully ", json.profile);
-
-            } else {
-                console.error("❌ Failed to fetch profile", json);
-            }
+            console.log('Profile data:', JSON.stringify(json, null, 2));
+            if (response.ok) setUserData(json.profile);
         } catch (error) {
-            console.error("Profile Fetch Error:", error);
+            console.error('Profile Fetch Error:', error);
         } finally {
             setLoading(false);
         }
     };
 
     const handleUpload = async (asset) => {
-        const registeredAgencyId = userData?.registeredAgency;
-        const studentId = userData?._id;
-
-        if (!registeredAgencyId || !studentId) {
-            Alert.alert("Error", "Profile data is still loading. Please try again.");
+        if (!userData?.registeredAgency || !userData?._id) {
+            Alert.alert('Error', 'Profile data is still loading. Please try again.');
             return;
         }
-
         try {
             setLoading(true);
             let mimeType = asset.mimeType || 'image/jpeg';
             if (mimeType === 'image/jpg') mimeType = 'image/jpeg';
 
-            // Step 1: Get SAS URL
             const sasRes = await fetch(`${Config.API_BASE_URL}/students/uploads/sas`, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${userToken}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    mimeType,
-                    size: asset.fileSize || 0,
-                    documentType: 'profile'
-                })
+                headers: { 'Authorization': `Bearer ${userToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mimeType, size: asset.fileSize || 0, documentType: 'profile' }),
             });
-
-            if (!sasRes.ok) {
-                const errorData = await sasRes.json();
-                console.error("SAS Error:", errorData);
-                throw new Error("SAS generation failed");
-            }
-            
+            if (!sasRes.ok) throw new Error('SAS generation failed');
             const { sasUrl, blobName } = await sasRes.json();
-            console.log("✅ SAS URL generated:", blobName);
 
-            // Step 2: Upload to Azure
             const blobRes = await fetch(asset.uri);
             const blob = await blobRes.blob();
-
             const azureRes = await fetch(sasUrl, {
-                method: 'PUT',
-                body: blob,
-                headers: {
-                    'x-ms-blob-type': 'BlockBlob',
-                    'Content-Type': mimeType
-                }
+                method: 'PUT', body: blob,
+                headers: { 'x-ms-blob-type': 'BlockBlob', 'Content-Type': mimeType },
             });
+            if (!azureRes.ok) throw new Error('Azure storage upload failed');
 
-            if (!azureRes.ok) {
-                console.error("Azure Upload Error:", await azureRes.text());
-                throw new Error("Azure storage upload failed");
-            }
-            console.log("✅ File uploaded to Azure");
-
-            // Step 3: Confirm upload
-            const confirmRes = await fetch(`${Config.API_BASE_URL}/students/uploads/confirm`, {
+            await fetch(`${Config.API_BASE_URL}/students/uploads/confirm`, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${userToken}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    blobName,
-                    size: asset.fileSize || 0,
-                    mimeType,
-                    documentType: 'profile'
-                })
+                headers: { 'Authorization': `Bearer ${userToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ blobName, size: asset.fileSize || 0, mimeType, documentType: 'profile' }),
             });
 
-            if (!confirmRes.ok) {
-                console.error("Confirm Error:", await confirmRes.json());
-            }
-            console.log("✅ Upload confirmed");
-
-            // Step 4: Update profile with new image URL
             const newImageUrl = sasUrl.split('?')[0];
-            
             const patchRes = await fetch(`${Config.API_BASE_URL}/students/profile`, {
                 method: 'PATCH',
-                headers: {
-                    'Authorization': `Bearer ${userToken}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ profileUrl: newImageUrl })
+                headers: { 'Authorization': `Bearer ${userToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ profileUrl: newImageUrl }),
             });
-
-            const patchData = await patchRes.json();
-            console.log("Patch Response:", patchData);
-
             if (patchRes.ok) {
-                // Update local state with new image - use profileUrl field
                 setUserData(prev => ({ ...prev, profileUrl: newImageUrl }));
-                Alert.alert("Success", "Profile picture updated successfully");
-                console.log("✅ Profile picture updated:", newImageUrl);
-            } else {
-                console.error("❌ Failed to update profile in database");
-                throw new Error("Failed to save profile picture");
-            }
-
+                Alert.alert('Success', 'Profile picture updated successfully');
+            } else throw new Error('Failed to save profile picture');
         } catch (err) {
-            console.error('Upload Error:', err);
-            Alert.alert("Upload Error", err.message || "Failed to update photo. Please try again.");
-            // Refresh to get the correct current state
+            Alert.alert('Upload Error', err.message || 'Failed to update photo.');
             await fetchProfile();
         } finally {
             setLoading(false);
@@ -218,232 +146,248 @@ export default function UserProfile() {
     const pickImage = async () => {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') {
-            Alert.alert("Permission Required", "Please allow access to your photo library");
+            Alert.alert('Permission Required', 'Please allow access to your photo library');
             return;
         }
-
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['images'],
-            allowsEditing: true,
-            aspect: [1, 1],
-            quality: 0.4,
+            mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.4,
         });
-
-        if (!result.canceled && result.assets[0]) {
-            handleUpload(result.assets[0]);
-        }
+        if (!result.canceled && result.assets[0]) handleUpload(result.assets[0]);
     };
 
     const handlePatchRequest = async () => {
         try {
             setLoading(true);
+            
+            // Prepare the update object
+            const updateData = {};
+            
+            if (editField.key === 'dob') {
+                // Ensure date is in proper format
+                updateData.dob = editField.value;
+            } else if (editField.key === 'phone') {
+                updateData.phone = editField.value;
+            } else if (editField.key === 'nationality') {
+                updateData.nationality = editField.value;
+            }
+            
+            console.log('Updating with:', updateData);
+            
             const response = await fetch(`${Config.API_BASE_URL}/students/profile`, {
                 method: 'PATCH',
-                headers: {
-                    'Authorization': `Bearer ${userToken}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ [editField.key]: editField.value })
+                headers: { 'Authorization': `Bearer ${userToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(updateData),
             });
-
+            
+            const responseData = await response.json();
+            console.log('Update response:', responseData);
+            
             if (response.ok) {
                 setModalVisible(false);
-                fetchProfile();
-                Alert.alert("Success", "Information updated");
+                setShowDatePicker(false);
+                await fetchProfile(); // Refresh data
+                Alert.alert('Success', 'Information updated');
+            } else {
+                Alert.alert('Error', responseData.message || 'Failed to update');
             }
         } catch (error) {
-            console.error(error);
+            console.error('Update error:', error);
+            Alert.alert('Error', 'Failed to update information');
         } finally {
             setLoading(false);
         }
     };
 
     const handleDateChange = (event, selected) => {
-        setShowDatePicker(Platform.OS === 'ios');
+        if (Platform.OS === 'android') {
+            setShowDatePicker(false);
+        }
         if (selected) {
             setSelectedDate(selected);
-            const formattedDate = selected.toISOString().split('T')[0];
-            setEditField({ ...editField, value: formattedDate });
+            // Format date as YYYY-MM-DD
+            const year = selected.getFullYear();
+            const month = String(selected.getMonth() + 1).padStart(2, '0');
+            const day = String(selected.getDate()).padStart(2, '0');
+            const formattedDate = `${year}-${month}-${day}`;
+            setEditField(prev => ({ ...prev, value: formattedDate }));
         }
     };
 
     const openDatePicker = () => {
-        const currentDate = userData?.dob ? new Date(userData.dob) : new Date();
-        setSelectedDate(currentDate);
-        setEditField({
-            name: "Date of Birth",
-            value: userData?.dob ? userData.dob.split('T')[0] : '',
-            key: "dob"
-        });
+        const current = userData?.dob ? new Date(userData.dob) : new Date();
+        setSelectedDate(current);
+        setEditField({ name: 'Date of Birth', value: userData?.dob?.split('T')[0] || '', key: 'dob' });
         setShowDatePicker(true);
         setModalVisible(true);
     };
 
-    // Education CRUD
     const handleAddEducation = () => {
+        console.log('Add education pressed');
         setEducationForm({
-            institution: '',
-            degree: '',
+            institution: '', 
+            degree: '', 
             fieldOfStudy: '',
-            startYear: '',
-            endYear: '',
+            startYear: '', 
+            endYear: '', 
             grade: '',
-            isEditing: false,
-            editIndex: null
+            isEditing: false, 
+            editIndex: null,
         });
         setEducationModalVisible(true);
     };
 
-    const handleEditEducation = (education, index) => {
+    const handleEditEducation = (edu, index) => {
+        console.log('Edit education pressed', edu);
         setEducationForm({
-            institution: education.institution || '',
-            degree: education.degree || '',
-            fieldOfStudy: education.fieldOfStudy || '',
-            startYear: education.startYear?.toString() || '',
-            endYear: education.endYear?.toString() || '',
-            grade: education.grade || '',
+            institution: edu.institution || '',
+            degree: edu.degree || '',
+            fieldOfStudy: edu.fieldOfStudy || '',
+            startYear: edu.startYear?.toString() || '',
+            endYear: edu.endYear?.toString() || '',
+            grade: edu.grade || '',
             isEditing: true,
-            editIndex: index
+            editIndex: index,
         });
         setEducationModalVisible(true);
     };
 
     const handleSaveEducation = async () => {
         if (!educationForm.institution || !educationForm.degree) {
-            Alert.alert("Validation Error", "Please fill in institution and degree");
+            Alert.alert('Validation Error', 'Please fill in institution and degree');
             return;
         }
-
+        
         try {
             setLoading(true);
-            let updatedEducation = [...(userData?.education || [])];
-
-            const educationEntry = {
-                institution: educationForm.institution,
-                degree: educationForm.degree,
-                fieldOfStudy: educationForm.fieldOfStudy,
-                startYear: educationForm.startYear ? parseInt(educationForm.startYear) : null,
-                endYear: educationForm.endYear ? parseInt(educationForm.endYear) : null,
-                grade: educationForm.grade
+            
+            // Prepare education entry with proper data types
+            const entry = {
+                institution: educationForm.institution.trim(),
+                degree: educationForm.degree.trim(),
+                fieldOfStudy: educationForm.fieldOfStudy.trim() || undefined,
+                startYear: educationForm.startYear ? parseInt(educationForm.startYear) : undefined,
+                endYear: educationForm.endYear ? parseInt(educationForm.endYear) : undefined,
+                grade: educationForm.grade.trim() || undefined,
             };
-
+            
+            // Remove undefined fields
+            Object.keys(entry).forEach(key => 
+                entry[key] === undefined && delete entry[key]
+            );
+            
+            console.log('Saving education entry:', entry);
+            
+            // Get current education array
+            const currentEducation = userData?.education || [];
+            let updatedEducation;
+            
             if (educationForm.isEditing) {
-                updatedEducation[educationForm.editIndex] = educationEntry;
+                // Update existing entry
+                updatedEducation = [...currentEducation];
+                updatedEducation[educationForm.editIndex] = entry;
             } else {
-                updatedEducation.push(educationEntry);
+                // Add new entry
+                updatedEducation = [...currentEducation, entry];
             }
-
+            
+            console.log('Updated education array:', updatedEducation);
+            
             const response = await fetch(`${Config.API_BASE_URL}/students/profile`, {
                 method: 'PATCH',
-                headers: {
-                    'Authorization': `Bearer ${userToken}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ education: updatedEducation })
+                headers: { 'Authorization': `Bearer ${userToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ education: updatedEducation }),
             });
-
+            
+            const responseData = await response.json();
+            console.log('Education save response:', responseData);
+            
             if (response.ok) {
                 setEducationModalVisible(false);
-                fetchProfile();
-                Alert.alert("Success", educationForm.isEditing ? "Education updated" : "Education added");
+                await fetchProfile(); // Refresh the profile data
+                Alert.alert('Success', educationForm.isEditing ? 'Education updated' : 'Education added');
+            } else {
+                Alert.alert('Error', responseData.message || 'Failed to save education');
             }
         } catch (error) {
-            console.error(error);
+            console.error('Education save error:', error);
+            Alert.alert('Error', 'Failed to save education information');
         } finally {
             setLoading(false);
         }
     };
 
-    const handleDeleteEducation = async (index) => {
-        Alert.alert(
-            "Delete Education",
-            "Are you sure you want to delete this education entry?",
-            [
-                { text: "Cancel", style: "cancel" },
-                {
-                    text: "Delete",
-                    style: "destructive",
-                    onPress: async () => {
-                        try {
-                            setLoading(true);
-                            let updatedEducation = [...(userData?.education || [])];
-                            updatedEducation.splice(index, 1);
-
-                            const response = await fetch(`${Config.API_BASE_URL}/students/profile`, {
-                                method: 'PATCH',
-                                headers: {
-                                    'Authorization': `Bearer ${userToken}`,
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({ education: updatedEducation })
-                            });
-
-                            if (response.ok) {
-                                fetchProfile();
-                                Alert.alert("Success", "Education deleted");
-                            }
-                        } catch (error) {
-                            console.error(error);
-                        } finally {
-                            setLoading(false);
+    const handleDeleteEducation = (index) => {
+        Alert.alert('Delete Education', 'Are you sure you want to delete this entry?', [
+            { text: 'Cancel', style: 'cancel' },
+            {
+                text: 'Delete', style: 'destructive',
+                onPress: async () => {
+                    try {
+                        setLoading(true);
+                        const updated = [...(userData?.education || [])];
+                        updated.splice(index, 1);
+                        
+                        console.log('Deleting education, updated array:', updated);
+                        
+                        const response = await fetch(`${Config.API_BASE_URL}/students/profile`, {
+                            method: 'PATCH',
+                            headers: { 'Authorization': `Bearer ${userToken}`, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ education: updated }),
+                        });
+                        
+                        if (response.ok) { 
+                            await fetchProfile(); 
+                            Alert.alert('Success', 'Education deleted'); 
                         }
+                    } catch (error) { 
+                        console.error('Delete error:', error);
+                    } finally { 
+                        setLoading(false); 
                     }
-                }
-            ]
-        );
+                },
+            },
+        ]);
     };
 
     if (loading && !userData) {
-        return (
-            <View style={styles.center}>
-                <ActivityIndicator size="large" color={COLORS.primary} />
-            </View>
-        );
+        return <View style={styles.center}><ActivityIndicator size="large" color={COLORS.primary} /></View>;
     }
 
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
-            {/* Header with Gradient Banner */}
+            {/* Header */}
             <View style={styles.header}>
                 <View style={styles.headerContent}>
                     <TouchableOpacity
-                        style={styles.backButton}
-                        onPress={() => {
-                            if (agencyId) {
-                                router.push(`/agency/selected/${agencyId}`);
-                            } else {
-                                router.back();
-                            }
-                        }}
+                        style={styles.headerBtn}
+                        onPress={() => agencyId ? router.push(`/agency/selected/${agencyId}`) : router.back()}
                     >
                         <Ionicons name="chevron-back" size={24} color={COLORS.white} />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>My Profile</Text>
                     <TouchableOpacity
-                        style={styles.settingsButton}
-                        onPress={() => {
-                            if (agencyId) {
-                                router.push({
-                                    pathname: '/agency/selected/profile-settings',
-                                    params: { agencyId }
-                                });
-                            } else {
-                                router.push('/agency/selected/profile-settings');
-                            }
-                        }}
+                        style={styles.headerBtn}
+                        onPress={() => router.push(agencyId
+                            ? { pathname: '/agency/selected/profile-settings', params: { agencyId } }
+                            : '/agency/selected/profile-settings'
+                        )}
                     >
                         <Ionicons name="settings-outline" size={22} color={COLORS.white} />
                     </TouchableOpacity>
                 </View>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-                {/* Profile Section */}
+            <ScrollView 
+                showsVerticalScrollIndicator={false} 
+                contentContainerStyle={styles.scrollContent}
+                keyboardShouldPersistTaps="handled"
+            >
+                {/* Avatar */}
                 <View style={styles.profileSection}>
                     <View style={styles.avatarContainer}>
                         <Image
                             style={styles.avatar}
-                            source={userData?.profileUrl || DEFAULT_IMAGE}
+                            source={userData?.profileUrl ? { uri: userData.profileUrl } : DEFAULT_IMAGE}
                             placeholder={DEFAULT_IMAGE}
                             contentFit="cover"
                             transition={200}
@@ -460,352 +404,366 @@ export default function UserProfile() {
                 {/* Personal Information */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Personal Information</Text>
-
                     <View style={styles.card}>
-                        {/* Email - Read Only */}
+                        {/* Email - read only */}
                         <View style={styles.infoRow}>
                             <View style={styles.infoLeft}>
-                                <Ionicons name="mail-outline" size={18} color={COLORS.textSecondary} />
+                                <View style={styles.iconWrap}><Ionicons name="mail-outline" size={17} color={COLORS.primary} /></View>
                                 <Text style={styles.infoLabel}>Email</Text>
                             </View>
-                            <Text style={styles.infoValue}>{userData?.email || '-'}</Text>
+                            <Text style={styles.infoValue} numberOfLines={1}>{userData?.email || '–'}</Text>
                         </View>
-
                         <View style={styles.divider} />
 
-                        {/* Phone - Editable */}
-                        <TouchableOpacity
-                            style={styles.infoRow}
-                            onPress={() => {
-                                setEditField({
-                                    name: "Phone Number",
-                                    value: userData?.phone || '',
-                                    key: "phone"
-                                });
-                                setModalVisible(true);
-                            }}
-                        >
+                        {/* Phone */}
+                        <TouchableOpacity style={styles.infoRow} onPress={() => {
+                            setEditField({ name: 'Phone Number', value: userData?.phone || '', key: 'phone' });
+                            setModalVisible(true);
+                        }}>
                             <View style={styles.infoLeft}>
-                                <Ionicons name="call-outline" size={18} color={COLORS.textSecondary} />
+                                <View style={styles.iconWrap}><Ionicons name="call-outline" size={17} color={COLORS.primary} /></View>
                                 <Text style={styles.infoLabel}>Phone</Text>
                             </View>
                             <View style={styles.infoRight}>
                                 <Text style={[styles.infoValue, !userData?.phone && styles.placeholder]}>
                                     {userData?.phone || 'Add phone'}
                                 </Text>
-                                <Ionicons name="chevron-forward" size={18} color={COLORS.textSecondary} />
+                                <Ionicons name="chevron-forward" size={16} color={COLORS.textSecondary} />
                             </View>
                         </TouchableOpacity>
-
                         <View style={styles.divider} />
 
-                        {/* Date of Birth - Editable with Date Picker */}
-                        <TouchableOpacity
-                            style={styles.infoRow}
-                            onPress={openDatePicker}
-                        >
+                        {/* DOB */}
+                        <TouchableOpacity style={styles.infoRow} onPress={openDatePicker}>
                             <View style={styles.infoLeft}>
-                                <Ionicons name="calendar-outline" size={18} color={COLORS.textSecondary} />
+                                <View style={styles.iconWrap}><Ionicons name="calendar-outline" size={17} color={COLORS.primary} /></View>
                                 <Text style={styles.infoLabel}>Date of Birth</Text>
                             </View>
                             <View style={styles.infoRight}>
                                 <Text style={[styles.infoValue, !userData?.dob && styles.placeholder]}>
                                     {formatDate(userData?.dob)}
                                 </Text>
-                                <Ionicons name="chevron-forward" size={18} color={COLORS.textSecondary} />
+                                <Ionicons name="chevron-forward" size={16} color={COLORS.textSecondary} />
                             </View>
                         </TouchableOpacity>
-
                         <View style={styles.divider} />
 
-                        {/* Nationality - Editable */}
-                        <TouchableOpacity
-                            style={styles.infoRow}
-                            onPress={() => {
-                                setEditField({
-                                    name: "Nationality",
-                                    value: userData?.nationality || '',
-                                    key: "nationality"
-                                });
-                                setModalVisible(true);
-                            }}
-                        >
+                        {/* Nationality */}
+                        <TouchableOpacity style={styles.infoRow} onPress={() => {
+                            setEditField({ name: 'Nationality', value: userData?.nationality || '', key: 'nationality' });
+                            setModalVisible(true);
+                        }}>
                             <View style={styles.infoLeft}>
-                                <Ionicons name="flag-outline" size={18} color={COLORS.textSecondary} />
+                                <View style={styles.iconWrap}><Ionicons name="flag-outline" size={17} color={COLORS.primary} /></View>
                                 <Text style={styles.infoLabel}>Nationality</Text>
                             </View>
                             <View style={styles.infoRight}>
                                 <Text style={[styles.infoValue, !userData?.nationality && styles.placeholder]}>
                                     {userData?.nationality || 'Add nationality'}
                                 </Text>
-                                <Ionicons name="chevron-forward" size={18} color={COLORS.textSecondary} />
+                                <Ionicons name="chevron-forward" size={16} color={COLORS.textSecondary} />
                             </View>
                         </TouchableOpacity>
                     </View>
                 </View>
 
-                {/* Education Section */}
+                {/* Education */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
                         <Text style={styles.sectionTitle}>Education</Text>
-                        <TouchableOpacity onPress={handleAddEducation}>
-                            <Ionicons name="add-circle-outline" size={24} color={COLORS.primary} />
+                        <TouchableOpacity style={styles.addBtn} onPress={handleAddEducation}>
+                            <Ionicons name="add" size={18} color={COLORS.primary} />
+                            <Text style={styles.addBtnText}>Add</Text>
                         </TouchableOpacity>
                     </View>
 
                     {userData?.education && userData.education.length > 0 ? (
-                        userData.education.map((edu, index) => (
-                            <View key={index} style={styles.educationCard}>
-                                <View style={styles.educationContent}>
-                                    <View style={styles.educationHeader}>
-                                        <View style={styles.degreeContainer}>
-                                            <Text style={styles.educationDegreeText}>{edu.degree || 'Degree'}</Text>
-                                            <Text style={styles.educationInstitutionText}>{edu.institution || 'Institution'}</Text>
+                        userData.education.map((edu, index) => {
+                            console.log('Rendering education:', edu);
+                            return (
+                                <View key={index} style={styles.educationCard}>
+                                    {/* Top row: degree + actions */}
+                                    <View style={styles.eduTopRow}>
+                                        <View style={styles.eduIconCircle}>
+                                            <Ionicons name="school" size={20} color={COLORS.primary} />
                                         </View>
-                                        <View style={styles.educationActions}>
-                                            <TouchableOpacity
-                                                style={styles.editButton}
-                                                onPress={() => handleEditEducation(edu, index)}
-                                            >
-                                                <Ionicons name="pencil" size={16} color={COLORS.primary} />
+                                        <View style={styles.eduMain}>
+                                            <Text style={styles.eduDegree}>{edu.degree || 'Degree'}</Text>
+                                            <Text style={styles.eduInstitution}>{edu.institution || 'Institution'}</Text>
+                                        </View>
+                                        <View style={styles.eduActions}>
+                                            <TouchableOpacity style={styles.eduEditBtn} onPress={() => handleEditEducation(edu, index)}>
+                                                <Ionicons name="pencil" size={15} color={COLORS.primary} />
                                             </TouchableOpacity>
-                                            <TouchableOpacity
-                                                style={styles.deleteButton}
-                                                onPress={() => handleDeleteEducation(index)}
-                                            >
-                                                <Ionicons name="trash" size={16} color={COLORS.danger} />
+                                            <TouchableOpacity style={styles.eduDeleteBtn} onPress={() => handleDeleteEducation(index)}>
+                                                <Ionicons name="trash" size={15} color={COLORS.danger} />
                                             </TouchableOpacity>
                                         </View>
                                     </View>
 
+                                    {/* Field of study */}
                                     {edu.fieldOfStudy ? (
-                                        <Text style={styles.educationFieldText}>{edu.fieldOfStudy}</Text>
+                                        <Text style={styles.eduField}>{edu.fieldOfStudy}</Text>
                                     ) : null}
 
-                                    <View style={styles.educationFooter}>
-                                        <View style={styles.yearBadge}>
-                                            <Ionicons name="calendar-outline" size={14} color={COLORS.primary} />
-                                            <Text style={styles.educationYearText}>
-                                                {formatYearRange(edu.startYear, edu.endYear)}
-                                            </Text>
-                                        </View>
+                                    {/* Badges row */}
+                                    <View style={styles.eduBadgesRow}>
+                                        {(edu.startYear || edu.endYear) ? (
+                                            <View style={styles.yearBadge}>
+                                                <Ionicons name="calendar-outline" size={13} color={COLORS.primary} />
+                                                <Text style={styles.yearBadgeText}>
+                                                    {formatYearRange(edu.startYear, edu.endYear)}
+                                                </Text>
+                                            </View>
+                                        ) : null}
                                         {edu.grade ? (
                                             <View style={styles.gradeBadge}>
-                                                <Ionicons name="star-outline" size={14} color={COLORS.warning} />
-                                                <Text style={styles.educationGradeText}>{edu.grade}</Text>
+                                                <Ionicons name="star-outline" size={13} color={COLORS.warning} />
+                                                <Text style={styles.gradeBadgeText}>{edu.grade}</Text>
                                             </View>
                                         ) : null}
                                     </View>
                                 </View>
-                            </View>
-                        ))
+                            );
+                        })
                     ) : (
                         <View style={styles.emptyState}>
                             <View style={styles.emptyIconContainer}>
-                                <Ionicons name="school-outline" size={40} color={COLORS.primary} />
+                                <Ionicons name="school-outline" size={36} color={COLORS.primary} />
                             </View>
                             <Text style={styles.emptyTitle}>No education added</Text>
-                            <Text style={styles.emptyDescription}>Tap the + button to add your education history</Text>
+                            <Text style={styles.emptyDescription}>Tap "Add" to include your education history</Text>
                         </View>
                     )}
                 </View>
-
-                <View style={{ height: 30 }} />
             </ScrollView>
 
-            {/* Edit Modal */}
-            <Modal visible={isModalVisible} transparent animationType="fade">
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Edit {editField.name}</Text>
-                            <TouchableOpacity onPress={() => {
-                                setModalVisible(false);
-                                setShowDatePicker(false);
-                            }}>
-                                <Ionicons name="close" size={24} color={COLORS.textSecondary} />
-                            </TouchableOpacity>
-                        </View>
+            {/* ── Simple Edit Modal (phone / nationality / dob) ── */}
+            <Modal 
+                visible={isModalVisible} 
+                transparent 
+                animationType="fade" 
+                onRequestClose={() => {
+                    setModalVisible(false);
+                    setShowDatePicker(false);
+                }}
+            >
+                <TouchableWithoutFeedback onPress={() => {
+                    setModalVisible(false);
+                    setShowDatePicker(false);
+                }}>
+                    <View style={styles.modalOverlay}>
+                        <TouchableWithoutFeedback>
+                            <View style={styles.simpleModalCard}>
+                                {/* Handle bar */}
+                                <View style={styles.modalHandle} />
 
-                        {editField.key === 'dob' ? (
-                            <>
-                                {showDatePicker && (
-                                    <DateTimePicker
-                                        value={selectedDate}
-                                        mode="date"
-                                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                                        onChange={handleDateChange}
-                                        maximumDate={new Date()}
-                                        minimumDate={new Date(1950, 0, 1)}
+                                <Text style={styles.simpleModalTitle}>Edit {editField.name}</Text>
+
+                                {editField.key === 'dob' ? (
+                                    <View>
+                                        <View style={styles.dateDisplayBox}>
+                                            <Ionicons name="calendar-outline" size={20} color={COLORS.primary} />
+                                            <Text style={styles.dateDisplayText}>
+                                                {editField.value ? formatDate(editField.value) : 'Select a date'}
+                                            </Text>
+                                        </View>
+                                        {showDatePicker && (
+                                            <DateTimePicker
+                                                value={selectedDate}
+                                                mode="date"
+                                                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                                                onChange={handleDateChange}
+                                                maximumDate={new Date()}
+                                                minimumDate={new Date(1950, 0, 1)}
+                                            />
+                                        )}
+                                        {Platform.OS === 'android' && !showDatePicker && (
+                                            <TouchableOpacity 
+                                                style={styles.datePickerButton}
+                                                onPress={() => setShowDatePicker(true)}
+                                            >
+                                                <Text style={styles.datePickerButtonText}>Change Date</Text>
+                                            </TouchableOpacity>
+                                        )}
+                                    </View>
+                                ) : (
+                                    <TextInput
+                                        style={styles.simpleInput}
+                                        value={editField.value}
+                                        onChangeText={text => setEditField(prev => ({ ...prev, value: text }))}
+                                        placeholder={`Enter ${editField.name.toLowerCase()}`}
+                                        placeholderTextColor={COLORS.textSecondary}
+                                        keyboardType={editField.key === 'phone' ? 'phone-pad' : 'default'}
+                                        autoFocus
+                                        returnKeyType="done"
+                                        onSubmitEditing={handlePatchRequest}
                                     />
                                 )}
-                                <View style={styles.dateDisplay}>
-                                    <Text style={styles.dateDisplayText}>
-                                        {editField.value ? formatDate(editField.value) : 'Select date'}
-                                    </Text>
-                                </View>
-                            </>
-                        ) : (
-                            <TextInput
-                                style={styles.input}
-                                value={editField.value}
-                                onChangeText={(text) => setEditField({ ...editField, value: text })}
-                                placeholder={`Enter ${editField.name.toLowerCase()}`}
-                                placeholderTextColor={COLORS.textSecondary}
-                                keyboardType={editField.key === 'phone' ? 'phone-pad' : 'default'}
-                            />
-                        )}
 
-                        <View style={styles.modalActions}>
-                            <TouchableOpacity
-                                style={[styles.modalButton, styles.cancelButton]}
-                                onPress={() => {
-                                    setModalVisible(false);
-                                    setShowDatePicker(false);
-                                }}
-                            >
-                                <Text style={styles.cancelButtonText}>Cancel</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.modalButton, styles.saveButton]}
-                                onPress={handlePatchRequest}
-                            >
-                                <Text style={styles.saveButtonText}>Save</Text>
-                            </TouchableOpacity>
-                        </View>
+                                <View style={styles.modalActions}>
+                                    <TouchableOpacity
+                                        style={[styles.modalBtn, styles.cancelBtn]}
+                                        onPress={() => { 
+                                            setModalVisible(false); 
+                                            setShowDatePicker(false); 
+                                        }}
+                                    >
+                                        <Text style={styles.cancelBtnText}>Cancel</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={[styles.modalBtn, styles.saveBtn]} onPress={handlePatchRequest}>
+                                        <Text style={styles.saveBtnText}>Save</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        </TouchableWithoutFeedback>
                     </View>
-                </View>
+                </TouchableWithoutFeedback>
             </Modal>
 
-            {/* Education Modal */}
-            <Modal visible={isEducationModalVisible} transparent animationType="slide">
-                <View style={styles.modalOverlay}>
-                    <View style={[styles.modalContent, styles.educationModalContent]}>
-                        <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>
+            {/* ── Education Modal ── */}
+            <Modal 
+                visible={isEducationModalVisible} 
+                transparent 
+                animationType="slide" 
+                onRequestClose={() => setEducationModalVisible(false)}
+            >
+                <View style={styles.eduModalOverlay}>
+                    <View style={styles.eduModalSheet}>
+                        {/* Header with close button */}
+                        <View style={styles.eduModalHeader}>
+                            <Text style={styles.eduModalTitle}>
                                 {educationForm.isEditing ? 'Edit Education' : 'Add Education'}
                             </Text>
-                            <TouchableOpacity onPress={() => setEducationModalVisible(false)}>
+                            <TouchableOpacity 
+                                onPress={() => setEducationModalVisible(false)}
+                                style={styles.eduCloseButton}
+                            >
                                 <Ionicons name="close" size={24} color={COLORS.textSecondary} />
                             </TouchableOpacity>
                         </View>
 
-                        {/* Preview Section */}
-                        {(educationForm.institution || educationForm.degree) && (
-                            <View style={styles.previewSection}>
-                                <Text style={styles.previewTitle}>Preview</Text>
-                                <View style={styles.previewCard}>
-                                    <Text style={styles.previewDegree}>
-                                        {educationForm.degree || 'Degree'}
+                        {/* Form Content */}
+                        <KeyboardAvoidingView
+                            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                            style={styles.eduKeyboardView}
+                            keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
+                        >
+                            <ScrollView
+                                style={styles.eduFormScroll}
+                                contentContainerStyle={styles.eduFormContent}
+                                showsVerticalScrollIndicator={true}
+                                keyboardShouldPersistTaps="handled"
+                            >
+                                <View style={styles.formGroup}>
+                                    <Text style={styles.formLabel}>
+                                        Institution <Text style={{ color: COLORS.danger }}>*</Text>
                                     </Text>
-                                    <Text style={styles.previewInstitution}>
-                                        {educationForm.institution || 'Institution'}
+                                    <TextInput
+                                        style={styles.formInput}
+                                        value={educationForm.institution}
+                                        onChangeText={t => setEducationForm(p => ({ ...p, institution: t }))}
+                                        placeholder="e.g. Harvard University"
+                                        placeholderTextColor={COLORS.textSecondary}
+                                    />
+                                </View>
+
+                                <View style={styles.formGroup}>
+                                    <Text style={styles.formLabel}>
+                                        Degree <Text style={{ color: COLORS.danger }}>*</Text>
                                     </Text>
-                                    {educationForm.fieldOfStudy ? (
-                                        <Text style={styles.previewField}>{educationForm.fieldOfStudy}</Text>
-                                    ) : null}
-                                    <View style={styles.previewMeta}>
-                                        <Text style={styles.previewYear}>
-                                            {formatYearRange(educationForm.startYear, educationForm.endYear)}
-                                        </Text>
-                                        {educationForm.grade ? (
-                                            <Text style={styles.previewGrade}> • {educationForm.grade}</Text>
-                                        ) : null}
+                                    <TextInput
+                                        style={styles.formInput}
+                                        value={educationForm.degree}
+                                        onChangeText={t => setEducationForm(p => ({ ...p, degree: t }))}
+                                        placeholder="e.g. Bachelor of Science"
+                                        placeholderTextColor={COLORS.textSecondary}
+                                    />
+                                </View>
+
+                                <View style={styles.formGroup}>
+                                    <Text style={styles.formLabel}>Field of Study</Text>
+                                    <TextInput
+                                        style={styles.formInput}
+                                        value={educationForm.fieldOfStudy}
+                                        onChangeText={t => setEducationForm(p => ({ ...p, fieldOfStudy: t }))}
+                                        placeholder="e.g. Computer Science"
+                                        placeholderTextColor={COLORS.textSecondary}
+                                    />
+                                </View>
+
+                                <View style={styles.rowFields}>
+                                    <View style={styles.halfField}>
+                                        <Text style={styles.formLabel}>Start Year</Text>
+                                        <TextInput
+                                            style={styles.formInput}
+                                            value={educationForm.startYear}
+                                            onChangeText={t => setEducationForm(p => ({ ...p, startYear: t }))}
+                                            placeholder="2020"
+                                            placeholderTextColor={COLORS.textSecondary}
+                                            keyboardType="number-pad"
+                                            maxLength={4}
+                                        />
+                                    </View>
+                                    <View style={styles.halfField}>
+                                        <Text style={styles.formLabel}>End Year</Text>
+                                        <TextInput
+                                            style={styles.formInput}
+                                            value={educationForm.endYear}
+                                            onChangeText={t => setEducationForm(p => ({ ...p, endYear: t }))}
+                                            placeholder="2024"
+                                            placeholderTextColor={COLORS.textSecondary}
+                                            keyboardType="number-pad"
+                                            maxLength={4}
+                                        />
                                     </View>
                                 </View>
-                            </View>
-                        )}
 
-                        <ScrollView style={styles.formScroll} showsVerticalScrollIndicator={false}>
-                            <View style={styles.formGroup}>
-                                <Text style={styles.formLabel}>
-                                    Institution <Text style={styles.requiredStar}>*</Text>
-                                </Text>
-                                <TextInput
-                                    style={styles.formInput}
-                                    value={educationForm.institution}
-                                    onChangeText={(text) => setEducationForm({ ...educationForm, institution: text })}
-                                    placeholder="e.g. Harvard University"
-                                    placeholderTextColor={COLORS.textSecondary}
-                                />
-                            </View>
-
-                            <View style={styles.formGroup}>
-                                <Text style={styles.formLabel}>
-                                    Degree <Text style={styles.requiredStar}>*</Text>
-                                </Text>
-                                <TextInput
-                                    style={styles.formInput}
-                                    value={educationForm.degree}
-                                    onChangeText={(text) => setEducationForm({ ...educationForm, degree: text })}
-                                    placeholder="e.g. Bachelor of Science"
-                                    placeholderTextColor={COLORS.textSecondary}
-                                />
-                            </View>
-
-                            <View style={styles.formGroup}>
-                                <Text style={styles.formLabel}>Field of Study</Text>
-                                <TextInput
-                                    style={styles.formInput}
-                                    value={educationForm.fieldOfStudy}
-                                    onChangeText={(text) => setEducationForm({ ...educationForm, fieldOfStudy: text })}
-                                    placeholder="e.g. Computer Science"
-                                    placeholderTextColor={COLORS.textSecondary}
-                                />
-                            </View>
-
-                            <View style={styles.formRow}>
-                                <View style={styles.formHalf}>
-                                    <Text style={styles.formLabel}>Start Year</Text>
+                                <View style={styles.formGroup}>
+                                    <Text style={styles.formLabel}>Grade / GPA</Text>
                                     <TextInput
                                         style={styles.formInput}
-                                        value={educationForm.startYear}
-                                        onChangeText={(text) => setEducationForm({ ...educationForm, startYear: text })}
-                                        placeholder="2020"
+                                        value={educationForm.grade}
+                                        onChangeText={t => setEducationForm(p => ({ ...p, grade: t }))}
+                                        placeholder="e.g. 3.8 / First Class"
                                         placeholderTextColor={COLORS.textSecondary}
-                                        keyboardType="number-pad"
-                                        maxLength={4}
                                     />
                                 </View>
 
-                                <View style={styles.formHalf}>
-                                    <Text style={styles.formLabel}>End Year</Text>
-                                    <TextInput
-                                        style={styles.formInput}
-                                        value={educationForm.endYear}
-                                        onChangeText={(text) => setEducationForm({ ...educationForm, endYear: text })}
-                                        placeholder="2024"
-                                        placeholderTextColor={COLORS.textSecondary}
-                                        keyboardType="number-pad"
-                                        maxLength={4}
-                                    />
-                                </View>
-                            </View>
+                                {/* Live preview */}
+                                {(educationForm.institution || educationForm.degree) && (
+                                    <View style={styles.previewBox}>
+                                        <Text style={styles.previewLabel}>PREVIEW</Text>
+                                        <Text style={styles.previewDegree}>{educationForm.degree || '—'}</Text>
+                                        <Text style={styles.previewInstitution}>{educationForm.institution || '—'}</Text>
+                                        {educationForm.fieldOfStudy ? (
+                                            <Text style={styles.previewField}>{educationForm.fieldOfStudy}</Text>
+                                        ) : null}
+                                        <Text style={styles.previewMeta}>
+                                            {formatYearRange(educationForm.startYear, educationForm.endYear)}
+                                            {educationForm.grade ? `  ·  ${educationForm.grade}` : ''}
+                                        </Text>
+                                    </View>
+                                )}
+                                
+                                {/* Add some bottom padding */}
+                                <View style={{ height: 20 }} />
+                            </ScrollView>
+                        </KeyboardAvoidingView>
 
-                            <View style={[styles.formGroup, styles.lastFormGroup]}>
-                                <Text style={styles.formLabel}>Grade / GPA</Text>
-                                <TextInput
-                                    style={styles.formInput}
-                                    value={educationForm.grade}
-                                    onChangeText={(text) => setEducationForm({ ...educationForm, grade: text })}
-                                    placeholder="e.g. 3.8 / First Class"
-                                    placeholderTextColor={COLORS.textSecondary}
-                                />
-                            </View>
-                        </ScrollView>
-
+                        {/* Actions */}
                         <View style={styles.modalActions}>
                             <TouchableOpacity
-                                style={[styles.modalButton, styles.cancelButton]}
+                                style={[styles.modalBtn, styles.cancelBtn]}
                                 onPress={() => setEducationModalVisible(false)}
                             >
-                                <Text style={styles.cancelButtonText}>Cancel</Text>
+                                <Text style={styles.cancelBtnText}>Cancel</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.modalButton, styles.saveButton]}
+                            <TouchableOpacity 
+                                style={[styles.modalBtn, styles.saveBtn]} 
                                 onPress={handleSaveEducation}
                             >
-                                <Text style={styles.saveButtonText}>
+                                <Text style={styles.saveBtnText}>
                                     {educationForm.isEditing ? 'Update' : 'Add'}
                                 </Text>
                             </TouchableOpacity>
@@ -814,7 +772,6 @@ export default function UserProfile() {
                 </View>
             </Modal>
 
-            {/* Loading Overlay */}
             {loading && (
                 <View style={styles.loadingOverlay}>
                     <ActivityIndicator size="large" color={COLORS.primary} />
@@ -825,526 +782,520 @@ export default function UserProfile() {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: COLORS.bg,
-    },
-    center: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
+    container: { flex: 1, backgroundColor: COLORS.bg },
+    center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
+    // Header
     header: {
         backgroundColor: COLORS.primary,
-        paddingHorizontal: 20,
-        paddingTop: 15,
+        paddingHorizontal: 20, 
+        paddingTop: 15, 
         paddingBottom: 20,
-        borderBottomLeftRadius: 25,
+        borderBottomLeftRadius: 25, 
         borderBottomRightRadius: 25,
     },
-    headerContent: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
+    headerContent: { 
+        flexDirection: 'row', 
+        justifyContent: 'space-between', 
+        alignItems: 'center' 
     },
-    backButton: {
-        width: 40,
-        height: 40,
+    headerBtn: {
+        width: 40, 
+        height: 40, 
         borderRadius: 20,
-        backgroundColor: 'rgba(255, 255, 255, 0.2)',
-        justifyContent: 'center',
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        justifyContent: 'center', 
         alignItems: 'center',
     },
-    settingsButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: 'rgba(255, 255, 255, 0.2)',
-        justifyContent: 'center',
-        alignItems: 'center',
+    headerTitle: { 
+        fontSize: 22, 
+        fontWeight: '700', 
+        color: COLORS.white 
     },
-    headerTitle: {
-        fontSize: 22,
-        fontWeight: '700',
-        color: COLORS.white,
-    },
-    scrollContent: {
+
+    scrollContent: { 
         padding: 20,
+        paddingBottom: 20,
     },
-    profileSection: {
-        alignItems: 'center',
-        marginBottom: 32,
+
+    // Profile
+    profileSection: { 
+        alignItems: 'center', 
+        marginBottom: 32 
     },
-    avatarContainer: {
-        position: 'relative',
-        marginBottom: 16,
+    avatarContainer: { 
+        position: 'relative', 
+        marginBottom: 16 
     },
     avatar: {
-        width: 100,
-        height: 100,
+        width: 100, 
+        height: 100, 
         borderRadius: 50,
         backgroundColor: COLORS.lightBlue,
-        borderWidth: 4,
+        borderWidth: 4, 
         borderColor: COLORS.white,
     },
     editAvatarButton: {
-        position: 'absolute',
-        bottom: 0,
+        position: 'absolute', 
+        bottom: 0, 
         right: 0,
-        width: 36,
-        height: 36,
+        width: 36, 
+        height: 36, 
         borderRadius: 18,
         backgroundColor: COLORS.primary,
-        borderWidth: 3,
+        borderWidth: 3, 
         borderColor: COLORS.white,
-        alignItems: 'center',
+        alignItems: 'center', 
         justifyContent: 'center',
     },
-    userName: {
-        fontSize: 22,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-        marginBottom: 4,
+    userName: { 
+        fontSize: 22, 
+        fontWeight: '600', 
+        color: COLORS.textPrimary, 
+        marginBottom: 4 
     },
-    userEmail: {
-        fontSize: 14,
-        color: COLORS.textSecondary,
+    userEmail: { 
+        fontSize: 14, 
+        color: COLORS.textSecondary 
     },
-    section: {
-        marginBottom: 24,
+
+    // Section
+    section: { 
+        marginBottom: 24 
     },
-    sectionHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 12,
+    sectionHeader: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        justifyContent: 'space-between', 
+        marginBottom: 12 
     },
-    sectionTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-        marginBottom: 12,
+    sectionTitle: { 
+        fontSize: 16, 
+        fontWeight: '700', 
+        color: COLORS.textPrimary, 
+        marginBottom: 12 
     },
+    addBtn: {
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        gap: 4,
+        paddingHorizontal: 12, 
+        paddingVertical: 6,
+        backgroundColor: COLORS.primaryLight, 
+        borderRadius: 20,
+    },
+    addBtnText: { 
+        fontSize: 13, 
+        fontWeight: '600', 
+        color: COLORS.primary 
+    },
+
+    // Info card
     card: {
-        backgroundColor: COLORS.cardBg,
-        borderRadius: 12,
-        padding: 16,
-        borderWidth: 1,
+        backgroundColor: COLORS.cardBg, 
+        borderRadius: 16,
+        paddingHorizontal: 16, 
+        borderWidth: 1, 
         borderColor: COLORS.border,
-        marginBottom: 12,
     },
     infoRow: {
-        flexDirection: 'row',
+        flexDirection: 'row', 
         alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingVertical: 12,
-    },
-    infoLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-    },
-    infoLabel: {
-        fontSize: 14,
-        color: COLORS.textSecondary,
-        marginLeft: 12,
-    },
-    infoRight: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    infoValue: {
-        fontSize: 14,
-        color: COLORS.textPrimary,
-        fontWeight: '500',
-    },
-    placeholder: {
-        color: COLORS.textSecondary,
-        fontWeight: '400',
-    },
-    divider: {
-        height: 1,
-        backgroundColor: COLORS.border,
-    },
-    educationItem: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-    },
-    educationMain: {
-        flex: 1,
-    },
-    educationDegree: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-        marginBottom: 4,
-    },
-    educationInstitution: {
-        fontSize: 14,
-        color: COLORS.primary,
-        fontWeight: '500',
-        marginBottom: 4,
-    },
-    educationField: {
-        fontSize: 13,
-        color: COLORS.textSecondary,
-        marginBottom: 6,
-    },
-    educationMeta: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    educationYear: {
-        fontSize: 12,
-        color: COLORS.textSecondary,
-    },
-    educationGrade: {
-        fontSize: 12,
-        color: COLORS.textSecondary,
-    },
-    educationActions: {
-        flexDirection: 'row',
-        gap: 8,
-    },
-    actionButton: {
-        width: 36,
-        height: 36,
-        borderRadius: 8,
-        backgroundColor: COLORS.bg,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    emptyState: {
-        backgroundColor: COLORS.cardBg,
-        borderRadius: 12,
-        padding: 40,
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: COLORS.border,
-        borderStyle: 'dashed',
-    },
-    emptyText: {
-        fontSize: 15,
-        fontWeight: '500',
-        color: COLORS.textPrimary,
-        marginTop: 12,
-    },
-    emptySubtext: {
-        fontSize: 13,
-        color: COLORS.textSecondary,
-        marginTop: 4,
-    },
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 20,
-    },
-    modalContent: {
-        backgroundColor: COLORS.cardBg,
-        borderRadius: 16,
-        width: '100%',
-        maxWidth: 400,
-    },
-    educationModalContent: {
-        padding: 0,
-        maxHeight: '90%',
-    },
-    modalHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: 20,
-        paddingBottom: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: COLORS.border,
-    },
-    modalTitle: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-    },
-    input: {
-        backgroundColor: COLORS.bg,
-        borderRadius: 10,
-        padding: 14,
-        fontSize: 15,
-        color: COLORS.textPrimary,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-        marginHorizontal: 20,
-        marginVertical: 12,
-    },
-    dateDisplay: {
-        backgroundColor: COLORS.bg,
-        borderRadius: 10,
-        padding: 14,
-        marginHorizontal: 20,
-        marginVertical: 12,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-    },
-    dateDisplayText: {
-        fontSize: 15,
-        color: COLORS.textPrimary,
-    },
-    modalActions: {
-        flexDirection: 'row',
-        padding: 20,
-        gap: 12,
-        borderTopWidth: 1,
-        borderTopColor: COLORS.border,
-    },
-    modalButton: {
-        flex: 1,
+        justifyContent: 'space-between', 
         paddingVertical: 14,
+    },
+    infoLeft: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        flex: 1 
+    },
+    iconWrap: {
+        width: 34, 
+        height: 34, 
         borderRadius: 10,
-        alignItems: 'center',
-    },
-    cancelButton: {
-        backgroundColor: COLORS.bg,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-    },
-    saveButton: {
-        backgroundColor: COLORS.primary,
-    },
-    cancelButtonText: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: COLORS.textSecondary,
-    },
-    saveButtonText: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: COLORS.cardBg,
-    },
-      educationCard: {
-        backgroundColor: COLORS.white,
-        borderRadius: 16,
-        padding: 16,
-        marginBottom: 12,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.04,
-        shadowRadius: 8,
-        elevation: 2,
-    },
-    educationContent: {
-        flex: 1,
-    },
-    educationHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: 8,
-    },
-    degreeContainer: {
-        flex: 1,
+        backgroundColor: COLORS.primaryLight,
+        alignItems: 'center', 
+        justifyContent: 'center', 
         marginRight: 12,
     },
-    educationDegreeText: {
-        fontSize: 16,
-        fontWeight: '700',
-        color: COLORS.textPrimary,
-        marginBottom: 4,
-        lineHeight: 22,
+    infoLabel: { 
+        fontSize: 14, 
+        color: COLORS.textSecondary 
     },
-    educationInstitutionText: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: COLORS.primary,
-        marginBottom: 2,
-        lineHeight: 20,
+    infoRight: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        gap: 6 
     },
-    educationFieldText: {
-        fontSize: 14,
-        color: COLORS.textSecondary,
+    infoValue: { 
+        fontSize: 14, 
+        color: COLORS.textPrimary, 
+        fontWeight: '500' 
+    },
+    placeholder: { 
+        color: COLORS.textSecondary, 
+        fontWeight: '400' 
+    },
+    divider: { 
+        height: 1, 
+        backgroundColor: COLORS.border 
+    },
+
+    // Education cards - removed shadow
+    educationCard: {
+        backgroundColor: COLORS.white,
+        borderRadius: 16, 
+        padding: 16, 
         marginBottom: 12,
-        lineHeight: 20,
-        fontWeight: '400',
+        borderWidth: 1, 
+        borderColor: COLORS.border,
     },
-    educationFooter: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-        marginTop: 4,
+    eduTopRow: { 
+        flexDirection: 'row', 
+        alignItems: 'flex-start', 
+        marginBottom: 8 
+    },
+    eduIconCircle: {
+        width: 40, 
+        height: 40, 
+        borderRadius: 20,
+        backgroundColor: COLORS.primaryLight,
+        alignItems: 'center', 
+        justifyContent: 'center',
+        marginRight: 12, 
+        flexShrink: 0,
+    },
+    eduMain: { 
+        flex: 1 
+    },
+    eduDegree: { 
+        fontSize: 15, 
+        fontWeight: '700', 
+        color: COLORS.textPrimary, 
+        lineHeight: 21 
+    },
+    eduInstitution: { 
+        fontSize: 13, 
+        fontWeight: '600', 
+        color: COLORS.primary, 
+        lineHeight: 19, 
+        marginTop: 2 
+    },
+    eduActions: { 
+        flexDirection: 'row', 
+        gap: 8, 
+        flexShrink: 0 
+    },
+    eduEditBtn: {
+        width: 34, 
+        height: 34, 
+        borderRadius: 10,
+        backgroundColor: COLORS.primaryLight,
+        alignItems: 'center', 
+        justifyContent: 'center',
+    },
+    eduDeleteBtn: {
+        width: 34, 
+        height: 34, 
+        borderRadius: 10,
+        backgroundColor: 'rgba(255,107,107,0.1)',
+        alignItems: 'center', 
+        justifyContent: 'center',
+    },
+    eduField: { 
+        fontSize: 13, 
+        color: COLORS.textSecondary, 
+        marginBottom: 10, 
+        marginLeft: 52 
+    },
+    eduBadgesRow: { 
+        flexDirection: 'row', 
+        gap: 8, 
+        marginLeft: 52,
+        flexWrap: 'wrap',
     },
     yearBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        gap: 5,
         backgroundColor: COLORS.primaryLight,
-        paddingHorizontal: 10,
-        paddingVertical: 6,
+        paddingHorizontal: 10, 
+        paddingVertical: 5, 
         borderRadius: 20,
-        gap: 6,
+    },
+    yearBadgeText: { 
+        fontSize: 12, 
+        color: COLORS.primary, 
+        fontWeight: '500' 
     },
     gradeBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: 'rgba(255, 152, 0, 0.1)',
-        paddingHorizontal: 10,
-        paddingVertical: 6,
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        gap: 5,
+        backgroundColor: 'rgba(255,152,0,0.1)',
+        paddingHorizontal: 10, 
+        paddingVertical: 5, 
         borderRadius: 20,
-        gap: 6,
     },
-    educationYearText: {
-        fontSize: 13,
-        color: COLORS.primary,
-        fontWeight: '500',
+    gradeBadgeText: { 
+        fontSize: 12, 
+        color: COLORS.warning, 
+        fontWeight: '500' 
     },
-    educationGradeText: {
-        fontSize: 13,
-        color: COLORS.warning,
-        fontWeight: '500',
-    },
-    editButton: {
-        width: 36,
-        height: 36,
-        borderRadius: 10,
-        backgroundColor: COLORS.primaryLight,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 8,
-    },
-    deleteButton: {
-        width: 36,
-        height: 36,
-        borderRadius: 10,
-        backgroundColor: 'rgba(255, 107, 107, 0.1)',
-        alignItems: 'center',
-        justifyContent: 'center',
+
+    // Empty state
+    emptyState: {
+        backgroundColor: COLORS.cardBg, 
+        borderRadius: 16, 
+        padding: 40,
+        alignItems: 'center', 
+        borderWidth: 1, 
+        borderColor: COLORS.border, 
+        borderStyle: 'dashed',
     },
     emptyIconContainer: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
+        width: 72, 
+        height: 72, 
+        borderRadius: 36,
         backgroundColor: COLORS.primaryLight,
-        alignItems: 'center',
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        marginBottom: 14,
+    },
+    emptyTitle: { 
+        fontSize: 16, 
+        fontWeight: '600', 
+        color: COLORS.textPrimary, 
+        marginBottom: 6 
+    },
+    emptyDescription: { 
+        fontSize: 13, 
+        color: COLORS.textSecondary, 
+        textAlign: 'center', 
+        lineHeight: 20 
+    },
+
+    // ── Simple modal ──
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
         justifyContent: 'center',
+        alignItems: 'center',
+    },
+    simpleModalCard: {
+        backgroundColor: COLORS.white,
+        borderRadius: 20, 
+        padding: 24, 
+        width: '90%', 
+        maxWidth: 380,
+    },
+    modalHandle: {
+        width: 36, 
+        height: 4, 
+        borderRadius: 2,
+        backgroundColor: COLORS.border, 
+        alignSelf: 'center', 
         marginBottom: 16,
     },
-    emptyTitle: {
-        fontSize: 16,
+    simpleModalTitle: {
+        fontSize: 17, 
+        fontWeight: '700', 
+        color: COLORS.textPrimary, 
+        marginBottom: 16,
+    },
+    simpleInput: {
+        backgroundColor: COLORS.bg, 
+        borderRadius: 12,
+        paddingHorizontal: 14, 
+        paddingVertical: 13,
+        fontSize: 15, 
+        color: COLORS.textPrimary,
+        borderWidth: 1, 
+        borderColor: COLORS.border, 
+        marginBottom: 4,
+    },
+    dateDisplayBox: {
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        gap: 10,
+        backgroundColor: COLORS.bg, 
+        borderRadius: 12,
+        paddingHorizontal: 14, 
+        paddingVertical: 13,
+        borderWidth: 1, 
+        borderColor: COLORS.border, 
+        marginBottom: 16,
+    },
+    dateDisplayText: { 
+        fontSize: 15, 
+        color: COLORS.textPrimary, 
+        flex: 1 
+    },
+    datePickerButton: {
+        backgroundColor: COLORS.primaryLight,
+        padding: 12,
+        borderRadius: 12,
+        alignItems: 'center',
+        marginTop: 8,
+        marginBottom: 16,
+    },
+    datePickerButtonText: {
+        color: COLORS.primary,
         fontWeight: '600',
-        color: COLORS.textPrimary,
-        marginBottom: 8,
-    },
-    emptyDescription: {
-        fontSize: 14,
-        color: COLORS.textSecondary,
-        textAlign: 'center',
-        lineHeight: 20,
-    },
-    formScroll: {
-        paddingHorizontal: 20,
-        maxHeight: 400,
-    },
-    formGroup: {
-        marginBottom: 16,
-        width: '100%',
-    },
-    lastFormGroup: {
-        marginBottom: 20,
-    },
-    formLabel: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-        marginBottom: 8,
-    },
-    requiredStar: {
-        color: COLORS.danger,
         fontSize: 14,
     },
-    formInput: {
-        backgroundColor: COLORS.bg,
-        borderRadius: 10,
-        padding: 14,
-        fontSize: 15,
-        color: COLORS.textPrimary,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-        width: '100%',
+
+    // ── Education modal ──
+    eduModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end',
     },
-    formRow: {
-        flexDirection: 'row',
-        gap: 12,
-        marginBottom: 16,
-        width: '100%',
+    eduModalSheet: {
+        backgroundColor: COLORS.white,
+        borderTopLeftRadius: 24, 
+        borderTopRightRadius: 24,
+        height: '80%', // Fixed height instead of maxHeight
     },
-    formHalf: {
+    eduModalHeader: {
+        flexDirection: 'row', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        paddingHorizontal: 20, 
+        paddingVertical: 16,
+        borderBottomWidth: 1, 
+        borderBottomColor: COLORS.border,
+        backgroundColor: COLORS.white,
+    },
+    eduModalTitle: { 
+        fontSize: 18, 
+        fontWeight: '700', 
+        color: COLORS.textPrimary 
+    },
+    eduCloseButton: {
+        padding: 4,
+    },
+    eduKeyboardView: {
         flex: 1,
     },
-    previewSection: {
-        paddingHorizontal: 20,
-        paddingTop: 16,
-        paddingBottom: 8,
-        backgroundColor: COLORS.primaryLight,
-        borderBottomWidth: 1,
-        borderBottomColor: COLORS.border,
+    eduFormScroll: { 
+        flex: 1,
     },
-    previewTitle: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: COLORS.textSecondary,
+    eduFormContent: { 
+        padding: 20,
+    },
+
+    // Form fields
+    formGroup: { 
+        marginBottom: 20,
+    },
+    formLabel: { 
+        fontSize: 14, 
+        fontWeight: '600', 
+        color: COLORS.textSecondary, 
         marginBottom: 8,
-        textTransform: 'uppercase',
-        letterSpacing: 0.5,
     },
-    previewCard: {
-        backgroundColor: COLORS.white,
-        borderRadius: 10,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
-    },
-    previewDegree: {
-        fontSize: 16,
-        fontWeight: '600',
+    formInput: {
+        backgroundColor: COLORS.bg, 
+        borderRadius: 12,
+        paddingHorizontal: 16, 
+        paddingVertical: 14,
+        fontSize: 16, 
         color: COLORS.textPrimary,
-        marginBottom: 4,
+        borderWidth: 1, 
+        borderColor: COLORS.border,
     },
-    previewInstitution: {
-        fontSize: 14,
+    rowFields: { 
+        flexDirection: 'row', 
+        marginBottom: 0,
+        gap: 12,
+    },
+    halfField: {
+        flex: 1,
+    },
+
+    // Preview
+    previewBox: {
+        backgroundColor: COLORS.primaryLight,
+        borderRadius: 16, 
+        padding: 16,
+        marginTop: 16,
+        marginBottom: 8,
+        borderWidth: 1, 
+        borderColor: 'rgba(118,159,205,0.3)',
+    },
+    previewLabel: {
+        fontSize: 10,
+        fontWeight: '700', 
         color: COLORS.primary,
-        fontWeight: '500',
-        marginBottom: 4,
+        letterSpacing: 1, 
+        marginBottom: 8,
     },
-    previewField: {
+    previewDegree: { 
+        fontSize: 15,
+        fontWeight: '700', 
+        color: COLORS.textPrimary, 
+        marginBottom: 2,
+    },
+    previewInstitution: { 
         fontSize: 13,
-        color: COLORS.textSecondary,
+        fontWeight: '600', 
+        color: COLORS.primary, 
+        marginBottom: 2,
+    },
+    previewField: { 
+        fontSize: 13,
+        color: COLORS.textSecondary, 
         marginBottom: 6,
     },
-    previewMeta: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    previewYear: {
+    previewMeta: { 
         fontSize: 12,
         color: COLORS.textSecondary,
+        marginTop: 2,
     },
-    previewGrade: {
-        fontSize: 12,
-        color: COLORS.textSecondary,
+
+    // Shared modal actions
+    modalActions: {
+        flexDirection: 'row', 
+        gap: 12,
+        padding: 16,
+        borderTopWidth: 1, 
+        borderTopColor: COLORS.border,
+        backgroundColor: COLORS.white,
     },
+    modalBtn: { 
+        flex: 1, 
+        paddingVertical: 14,
+        borderRadius: 12, 
+        alignItems: 'center' 
+    },
+    cancelBtn: { 
+        backgroundColor: COLORS.bg, 
+        borderWidth: 1, 
+        borderColor: COLORS.border 
+    },
+    saveBtn: { 
+        backgroundColor: COLORS.primary 
+    },
+    cancelBtnText: { 
+        fontSize: 15,
+        fontWeight: '600', 
+        color: COLORS.textSecondary 
+    },
+    saveBtnText: { 
+        fontSize: 15,
+        fontWeight: '600', 
+        color: COLORS.white 
+    },
+
     loadingOverlay: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
+        position: 'absolute', 
+        top: 0, 
+        left: 0, 
+        right: 0, 
         bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.3)',
-        justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.3)',
+        justifyContent: 'center', 
         alignItems: 'center',
     },
 });

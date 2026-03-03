@@ -29,34 +29,35 @@ const COLORS = {
 export default function Settings() {
     const router = useRouter();
     const { signOut } = useAuth();
-
     const handleLogout = async () => {
         Alert.alert(
             "Log Out",
             "Are you sure you want to log out?",
             [
                 { text: "Cancel", style: "cancel" },
-                { 
-                    text: "Log Out", 
-                    style: "destructive", 
+                {
+                    text: "Log Out",
+                    style: "destructive",
                     onPress: async () => {
                         try {
-                            // Show loading indicator or disable button
                             console.log('[Settings] Logging out...');
-                            
-                            // Call signOut and wait for it to complete
+
+                            // FIRST: Navigate away immediately
+                            // This will unmount MessagesScreen before API calls fail
+                            router.replace("/auth/register");
+
+                            // Small delay to ensure navigation starts
+                            await new Promise(resolve => setTimeout(resolve, 100));
+
+                            // THEN: Sign out (token becomes invalid)
                             await signOut();
-                            
-                            console.log('[Settings] Sign out complete, navigating to register');
-                            
-                            // Force navigation to register page
-                            // Use a small timeout to ensure state updates are processed
-                            setTimeout(() => {
-                                router.replace("/auth/register");
-                            }, 100);
-                            
+
+                            console.log('[Settings] Sign out complete');
+
                         } catch (error) {
                             console.error('[Settings] Logout error:', error);
+                            // If error, still try to navigate to register
+                            router.replace("/auth/register");
                         }
                     }
                 }
@@ -70,10 +71,10 @@ export default function Settings() {
             "This action is irreversible. All your data will be permanently deleted.",
             [
                 { text: "Cancel", style: "cancel" },
-                { 
-                    text: "Delete", 
-                    style: "destructive", 
-                    onPress: () => console.log("Delete account") 
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: () => console.log("Delete account")
                 }
             ]
         );

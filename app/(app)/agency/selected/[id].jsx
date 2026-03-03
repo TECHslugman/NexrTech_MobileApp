@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
     FlatList, Image, useWindowDimensions, ActivityIndicator, StatusBar, Linking,
-    RefreshControl, Alert  // Add Alert here
+    RefreshControl, Alert
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -11,6 +11,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { Config } from '../../../config';
 import { useFocusEffect } from 'expo-router';
 import ChatBot from '../../../components/ChatBot';
+import { NAV_BAR_HEIGHT } from '../../../components/BottomNavBar'; // Import the nav bar height
 
 const DEFAULT_IMAGE = require('../../../../assets/images/agencies/default.png');
 
@@ -73,11 +74,11 @@ export default function SelectedAgencyHome() {
     const router = useRouter();
     const { width } = useWindowDimensions();
     const { id, name, agencyLogo } = useLocalSearchParams();
-    const { userToken, setActiveAgency, refreshUserProfile } = useAuth(); // Add refreshUserProfile
+    const { userToken, setActiveAgency, refreshUserProfile } = useAuth();
 
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
-    const [verifying, setVerifying] = useState(false); // Add verifying state
+    const [verifying, setVerifying] = useState(false);
     const [notificationCount, setNotificationCount] = useState(0);
     const [agencyData, setAgencyData] = useState(null);
     const [courses, setCourses] = useState([]);
@@ -117,7 +118,6 @@ export default function SelectedAgencyHome() {
             const data = await response.json();
             console.log('[VERIFY] Profile data:', data);
 
-            // FIX: Access registeredAgency from data.profile
             const backendAgencyId = data.profile?.registeredAgency;
             console.log('[VERIFY] registeredAgency from API:', backendAgencyId);
 
@@ -142,7 +142,6 @@ export default function SelectedAgencyHome() {
                 console.log('[VERIFY] ❌ Agency mismatch! Backend has different agency:', backendAgencyId);
                 console.log('[VERIFY] Current agency ID:', id);
 
-                // Fetch the correct agency details
                 try {
                     const agencyRes = await fetch(`${Config.API_BASE_URL}/agency/profile/${backendAgencyId}`, {
                         headers: {
@@ -155,7 +154,6 @@ export default function SelectedAgencyHome() {
                         const agencyData = await agencyRes.json();
                         const fullProfile = agencyData.agency || agencyData.profile || agencyData;
 
-                        // Update context with correct agency
                         await setActiveAgency({
                             id: backendAgencyId,
                             name: fullProfile.organizationName || 'Your Agency',
@@ -330,7 +328,6 @@ export default function SelectedAgencyHome() {
                         : "Professional mentor for higher education"
                 }));
                 setMentors(formattedMentors);
-
             }
 
             // 7. Notification Count
@@ -362,9 +359,7 @@ export default function SelectedAgencyHome() {
 
     // ============= ADD VERIFICATION ON LOAD =============
     useEffect(() => {
-        // Wait for initial load to complete
         if (!loading && userToken && id) {
-            // Small delay to let everything settle
             const timer = setTimeout(() => {
                 verifyAgencyWithBackend();
             }, 1500);
@@ -473,10 +468,10 @@ export default function SelectedAgencyHome() {
                     <RefreshControl
                         refreshing={refreshing}
                         onRefresh={onRefresh}
-                        colors={[COLORS.primary]} // Android
-                        tintColor={COLORS.primary} // iOS
-                        title="Pull to refresh" // iOS
-                        titleColor={COLORS.textSecondary} // iOS
+                        colors={[COLORS.primary]}
+                        tintColor={COLORS.primary}
+                        title="Pull to refresh"
+                        titleColor={COLORS.textSecondary}
                     />
                 }
             >
@@ -706,8 +701,8 @@ export default function SelectedAgencyHome() {
                                 })}
                                 activeOpacity={0.7}
                             >
-                                {item.logo && item.logo.trim() !== '' ? (
-                                    <Image source={{ uri: item.logo }} style={styles.uniImg} resizeMode="contain" />
+                                {item.profileUrl && item.profileUrl.trim() !== '' ? (
+                                    <Image source={{ uri: item.profileUrl }} style={styles.uniImg} resizeMode="contain" />
                                 ) : (
                                     <View style={styles.uniPlaceholder}>
                                         <Text style={styles.uniPlaceholderText}>
@@ -763,11 +758,14 @@ export default function SelectedAgencyHome() {
                     <Text style={styles.noResultsText}>No mentors available</Text>
                 )}
 
+                {/* Add some bottom padding to ensure content doesn't get cut off */}
                 <View style={{ height: SPACING.xxxl }} />
             </ScrollView>
 
-            {/* ChatBot Component */}
-            <ChatBot agencyId={id} />
+            {/* ChatBot Component - Now properly positioned above nav bar */}
+            <View style={[styles.chatBotContainer, { bottom: NAV_BAR_HEIGHT + 10 }]}>
+                <ChatBot agencyId={id} />
+            </View>
         </SafeAreaView>
     );
 }
@@ -803,6 +801,7 @@ const styles = StyleSheet.create({
         paddingBottom: SPACING.lg,
         borderBottomWidth: 1,
         borderBottomColor: COLORS.border,
+        zIndex: 10,
     },
     headerTop: {
         flexDirection: 'row',
@@ -899,6 +898,7 @@ const styles = StyleSheet.create({
     body: {
         paddingTop: SPACING.lg,
         paddingHorizontal: SPACING.lg,
+        paddingBottom: NAV_BAR_HEIGHT + 60, // Add padding at bottom for ChatBot
     },
     statsContainer: {
         flexDirection: 'row',
@@ -1154,6 +1154,13 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
 
+    // CHATBOT CONTAINER
+    chatBotContainer: {
+        position: 'absolute',
+        right: 16,
+        zIndex: 1000,
+    },
+
     // ============= ADD VERIFICATION BANNER STYLES =============
     verificationBanner: {
         backgroundColor: COLORS.primary,
@@ -1163,6 +1170,7 @@ const styles = StyleSheet.create({
         paddingVertical: SPACING.sm,
         paddingHorizontal: SPACING.lg,
         gap: SPACING.sm,
+        zIndex: 20,
     },
     verificationText: {
         color: COLORS.white,

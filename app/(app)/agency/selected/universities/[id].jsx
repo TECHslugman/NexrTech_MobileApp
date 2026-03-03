@@ -57,6 +57,7 @@ export default function AllUniversities() {
             });
 
             const json = await response.json();
+            console.log('Full API Response:', JSON.stringify(json, null, 2));
 
             if (response.ok) {
                 const results = query.trim().length > 0 
@@ -64,7 +65,7 @@ export default function AllUniversities() {
                     : (json.university?.partnerUniversities || []);
                 
                 setUniversities(results);
-                setImageErrors({}); // Reset image errors on new fetch
+                setImageErrors({});
             }
         } catch (error) {
             console.error("Fetch Error:", error);
@@ -95,33 +96,25 @@ export default function AllUniversities() {
                         pathname: '/agency/selected/universities/details',
                         params: { 
                             id: item._id,
-                            uniName: item.name,
-                            uniLogo: item.logo
+                            uniLogo: item.profileUrl
                         }
                     });
                 }}
             >
                 <View style={styles.imageContainer}>
-                    {item.logo && !hasImageError ? (
+                    {item.profileUrl && !hasImageError ? (
                         <Image 
-                            source={{ uri: item.logo }} 
+                            source={{ uri: item.profileUrl }} 
                             style={styles.universityImage} 
-                            resizeMode="cover"
+                            resizeMode="contain"
                             onError={() => handleImageError(item._id)}
                         />
                     ) : (
                         <View style={styles.logoPlaceholder}>
-                            <Text style={styles.logoPlaceholderText}>
-                                {item.name ? item.name.charAt(0).toUpperCase() : 'U'}
-                            </Text>
+                            <Ionicons name="school-outline" size={38} color={COLORS.primary} style={{ opacity: 0.6 }} />
+                            <Text style={styles.logoPlaceholderText}>UNIVERSITY</Text>
                         </View>
                     )}
-                </View>
-                
-                <View style={styles.cardContent}>
-                    <Text style={styles.universityName} numberOfLines={2}>
-                        {item.name || "University"}
-                    </Text>
                 </View>
             </TouchableOpacity>
         );
@@ -223,7 +216,6 @@ const styles = StyleSheet.create({
         alignItems: 'center' 
     },
     
-    // Header Styles - Matching Events UI
     header: { 
         backgroundColor: COLORS.primary, 
         paddingBottom: 25, 
@@ -264,7 +256,6 @@ const styles = StyleSheet.create({
         fontSize: 14 
     },
     
-    // Search Styles
     searchContainer: {
         flexDirection: 'row',
         backgroundColor: COLORS.white,
@@ -287,7 +278,6 @@ const styles = StyleSheet.create({
         paddingVertical: 0
     },
     
-    // List Styles
     listContainer: { 
         paddingHorizontal: 16, 
         paddingBottom: 24 
@@ -309,17 +299,17 @@ const styles = StyleSheet.create({
         fontWeight: '500' 
     },
     
-    // Card Styles - Clean, no shadows
     universityCard: { 
         backgroundColor: COLORS.cardBg, 
         borderRadius: 20, 
         borderWidth: 1, 
         borderColor: COLORS.border,
         overflow: 'hidden',
+        height: 140,
     },
     
     imageContainer: {
-        height: 140,
+        flex: 1,
         width: '100%',
         justifyContent: 'center',
         alignItems: 'center',
@@ -333,35 +323,22 @@ const styles = StyleSheet.create({
     },
     
     logoPlaceholder: { 
-        width: 70, 
-        height: 70, 
-        borderRadius: 35, 
-        backgroundColor: 'rgba(118, 159, 205, 0.08)', 
+        width: '100%',
+        height: '100%',
         justifyContent: 'center', 
-        alignItems: 'center' 
-    },
-    
-    logoPlaceholderText: { 
-        fontSize: 28, 
-        fontWeight: '600', 
-        color: COLORS.primary 
-    },
-    
-    cardContent: { 
-        padding: 14,
         alignItems: 'center',
-        minHeight: 68,
+        backgroundColor: 'rgba(118, 159, 205, 0.08)',
+        gap: 6,
     },
     
-    universityName: { 
-        fontSize: 14, 
-        fontWeight: '600', 
-        color: COLORS.textPrimary, 
-        textAlign: 'center',
-        lineHeight: 20,
+    logoPlaceholderText: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: COLORS.primary,
+        letterSpacing: 1,
+        opacity: 0.7,
     },
     
-    // Empty State Styles
     emptyContainer: {
         alignItems: 'center',
         justifyContent: 'center',

@@ -318,39 +318,60 @@ export default function MessagesScreen() {
     }, [myId]);
 
     // ── Load contacts from API ──
-    const loadContacts = useCallback(async (isRefresh = false) => {
-        if (fetchingRef.current) return;
-        fetchingRef.current = true;
+   // In message.jsx, update loadContacts function
 
-        try {
-            const res = await fetch(`${Config.API_BASE_URL}/students/profile`, {
-                headers: { Authorization: `Bearer ${userToken}` },
+const loadContacts = useCallback(async (isRefresh = false) => {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
+
+    try {
+        const res = await fetch(`${Config.API_BASE_URL}/students/profile`, {
+            headers: { Authorization: `Bearer ${userToken}` },
+        });
+
+        if (!res.ok) throw new Error(`Profile fetch failed: ${res.status}`);
+
+        const data    = await res.json();
+        const profile = data?.profile || data;
+        if (!profile) return;
+
+        const map  = await buildContactMap(profile, activeAgency, userToken);
+        _contactMap = map;
+
+        const list = Object.entries(map).map(([id, info]) => ({ id, ...info }));
+
+        if (!mountedRef.current) return;
+
+        setContacts(list);
+        
+        // Request auto messages for new contacts that don't have conversations yet
+        if (socketService.isConnected()) {
+            // For each contact, request their conversation to trigger auto message
+            list.forEach(contact => {
+                // Check if we already have a conversation for this contact
+                const existingConv = _rawConversations.some(conv => {
+                    const other = getOtherParticipant(conv, myId);
+                    return other?.id === contact.id;
+                });
+                
+                if (!existingConv) {
+                    console.log(`🔄 Requesting auto message for ${contact.name} (${contact.type})`);
+                    // This will trigger the backend to send the auto message
+                    socketService.getConversationMessages(contact.id, null, null, 1);
+                }
             });
-
-            if (!res.ok) throw new Error(`Profile fetch failed: ${res.status}`);
-
-            const data    = await res.json();
-            const profile = data?.profile || data;
-            if (!profile) return;
-
-            const map  = await buildContactMap(profile, activeAgency, userToken);
-            _contactMap = map;
-
-            const list = Object.entries(map).map(([id, info]) => ({ id, ...info }));
-
-            if (!mountedRef.current) return;
-
-            setContacts(list);
-            refreshFromCache();
-        } catch (e) {
-            console.error('loadContacts error:', e.message);
-        } finally {
-            fetchingRef.current = false;
-            if (isRefresh && mountedRef.current) {
-                setIsRefreshing(false);
-            }
         }
-    }, [userToken, activeAgency, refreshFromCache]);
+
+        refreshFromCache();
+    } catch (e) {
+        console.error('loadContacts error:', e.message);
+    } finally {
+        fetchingRef.current = false;
+        if (isRefresh && mountedRef.current) {
+            setIsRefreshing(false);
+        }
+    }
+}, [userToken, activeAgency, refreshFromCache, myId]);
 
     const onRefresh = useCallback(() => {
         setIsRefreshing(true);

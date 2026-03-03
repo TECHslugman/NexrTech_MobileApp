@@ -37,7 +37,7 @@ export default function AgencyCourseList() {
             else setLoading(true);
 
             const url = query.trim().length > 0
-                ? `${Config.API_BASE_URL}/students/courses/query/search?q=${query}`
+                ? `${Config.API_BASE_URL}/students/courses/search?q=${query}`
                 : `${Config.API_BASE_URL}/students/courses/`;
 
             const res = await fetch(url, {

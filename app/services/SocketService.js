@@ -12,13 +12,20 @@ class SocketService {
         this.maxReconnectAttempts = 5;
         this.baseReconnectDelay   = 1000;
 
-        // Persistent subscribers (survive socket recreation)
         this._connSubs  = new Map();
         this._connSubId = 0;
 
-        // Persistent event listeners (re-attach on reconnect)
         this._eventListeners = new Map();
         this._listenerIdSeq  = 0;
+
+        // Buffer events that arrive before any listener has registered.
+        // When the first listener for a buffered event registers, we
+        // immediately replay everything in the buffer then clear it.
+        // This solves the race where the backend pushes `new_message`
+        // (auto-message) the instant the socket connects, before the
+        // React component's useEffect has had a chance to call onNewMessage().
+        this._eventBuffer    = new Map(); // event → payload[]
+        this._bufferedEvents = new Set(['new_message', 'conversation_messages']);
     }
 
     // ═══════════════════════════════════════════════════════
@@ -31,19 +38,16 @@ class SocketService {
             return null;
         }
 
-        // Already connected with same token — reuse
         if (this.socket?.connected && this.token === token) {
             console.log("♻️  Socket already connected:", this.socket.id);
             return this.socket;
         }
 
-        // Connection in progress
         if (this.isConnecting && this.token === token) {
             console.log("⏳ Connection already in progress");
             return this.socket;
         }
 
-        // Tear down old socket if token changed or reconnecting
         if (this.socket) {
             console.log("🔄 Disconnecting old socket");
             this._manualDisconnect = true;
@@ -57,6 +61,9 @@ class SocketService {
         this._manualDisconnect = false;
         this.reconnectAttempts = 0;
 
+        // Clear buffer on fresh connect so stale auto-messages don't replay
+        this._eventBuffer.clear();
+
         this._createSocket();
         return this.socket;
     }
@@ -66,21 +73,13 @@ class SocketService {
         this.socket = io(SOCKET_URL, {
             transports:   ["websocket"],
             auth:         { token: this.token },
-            reconnection: false,  // manual reconnect only
+            reconnection: false,
             timeout:      20_000,
             forceNew:     true,
         });
 
         this._bindCoreEvents();
         this._reattachEventListeners();
-        
-        // Immediately request conversation list after connection
-        setTimeout(() => {
-            if (this.socket?.connected) {
-                console.log("📤 Requesting conversation list after connection");
-                this.socket.emit("conversation_list");
-            }
-        }, 500);
     }
 
     _reattachEventListeners() {
@@ -97,9 +96,28 @@ class SocketService {
             this.isConnecting      = false;
             this.reconnectAttempts = 0;
             this._broadcastConn(true);
-            
-            // Request conversation list on reconnect
             this.socket.emit("conversation_list");
+        });
+
+        // Buffer incoming events that might arrive before listeners register
+        this._bufferedEvents.forEach(event => {
+            this.socket.on(event, (payload) => {
+                const listeners = this._eventListeners.get(event);
+                if (!listeners || listeners.size === 0) {
+                    // No listener yet — buffer it
+                    console.log(`📦 Buffering ${event} (no listener yet)`);
+                    if (!this._eventBuffer.has(event)) {
+                        this._eventBuffer.set(event, []);
+                    }
+                    const buf = this._eventBuffer.get(event);
+                    buf.push(payload);
+                    // Cap buffer size to avoid memory issues
+                    if (buf.length > 20) buf.shift();
+                }
+                // Note: actual delivery to listeners is handled by socket.io's
+                // own listener binding in _registerListener / _reattachEventListeners.
+                // The buffer is ONLY for the window before the first listener registers.
+            });
         });
 
         this.socket.on("connect_error", (err) => {
@@ -174,6 +192,7 @@ class SocketService {
         this.token             = null;
         this.isConnecting      = false;
         this.reconnectAttempts = 0;
+        this._eventBuffer.clear();
         this._broadcastConn(false);
     }
 
@@ -256,12 +275,6 @@ class SocketService {
 
     // ═══════════════════════════════════════════════════════
     //  INCOMING EVENT SUBSCRIPTIONS
-    //
-    //  All listeners are stored in a persistent Map and re-attached
-    //  to every new socket instance. This ensures no events are missed
-    //  after reconnection (e.g., automated messages).
-    //
-    //  Each on* method returns a cleanup function: () => void
     // ═══════════════════════════════════════════════════════
 
     _registerListener(event, cb) {
@@ -272,12 +285,31 @@ class SocketService {
         const id = ++this._listenerIdSeq;
         this._eventListeners.get(event).set(id, cb);
 
-        // Attach to current socket if one exists
         if (this.socket) {
             this.socket.on(event, cb);
         }
 
-        // Return cleanup
+        // If this is the FIRST listener for a buffered event,
+        // immediately replay anything that arrived before it registered.
+        if (
+            this._bufferedEvents.has(event) &&
+            this._eventListeners.get(event).size === 1 &&
+            this._eventBuffer.has(event)
+        ) {
+            const buffered = this._eventBuffer.get(event);
+            if (buffered.length > 0) {
+                console.log(`🔁 Replaying ${buffered.length} buffered ${event} event(s)`);
+                // Use setTimeout(0) so the caller's useEffect fully completes
+                // before the replay fires — avoids partial-state issues.
+                setTimeout(() => {
+                    buffered.forEach(payload => {
+                        try { cb(payload); } catch (e) { console.error('Buffer replay error:', e); }
+                    });
+                }, 0);
+            }
+            this._eventBuffer.delete(event);
+        }
+
         return () => {
             const map = this._eventListeners.get(event);
             if (map) {
@@ -292,18 +324,17 @@ class SocketService {
         };
     }
 
-    onConversationList(cb)     { return this._registerListener("conversation_list",     cb); }
-    onConversationMessages(cb) { return this._registerListener("conversation_messages", cb); }
-    onNewMessage(cb)           { return this._registerListener("new_message",           cb); }
-    onMessageSent(cb)          { return this._registerListener("message_sent",          cb); }
-    onMessageError(cb)         { return this._registerListener("message_error",         cb); }
-    onConversationUpdated(cb)  { return this._registerListener("conversation_updated",  cb); }
-    onMessageEdited(cb)        { return this._registerListener("message_edited",        cb); }
-    onMessageDeleted(cb)       { return this._registerListener("message_deleted",       cb); }
-    onUserTyping(cb)           { return this._registerListener("user_typing",           cb); }
-    onUserStoppedTyping(cb)    { return this._registerListener("user_stopped_typing",   cb); }
-    // NEW: Message status updated event (seen, delivered)
-    onMessageStatusUpdated(cb) { return this._registerListener("message_status_updated", cb); }
+    onConversationList(cb)       { return this._registerListener("conversation_list",      cb); }
+    onConversationMessages(cb)   { return this._registerListener("conversation_messages",  cb); }
+    onNewMessage(cb)             { return this._registerListener("new_message",            cb); }
+    onMessageSent(cb)            { return this._registerListener("message_sent",           cb); }
+    onMessageError(cb)           { return this._registerListener("message_error",          cb); }
+    onConversationUpdated(cb)    { return this._registerListener("conversation_updated",   cb); }
+    onMessageEdited(cb)          { return this._registerListener("message_edited",         cb); }
+    onMessageDeleted(cb)         { return this._registerListener("message_deleted",        cb); }
+    onUserTyping(cb)             { return this._registerListener("user_typing",            cb); }
+    onUserStoppedTyping(cb)      { return this._registerListener("user_stopped_typing",    cb); }
+    onMessageStatusUpdated(cb)   { return this._registerListener("message_status_updated", cb); }
 
     // ═══════════════════════════════════════════════════════
     //  CONNECTION-STATE SUBSCRIPTION
@@ -313,7 +344,6 @@ class SocketService {
         const id = ++this._connSubId;
         this._connSubs.set(id, cb);
 
-        // Fire immediately with current state
         try {
             cb(this.isConnected());
         } catch (e) {
@@ -326,10 +356,6 @@ class SocketService {
     isConnected() {
         return this.socket?.connected ?? false;
     }
-
-    // ═══════════════════════════════════════════════════════
-    //  INTERNAL HELPERS
-    // ═══════════════════════════════════════════════════════
 
     _assertConn(label) {
         if (!this.socket?.connected) {
@@ -351,3 +377,5 @@ class SocketService {
 }
 
 export default new SocketService();
+
+

@@ -36,16 +36,24 @@ export default function UniversityDetail() {
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState(null);
     const [imageError, setImageError] = useState(false);
+    const [selectedCourseId, setSelectedCourseId] = useState(null); // Track student's selected course
 
     useEffect(() => {
-        const fetchDetail = async () => {
+        const fetchAllData = async () => {
             try {
-                const response = await fetch(`${Config.API_BASE_URL}/agency/universities/${id}`, {
-                    headers: { 'Authorization': `Bearer ${userToken}` }
-                });
+                // Fetch university details and student profile in parallel
+                const [uniResponse, profileResponse] = await Promise.all([
+                    fetch(`${Config.API_BASE_URL}/agency/universities/${id}`, {
+                        headers: { 'Authorization': `Bearer ${userToken}` }
+                    }),
+                    fetch(`${Config.API_BASE_URL}/students/profile`, {
+                        headers: { 'Authorization': `Bearer ${userToken}` }
+                    })
+                ]);
 
-                if (response.ok) {
-                    const json = await response.json();
+                // Handle university data
+                if (uniResponse.ok) {
+                    const json = await uniResponse.json();
                     const uni = json.unversity || json.university || {};
 
                     setData({
@@ -60,8 +68,23 @@ export default function UniversityDetail() {
                 } else {
                     throw new Error("No data");
                 }
+
+                // Handle student profile - extract selected course ID
+                if (profileResponse.ok) {
+                    const profileJson = await profileResponse.json();
+                    const selectedCourse =
+                        profileJson.selectedCourse ||
+                        profileJson.data?.selectedCourse ||
+                        profileJson.profile?.selectedCourse;
+
+                    if (selectedCourse) {
+                        // selectedCourse might be an object with _id or just a string ID
+                        const courseId = selectedCourse?._id || selectedCourse;
+                        setSelectedCourseId(String(courseId));
+                    }
+                }
             } catch (error) {
-                console.log("Error fetching uni details:", error);
+                console.log("Error fetching data:", error);
                 // Fallback data
                 setData({
                     name: uniName || "University of Technology",
@@ -82,7 +105,7 @@ export default function UniversityDetail() {
                 setLoading(false);
             }
         };
-        fetchDetail();
+        fetchAllData();
     }, [id, userToken, uniName, uniLogo]);
 
     const handleWebsitePress = () => {
@@ -93,6 +116,13 @@ export default function UniversityDetail() {
             }
             Linking.openURL(url).catch(err => console.error('Failed to open URL:', err));
         }
+    };
+
+    // Check if a course is the student's selected/applied course
+    const isCourseSelected = (course) => {
+        if (!selectedCourseId) return false;
+        const courseId = course?._id || course?.id;
+        return String(courseId) === selectedCourseId;
     };
 
     if (loading) {
@@ -110,7 +140,7 @@ export default function UniversityDetail() {
         <SafeAreaView style={styles.container} edges={['top']}>
             <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
 
-            {/* Header - No bottom radius, clean edge */}
+            {/* Header */}
             <View style={styles.header}>
                 <View style={styles.headerContent}>
                     <TouchableOpacity
@@ -124,7 +154,7 @@ export default function UniversityDetail() {
                 </View>
             </View>
 
-            {/* University Image Banner - Full width, filled properly */}
+            {/* University Image Banner */}
             <View style={styles.bannerContainer}>
                 {data.logo && !imageError ? (
                     <Image
@@ -146,12 +176,11 @@ export default function UniversityDetail() {
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
             >
-                {/* Main Content Card - Starts immediately after banner */}
                 <View style={styles.contentCard}>
                     {/* University Name */}
                     <Text style={styles.universityName}>{data.name}</Text>
 
-                    {/* Quick Info Grid - Only Location */}
+                    {/* Quick Info Grid */}
                     <View style={styles.infoGrid}>
                         <View style={styles.infoCard}>
                             <View style={[styles.infoIcon, { backgroundColor: COLORS.primaryLight }]}>
@@ -206,6 +235,14 @@ export default function UniversityDetail() {
                             <Feather name="book-open" size={20} color={COLORS.primary} />
                             <Text style={styles.sectionTitle}>Available Programs</Text>
                         </View>
+
+                        {/* Legend hint if student has a selected course */}
+                        {selectedCourseId && (
+                            <Text style={styles.selectionHint}>
+                                You have an active application on one of these programs.
+                            </Text>
+                        )}
+
                         {data.courses.length > 0 ? (
                             <FlatList
                                 data={data.courses}
@@ -213,18 +250,36 @@ export default function UniversityDetail() {
                                 showsHorizontalScrollIndicator={false}
                                 keyExtractor={(item) => item._id || item.id || Math.random().toString()}
                                 contentContainerStyle={styles.coursesList}
-                                renderItem={({ item, index }) => (
-                                    <TouchableOpacity
-                                        style={[
-                                            styles.courseCard,
-                                            { backgroundColor: getCourseColor(index) }
-                                        ]}
-                                        activeOpacity={0.85}
-                                    >
-                                        <Feather name="book" size={20} color="rgba(255,255,255,0.9)" />
-                                        <Text style={styles.courseCardText}>{item.title || "Course"}</Text>
-                                    </TouchableOpacity>
-                                )}
+                                renderItem={({ item, index }) => {
+                                    const applied = isCourseSelected(item);
+                                    return (
+                                        <TouchableOpacity
+                                            style={[
+                                                styles.courseCard,
+                                                {
+                                                    backgroundColor: applied
+                                                        ? '#B0BEC5'  // Grey out applied course
+                                                        : getCourseColor(index)
+                                                },
+                                                applied && styles.courseCardApplied,
+                                            ]}
+                                            activeOpacity={applied ? 1 : 0.85}
+                                            disabled={applied}
+                                        >
+                                            <Feather
+                                                name={applied ? "check-circle" : "book"}
+                                                size={20}
+                                                color="rgba(255,255,255,0.9)"
+                                            />
+                                            <Text style={styles.courseCardText}>
+                                                {item.title || "Course"}
+                                            </Text>
+                                            {applied && (
+                                                <Text style={styles.appliedBadge}>Applied</Text>
+                                            )}
+                                        </TouchableOpacity>
+                                    );
+                                }}
                             />
                         ) : (
                             <View style={styles.noCourses}>
@@ -240,12 +295,16 @@ export default function UniversityDetail() {
             {/* Fixed Apply Button */}
             <View style={styles.bottomBar}>
                 <TouchableOpacity
-                    style={styles.applyButton}
-                    activeOpacity={0.85}
+                    style={[
+                        styles.applyButton,
+                        selectedCourseId && styles.applyButtonDisabled,
+                    ]}
+                    activeOpacity={selectedCourseId ? 1 : 0.85}
+                    disabled={!!selectedCourseId}
                     onPress={() => {
                         if (data?.courses) {
                             router.push({
-                                pathname: "agency/selected/courses/unicourse", 
+                                pathname: "agency/selected/courses/unicourse",
                                 params: {
                                     courses: JSON.stringify(data.courses),
                                     uniName: data.name,
@@ -255,15 +314,23 @@ export default function UniversityDetail() {
                         }
                     }}
                 >
-                    <Text style={styles.applyButtonText}>Apply Now</Text>
-                    <Feather name="arrow-right" size={20} color={COLORS.white} />
+                    <Text style={styles.applyButtonText}>
+                        {selectedCourseId ? 'APPLICATION IN PROGRESS' : 'Apply Now'}
+                    </Text>
+                    {!selectedCourseId && (
+                        <Feather name="arrow-right" size={20} color={COLORS.white} />
+                    )}
                 </TouchableOpacity>
+                {selectedCourseId && (
+                    <Text style={styles.blockedText}>
+                        You already have an active course application.
+                    </Text>
+                )}
             </View>
         </SafeAreaView>
     );
 }
 
-// Helper function to get consistent course card colors
 const getCourseColor = (index) => {
     const colors = ['#FF6B6B', '#769FCD', '#4ECDC4', '#95E1D3', '#FFD166'];
     return colors[index % colors.length];
@@ -285,7 +352,6 @@ const styles = StyleSheet.create({
         color: COLORS.textSecondary,
         marginTop: 12,
     },
-    // Header - No border radius, clean edge
     header: {
         backgroundColor: COLORS.primary,
         paddingHorizontal: 20,
@@ -315,7 +381,6 @@ const styles = StyleSheet.create({
     scrollContent: {
         paddingBottom: 0,
     },
-    // Banner - Full width, image fills container
     bannerContainer: {
         height: 220,
         width: '100%',
@@ -338,7 +403,6 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: 'rgba(255, 255, 255, 0.3)',
     },
-    // Main Content Card - Flush with banner
     contentCard: {
         backgroundColor: COLORS.white,
         paddingHorizontal: 24,
@@ -441,6 +505,12 @@ const styles = StyleSheet.create({
         color: COLORS.textSecondary,
         lineHeight: 24,
     },
+    selectionHint: {
+        fontSize: 12,
+        color: COLORS.textSecondary,
+        marginBottom: 12,
+        fontStyle: 'italic',
+    },
     coursesList: {
         paddingRight: 20,
     },
@@ -452,11 +522,21 @@ const styles = StyleSheet.create({
         marginRight: 12,
         justifyContent: 'space-between',
     },
+    courseCardApplied: {
+        opacity: 0.75,
+    },
     courseCardText: {
         fontSize: 14,
         fontWeight: '600',
         color: '#FFFFFF',
         lineHeight: 18,
+    },
+    appliedBadge: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: 'rgba(255,255,255,0.9)',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
     },
     noCourses: {
         backgroundColor: COLORS.bg,
@@ -473,7 +553,6 @@ const styles = StyleSheet.create({
         color: COLORS.textSecondary,
         textAlign: 'center',
     },
-    // Bottom Bar with Apply Button
     bottomBar: {
         position: 'absolute',
         bottom: 0,
@@ -498,5 +577,14 @@ const styles = StyleSheet.create({
         fontSize: 17,
         fontWeight: '700',
         color: COLORS.white,
+    },
+    applyButtonDisabled: {
+        backgroundColor: '#B0BEC5',
+    },
+    blockedText: {
+        textAlign: 'center',
+        color: COLORS.textSecondary,
+        marginTop: 10,
+        fontSize: 12,
     },
 });

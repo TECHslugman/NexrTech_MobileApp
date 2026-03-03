@@ -88,7 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return {
         id: String(agencyId),
         name: fullProfile.organizationName || 'Your Agency',
-        logo: fullProfile.logo || '',
+        logo: fullProfile.profileUrl || '',
       };
     } catch (error) {
       console.error('[AUTH] Error fetching agency details:', error);

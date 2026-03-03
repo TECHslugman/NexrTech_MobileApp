@@ -108,6 +108,7 @@ export default function LoginScreen() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ id_token: idtoken }),
             });
+            console.log("Google ID Token:", idtoken);
 
             const data = await res.json();
 

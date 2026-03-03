@@ -52,7 +52,7 @@ export default function MentorListPage() {
                     const formattedMentors = (json.mentors || []).map(m => ({
                         id: m._id,
                         name: m.name,
-                        profilepic: m.profilepic,
+                        profileUrl: m.profileUrl,
                         experience: m.experiences && m.experiences.length > 0 
                             ? m.experiences[0] 
                             : "Professional mentor for higher education",
@@ -83,9 +83,9 @@ export default function MentorListPage() {
             })}
             activeOpacity={0.7}
         >
-            {item.profilepic ? (
+            {item.profileUrl ? (
                 <Image 
-                    source={{ uri: item.profilepic }} 
+                    source={{ uri: item.profileUrl }} 
                     style={styles.avatar} 
                 />
             ) : (
