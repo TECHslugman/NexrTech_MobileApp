@@ -10,7 +10,13 @@ import { useAuth } from '../../../../context/AuthContext';
 import { Config } from '../../../../config';
 import Toast from 'react-native-toast-message';
 
-const DEFAULT_IMAGE_URL = 'https://ui-avatars.com/api/?background=769FCD&color=fff&name=Mentor';
+// Helper function to get initials from name
+const getInitials = (name) => {
+    if (!name) return 'M';
+    const words = name.trim().split(' ');
+    if (words.length === 1) return words[0].charAt(0).toUpperCase();
+    return (words[0].charAt(0) + words[words.length - 1].charAt(0)).toUpperCase();
+};
 
 export default function MentorDetails() {
     const { id } = useLocalSearchParams();
@@ -125,11 +131,11 @@ export default function MentorDetails() {
         }
         switch (connectionStatus) {
             case 'pending':
-                return { color: '#F59E0B', text: 'Request Pending' };
+                return { color: '#e7cda1', text: 'Request Pending' };
             case 'confirmed':
             case 'accepted':
             case 'connected':
-                return { color: '#10B981', text: 'Your Mentor' };
+                return { color: '#60b699', text: 'Your Mentor' };
             default:
                 return { color: '#769FCD', text: 'Connect with Mentor' };
         }
@@ -161,14 +167,20 @@ export default function MentorDetails() {
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
                 <View style={styles.profileSection}>
-                    <Image
-                        source={{ uri: mentor?.profilepic || DEFAULT_IMAGE_URL }}
-                        style={styles.profileImage}
-                    />
+                    {mentor?.profileUrl ? (
+                        <Image
+                            source={{ uri: mentor.profileUrl }}
+                            style={styles.profileImage}
+                        />
+                    ) : (
+                        <View style={styles.profileImagePlaceholder}>
+                            <Text style={styles.profileInitials}>
+                                {getInitials(mentor?.name)}
+                            </Text>
+                        </View>
+                    )}
                     <Text style={styles.profileName}>{mentor?.name}</Text>
-                    <Text style={styles.profileTitle}>
-                        {mentor?.isVerified ? 'Verified Education Mentor' : 'Education Mentor'}
-                    </Text>
+                    <Text style={styles.profileTitle}>Education Mentor</Text>
 
                     <View style={styles.actionRow}>
                         <TouchableOpacity
@@ -215,7 +227,7 @@ export default function MentorDetails() {
                     </View>
                 )}
 
-                {/* Availability Card (RE-ADDED) */}
+                {/* Availability Card */}
                 {mentor?.availability?.length > 0 && (
                     <View style={styles.infoCard}>
                         <Text style={styles.cardHeader}>Availability</Text>
@@ -278,7 +290,27 @@ const styles = StyleSheet.create({
         borderColor: '#E2E8F0',
         marginBottom: 16,
     },
-    profileImage: { width: 100, height: 100, borderRadius: 50, marginBottom: 16, backgroundColor: '#F1F5F9' },
+    profileImage: { 
+        width: 100, 
+        height: 100, 
+        borderRadius: 50, 
+        marginBottom: 16, 
+        backgroundColor: '#F1F5F9' 
+    },
+    profileImagePlaceholder: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
+        backgroundColor: '#769FCD',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    profileInitials: {
+        fontSize: 36,
+        fontWeight: '700',
+        color: '#FFF',
+    },
     profileName: { fontSize: 22, fontWeight: '700', color: '#1E293B' },
     profileTitle: { fontSize: 14, color: '#64748B', marginBottom: 20 },
     actionRow: { flexDirection: 'row', gap: 12, width: '100%' },

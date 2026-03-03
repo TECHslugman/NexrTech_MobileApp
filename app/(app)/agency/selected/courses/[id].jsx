@@ -31,16 +31,14 @@ export default function AgencyCourseList() {
     const [searchQuery, setSearchQuery] = useState('');
     const [isSearching, setIsSearching] = useState(false);
 
-    // Unified Load Function
     const loadCourses = async (query = '') => {
         try {
             if (query.length > 0) setIsSearching(true);
             else setLoading(true);
 
-            // Toggle URL based on search input
             const url = query.trim().length > 0
-                ? `${Config.API_BASE_URL}/students/courses/query/${id}/search?q=${query}`
-                : `${Config.API_BASE_URL}/agency/courses/agency/${id}`;
+                ? `${Config.API_BASE_URL}/students/courses/search?q=${query}`
+                : `${Config.API_BASE_URL}/students/courses/`;
 
             const res = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${userToken}` }
@@ -48,7 +46,6 @@ export default function AgencyCourseList() {
 
             if (res.ok) {
                 const json = await res.json();
-                // Map to 'course' as seen in your Postman screenshot
                 const coursesData = json.course || json.courses || json.data || [];
                 setCourses(coursesData);
             }
@@ -70,11 +67,12 @@ export default function AgencyCourseList() {
     const renderCourseItem = ({ item, index }) => (
         <TouchableOpacity
             style={[
-                styles.card, 
+                styles.card,
                 { backgroundColor: index % 2 === 0 ? COLORS.card1 : COLORS.card2 }
             ]}
             onPress={() => {
-                router.push({
+                // ✅ Use router.navigate instead of router.push
+                router.navigate({
                     pathname: '/agency/selected/courses/details',
                     params: {
                         courseId: getCourseId(item),
@@ -85,11 +83,11 @@ export default function AgencyCourseList() {
             }}
         >
             <Text style={styles.cardText}>{getCourseDisplayName(item)}</Text>
-            <Ionicons 
-                name="arrow-forward-circle-outline" 
-                size={24} 
-                color="rgba(255,255,255,0.8)" 
-                style={styles.icon} 
+            <Ionicons
+                name="arrow-forward-circle-outline"
+                size={24}
+                color="rgba(255,255,255,0.8)"
+                style={styles.icon}
             />
         </TouchableOpacity>
     );
@@ -97,8 +95,7 @@ export default function AgencyCourseList() {
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
-            
-            {/* Foundational UI Header */}
+
             <View style={styles.header}>
                 <View style={styles.headerContent}>
                     <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
@@ -108,10 +105,9 @@ export default function AgencyCourseList() {
                     <View style={{ width: 40 }} />
                 </View>
 
-                {/* Search Bar built into Header */}
                 <View style={styles.searchWrapper}>
                     <Ionicons name="search" size={18} color={COLORS.textSecondary} />
-                    <TextInput 
+                    <TextInput
                         style={styles.searchInput}
                         placeholder="Search for courses..."
                         placeholderTextColor="#A0AEC0"
@@ -141,7 +137,7 @@ export default function AgencyCourseList() {
                             </Text>
                         </View>
                     </View>
-                    
+
                     <FlatList
                         data={courses}
                         numColumns={2}
