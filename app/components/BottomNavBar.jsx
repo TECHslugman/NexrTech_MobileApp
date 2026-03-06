@@ -1,4 +1,4 @@
-// BottomNavBar.js - Updated
+// BottomNavBar.js - Updated with proper Android nav handling
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -6,12 +6,19 @@ import {
   TouchableOpacity,
   StyleSheet,
   Animated,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, usePathname, useLocalSearchParams } from 'expo-router';
 
-export const NAV_BAR_HEIGHT = 70; // Export for use in screens
+export const NAV_BAR_HEIGHT = 70; // The visible nav bar height (excluding safe area)
+
+// Total height including bottom inset — used by screens to pad content
+export const useNavBarTotalHeight = () => {
+  const insets = useSafeAreaInsets();
+  return NAV_BAR_HEIGHT + insets.bottom;
+};
 
 const COLORS = {
   primary: '#769FCD',
@@ -29,7 +36,7 @@ export default function BottomNavBar() {
   const pathname = usePathname();
   const params = useLocalSearchParams();
   const [agencyId, setAgencyId] = useState(null);
-  
+
   const scaleAnims = useRef(
     Array(4).fill(null).map(() => new Animated.Value(1))
   ).current;
@@ -42,7 +49,7 @@ export default function BottomNavBar() {
       if (segments.includes('selected')) {
         const selectedIndex = segments.indexOf('selected');
         const potentialId = segments[selectedIndex + 1];
-        
+
         const staticRoutes = ['profile', 'messages', 'events', 'courses', 'documentupload'];
         if (potentialId && !staticRoutes.includes(potentialId)) {
           foundAgencyId = potentialId;
@@ -72,10 +79,10 @@ export default function BottomNavBar() {
     },
     {
       name: 'Docs',
-      route: 'documentupload', 
+      route: 'documentupload',
       icon: 'document-outline',
       iconActive: 'document',
-      getScreen: () => '/agency/selected/documentupload', 
+      getScreen: () => '/agency/selected/documentupload',
     },
     {
       name: 'Profile',
@@ -122,8 +129,15 @@ export default function BottomNavBar() {
     });
   };
 
+  // insets.bottom correctly accounts for:
+  // - Android gesture navigation bar (usually 24-48dp)
+  // - Android 3-button nav bar (usually 48dp)
+  // - iPhone home indicator (usually 34pt)
+  // - Devices with no system nav (returns 0)
+  const bottomInset = insets.bottom;
+
   return (
-    <View style={[styles.container, { paddingBottom: insets.bottom }]}>
+    <View style={[styles.container, { paddingBottom: bottomInset }]}>
       <View style={styles.navBar}>
         {navItems.map((item, index) => {
           const active = checkActive(item.route);
@@ -147,7 +161,7 @@ export default function BottomNavBar() {
                   color={active ? COLORS.primary : (canNavigate ? COLORS.textInactive : COLORS.disabled)}
                 />
               </Animated.View>
-              
+
               <Text style={[
                 styles.navLabel,
                 active && styles.navLabelActive,

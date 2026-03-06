@@ -29,9 +29,6 @@ const C = {
     red:         '#D94040',
 };
 
-// ─────────────────────────────────────────
-// HUB CARD
-// ─────────────────────────────────────────
 function HubCard({ title, subtitle, icon, progress, stats, isEnabled, isCurrent, isCompleted, onPress, index }) {
     const scale   = useRef(new Animated.Value(1)).current;
     const opacity = useRef(new Animated.Value(0)).current;
@@ -57,25 +54,18 @@ function HubCard({ title, subtitle, icon, progress, stats, isEnabled, isCurrent,
                     isCurrent   && !isCompleted && styles.hubCardActive,
                 ]}
             >
-                {/* Top row */}
                 <View style={styles.hubTop}>
                     <View style={[
                         styles.hubIconBox,
                         isCompleted && { backgroundColor: C.greenSoft },
                         isCurrent && !isCompleted && { backgroundColor: C.blueSoft },
                     ]}>
-                        <Ionicons
-                            name={icon}
-                            size={20}
-                            color={isCompleted ? C.green : isCurrent ? C.blue : C.ink3}
-                        />
+                        <Ionicons name={icon} size={20} color={isCompleted ? C.green : isCurrent ? C.blue : C.ink3} />
                     </View>
 
                     <View style={{ flex: 1, marginLeft: 12 }}>
                         <View style={styles.hubTitleRow}>
                             <Text style={[styles.hubTitle, !isEnabled && { color: C.ink3 }]}>{title}</Text>
-
-                            {/* Pills — text only, no icons */}
                             {isCurrent && !isCompleted && (
                                 <View style={[styles.pill, { backgroundColor: C.blueSoft, borderColor: C.blueBorder }]}>
                                     <Text style={[styles.pillTxt, { color: C.blue }]}>Active</Text>
@@ -95,12 +85,9 @@ function HubCard({ title, subtitle, icon, progress, stats, isEnabled, isCurrent,
                         <Text style={[styles.hubSubtitle, !isEnabled && { color: C.ink3 }]}>{subtitle}</Text>
                     </View>
 
-                    {isEnabled && (
-                        <Ionicons name="chevron-forward" size={16} color={C.ink3} />
-                    )}
+                    {isEnabled && <Ionicons name="chevron-forward" size={16} color={C.ink3} />}
                 </View>
 
-                {/* Stats */}
                 {isEnabled && stats && (
                     <View style={styles.statsRow}>
                         <View style={styles.statItem}>
@@ -114,15 +101,12 @@ function HubCard({ title, subtitle, icon, progress, stats, isEnabled, isCurrent,
                         </View>
                         <View style={styles.statSep} />
                         <View style={styles.statItem}>
-                            <Text style={[styles.statNum, { color: stats.needsAction > 0 ? C.red : C.ink3 }]}>
-                                {stats.needsAction}
-                            </Text>
+                            <Text style={[styles.statNum, { color: stats.needsAction > 0 ? C.red : C.ink3 }]}>{stats.needsAction}</Text>
                             <Text style={styles.statLbl}>Action Needed</Text>
                         </View>
                     </View>
                 )}
 
-                {/* Progress */}
                 {isEnabled && (
                     <>
                         <View style={styles.progRow}>
@@ -134,7 +118,6 @@ function HubCard({ title, subtitle, icon, progress, stats, isEnabled, isCurrent,
                     </>
                 )}
 
-                {/* Locked hint */}
                 {!isEnabled && (
                     <View style={styles.lockedRow}>
                         <Text style={styles.lockedTxt}>Complete the admission stage to unlock</Text>
@@ -145,19 +128,17 @@ function HubCard({ title, subtitle, icon, progress, stats, isEnabled, isCurrent,
     );
 }
 
-// ─────────────────────────────────────────
-// CONTROLLER
-// ─────────────────────────────────────────
 export default function DocumentUploadController() {
     const { userToken, activeAgency } = useAuth();
     const insets = useSafeAreaInsets();
     const router = useRouter();
 
-    const [loading,      setLoading]      = useState(true);
-    const [currentStage, setCurrentStage] = useState(null);
-    const [serverStage,  setServerStage]  = useState('admission');
-    const [error,        setError]        = useState(null);
-    const [stagesStatus, setStagesStatus] = useState({
+    const [loading,        setLoading]       = useState(true);
+    const [currentStage,   setCurrentStage]  = useState(null);
+    const [serverStage,    setServerStage]   = useState('admission');
+    const [error,          setError]         = useState(null);
+    const [agencyDocCount, setAgencyDocCount] = useState(0);
+    const [stagesStatus,   setStagesStatus]  = useState({
         admission: { total: 0, uploaded: 0, approved: 0, needsAction: 0 },
         visa:      { total: 0, uploaded: 0, approved: 0, needsAction: 0 },
     });
@@ -177,11 +158,12 @@ export default function DocumentUploadController() {
 
     const fetchStagesStatus = useCallback(async () => {
         try {
-            const [aRes, vRes] = await Promise.all([
+            const [aRes, vRes, agRes] = await Promise.all([
                 fetch(`${Config.API_BASE_URL}/students/documents/status?stage=admission`, { headers: { Authorization: `Bearer ${userToken}` } }),
                 fetch(`${Config.API_BASE_URL}/students/documents/status?stage=visa`,      { headers: { Authorization: `Bearer ${userToken}` } }),
+                fetch(`${Config.API_BASE_URL}/students/documents`,                         { headers: { Authorization: `Bearer ${userToken}` } }),
             ]);
-            const [aData, vData] = await Promise.all([aRes.json(), vRes.json()]);
+            const [aData, vData, agData] = await Promise.all([aRes.json(), vRes.json(), agRes.json()]);
             const calc = (data) => {
                 const docs = data.data || [];
                 return {
@@ -192,6 +174,10 @@ export default function DocumentUploadController() {
                 };
             };
             setStagesStatus({ admission: calc(aData), visa: calc(vData) });
+            if (agRes.ok && agData.data) {
+                const agencyDocs = agData.data.filter(d => ['agent','agency'].includes(d.uploaderModel?.toLowerCase()));
+                setAgencyDocCount(agencyDocs.length);
+            }
         } catch (e) { console.error('fetchStagesStatus:', e); }
     }, [userToken]);
 
@@ -212,27 +198,23 @@ export default function DocumentUploadController() {
     }, [fetchServerStage, fetchStagesStatus]);
 
     const handleStageTransition = useCallback((nextStage) => {
-        if (nextStage === null || nextStage === 'hub') { handleReturnToHub(); }
-        else { setCurrentStage(nextStage); }
+        if (nextStage === null || nextStage === 'hub') handleReturnToHub();
+        else setCurrentStage(nextStage);
     }, [handleReturnToHub]);
 
-    const admissionCompleted = stagesStatus.admission.total > 0
-        && stagesStatus.admission.approved === stagesStatus.admission.total;
-    const visaCompleted = stagesStatus.visa.total > 0
-        && stagesStatus.visa.approved === stagesStatus.visa.total;
-    const isVisaEnabled = admissionCompleted || ['document_waitlist','visa'].includes(serverStage);
+    const admissionCompleted    = stagesStatus.admission.total > 0 && stagesStatus.admission.approved === stagesStatus.admission.total;
+    const visaCompleted         = stagesStatus.visa.total > 0 && stagesStatus.visa.approved === stagesStatus.visa.total;
+    const isAgencyDocsEnabled   = admissionCompleted || ['document_waitlist','visa'].includes(serverStage);
+    const isAgencyDocsCurrent   = serverStage === 'document_waitlist';
+    const isAgencyDocsCompleted = isAgencyDocsEnabled && agencyDocCount > 0 && serverStage !== 'document_waitlist';
+    const isVisaEnabled         = isAgencyDocsEnabled && (agencyDocCount > 0 || serverStage === 'visa');
 
-    const admissionProgress = stagesStatus.admission.total > 0
-        ? Math.round((stagesStatus.admission.approved / stagesStatus.admission.total) * 100) : 0;
-    const visaProgress = stagesStatus.visa.total > 0
-        ? Math.round((stagesStatus.visa.approved / stagesStatus.visa.total) * 100) : 0;
+    const admissionProgress = stagesStatus.admission.total > 0 ? Math.round((stagesStatus.admission.approved / stagesStatus.admission.total) * 100) : 0;
+    const visaProgress      = stagesStatus.visa.total > 0      ? Math.round((stagesStatus.visa.approved / stagesStatus.visa.total) * 100) : 0;
 
     const handleGoHome = useCallback(() => {
         if (activeAgency?.id) {
-            router.replace({
-                pathname: `/agency/selected/${activeAgency.id}`,
-                params: { name: activeAgency.name, agencyLogo: activeAgency.logo },
-            });
+            router.replace({ pathname: `/agency/selected/${activeAgency.id}`, params: { name: activeAgency.name, agencyLogo: activeAgency.logo } });
         } else {
             router.replace('/(app)/decision');
         }
@@ -297,18 +279,29 @@ export default function DocumentUploadController() {
                     onPress={() => setCurrentStage('admission')}
                 />
 
-                {/* Connector */}
                 <View style={styles.connector}>
                     <View style={[styles.connLine, admissionCompleted && { backgroundColor: C.green }]} />
-                    {serverStage === 'document_waitlist' && (
-                        <View style={[styles.waitChip]}>
-                            <Text style={styles.waitChipTxt}>Awaiting agency documents</Text>
-                        </View>
-                    )}
                 </View>
 
                 <HubCard
                     index={1}
+                    title="Agency Documents"
+                    subtitle="COE, offer letters and other docs from your agency"
+                    icon="briefcase-outline"
+                    progress={isAgencyDocsCompleted ? 100 : 0}
+                    stats={null}
+                    isEnabled={isAgencyDocsEnabled}
+                    isCurrent={isAgencyDocsCurrent}
+                    isCompleted={isAgencyDocsCompleted}
+                    onPress={() => setCurrentStage('document_waitlist')}
+                />
+
+                <View style={styles.connector}>
+                    <View style={[styles.connLine, isAgencyDocsCompleted && { backgroundColor: C.green }]} />
+                </View>
+
+                <HubCard
+                    index={2}
                     title="Visa Documents"
                     subtitle="Documents required for your visa application"
                     icon="document-text-outline"
@@ -352,11 +345,7 @@ const styles = StyleSheet.create({
         letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 12,
     },
 
-    // Hub card — no shadow
-    hubCard: {
-        backgroundColor: C.surface, borderRadius: 14, padding: 16,
-        borderWidth: 1, borderColor: C.divider, marginBottom: 0,
-    },
+    hubCard:          { backgroundColor: C.surface, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: C.divider, marginBottom: 0 },
     hubCardDisabled:  { opacity: 0.45 },
     hubCardCompleted: { borderColor: C.greenBorder },
     hubCardActive:    { borderColor: C.blueBorder },
@@ -384,8 +373,6 @@ const styles = StyleSheet.create({
     lockedRow: { paddingTop: 10, marginTop: 2, borderTopWidth: 1, borderTopColor: C.divider },
     lockedTxt: { fontSize: 12, color: C.ink3 },
 
-    connector:   { alignItems: 'center', marginVertical: 4, minHeight: 28 },
-    connLine:    { width: 1.5, height: 28, backgroundColor: C.divider },
-    waitChip:    { backgroundColor: C.amberSoft, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, marginTop: -6, borderWidth: 1, borderColor: C.amberBorder },
-    waitChipTxt: { fontSize: 11, fontWeight: '500', color: C.amber },
+    connector: { alignItems: 'center', marginVertical: 4, minHeight: 28 },
+    connLine:  { width: 1.5, height: 28, backgroundColor: C.divider },
 });

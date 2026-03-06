@@ -3,7 +3,6 @@ import {
     View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
     ScrollView, RefreshControl, Linking, Modal, Animated, Image,
 } from 'react-native';
-import PdfThumbnail from 'react-native-pdf-thumbnail';
 import Toast from 'react-native-toast-message';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,9 +10,6 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useAuth } from '../../../../context/AuthContext';
 import { Config } from '../../../../config';
 
-// ─────────────────────────────────────────
-// DESIGN TOKENS  — muted palette
-// ─────────────────────────────────────────
 const C = {
     blue:        '#769FCD',
     blueSoft:    'rgba(118,159,205,0.08)',
@@ -37,9 +33,6 @@ const C = {
     violetSoft:  'rgba(123,97,255,0.07)',
 };
 
-// ─────────────────────────────────────────
-// STATUS CONFIG — muted colors, no icon in the badge (text only)
-// ─────────────────────────────────────────
 const STATUS = {
     pending:      { label: 'Not Uploaded',   color: C.ink3,   bg: C.divider,    accent: C.divider, canUpload: true,  canReupload: false },
     under_review: { label: 'Under Review',   color: C.blue,   bg: C.blueSoft,   accent: C.blue,    canUpload: true,  canReupload: true },
@@ -48,71 +41,27 @@ const STATUS = {
     approved:     { label: 'Approved',       color: C.green,  bg: C.greenSoft,  accent: C.green,   canUpload: false, canReupload: false },
 };
 
-// ─────────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────────
 function fmtDate(str) {
     if (!str) return '';
     try { return new Date(str).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }); }
     catch { return ''; }
 }
 
-// ─────────────────────────────────────────
-// PDF THUMBNAIL
-// Uses react-native-pdf-thumbnail (native module).
-// Given a URL it downloads/accesses the file and renders page 0 to a
-// local image path, which we display in an <Image>.
-// Falls back to a clean placeholder on error.
-// ─────────────────────────────────────────
 function PDFThumb({ url, label, size = 62 }) {
-    const [thumbUri, setThumbUri] = useState(null);
-    const [failed,   setFailed]   = useState(false);
     const h = Math.round(size * 1.4);
-
-    useEffect(() => {
-        let cancelled = false;
-        if (!url) { setFailed(true); return; }
-
-        PdfThumbnail.generate(url, 0)
-            .then(result => {
-                if (!cancelled) setThumbUri(result.uri);
-            })
-            .catch(() => {
-                if (!cancelled) setFailed(true);
-            });
-
-        return () => { cancelled = true; };
-    }, [url]);
-
-    if (thumbUri) {
-        return (
-            <Image
-                source={{ uri: thumbUri }}
-                style={[styles.thumbImg, { width: size, height: h }]}
-                resizeMode="cover"
-            />
-        );
-    }
-
-    // Placeholder while loading or on error
     return (
         <View style={[styles.thumbPlaceholder, { width: size, height: h }]}>
+            <Ionicons name="document-text-outline" size={size * 0.5} color={C.ink2} />
             <View style={styles.thumbFold} />
             <View style={styles.thumbLines}>
                 {[86, 68, 90, 58, 76].map((w, i) => (
                     <View key={i} style={[styles.thumbLine, { width: `${w}%` }]} />
                 ))}
             </View>
-            {failed ? null : (
-                <ActivityIndicator size="small" color={C.ink3} style={{ marginTop: 6 }} />
-            )}
         </View>
     );
 }
 
-// ─────────────────────────────────────────
-// COMPLETION MODAL
-// ─────────────────────────────────────────
 function CompletionModal({ visible, onGoHome }) {
     const scale = useRef(new Animated.Value(0.86)).current;
     const op    = useRef(new Animated.Value(0)).current;
@@ -148,9 +97,6 @@ function CompletionModal({ visible, onGoHome }) {
     );
 }
 
-// ─────────────────────────────────────────
-// DOC CARD
-// ─────────────────────────────────────────
 function DocCard({ doc, index, uploading, onUpload, onView }) {
     const cfg  = STATUS[doc.status] || STATUS.pending;
     const fade = useRef(new Animated.Value(0)).current;
@@ -168,7 +114,6 @@ function DocCard({ doc, index, uploading, onUpload, onView }) {
                 { borderLeftColor: cfg.accent },
                 needsAction && styles.docCardAlert,
             ]}>
-                {/* ── Header: number · name · status badge (text only, no icon) ── */}
                 <View style={styles.dcHeader}>
                     <View style={styles.dcIndex}>
                         <Text style={styles.dcIndexTxt}>{index + 1}</Text>
@@ -183,40 +128,27 @@ function DocCard({ doc, index, uploading, onUpload, onView }) {
                     <Text style={styles.dcDesc}>{doc.description}</Text>
                 )}
 
-                {/* ── File preview row (thumbnail + checklist name + date + View btn) ── */}
                 {hasFile && (
                     <View style={styles.dcFileRow}>
-                        {/* Real PDF thumbnail via native module */}
                         <PDFThumb url={doc.file.fileURL} size={58} />
-
                         <View style={styles.dcFileMeta}>
-                            {/* Show checklist name (e.g. "Passport"), NOT the raw filename */}
                             <Text style={styles.dcDocLabel}>{doc.name}</Text>
                             {!!fmtDate(doc.file.uploadedAt) && (
-                                <Text style={styles.dcFileDate}>
-                                    Uploaded {fmtDate(doc.file.uploadedAt)}
-                                </Text>
+                                <Text style={styles.dcFileDate}>Uploaded {fmtDate(doc.file.uploadedAt)}</Text>
                             )}
-                            {/* Plain View button */}
-                            <TouchableOpacity
-                                style={styles.viewBtn}
-                                onPress={() => onView(doc.file.fileURL)}
-                                activeOpacity={0.7}
-                            >
+                            <TouchableOpacity style={styles.viewBtn} onPress={() => onView(doc.file.fileURL)} activeOpacity={0.7}>
                                 <Text style={styles.viewBtnTxt}>View</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
                 )}
 
-                {/* ── Rejection reason ── */}
                 {needsAction && !!doc.rejectionReason && (
                     <View style={styles.rejectBox}>
                         <Text style={[styles.rejectTxt, { color: cfg.color }]}>{doc.rejectionReason}</Text>
                     </View>
                 )}
 
-                {/* ── Upload / Re-upload action ── */}
                 {uploading ? (
                     <View style={styles.uploadingRow}>
                         <ActivityIndicator size="small" color={C.blue} />
@@ -226,18 +158,12 @@ function DocCard({ doc, index, uploading, onUpload, onView }) {
                     <TouchableOpacity
                         style={[
                             styles.uploadBtn,
-                            cfg.canReupload && {
-                                backgroundColor: 'transparent',
-                                borderWidth: 1,
-                                borderColor: cfg.color,
-                            },
+                            cfg.canReupload && { backgroundColor: 'transparent', borderWidth: 1, borderColor: cfg.color },
                         ]}
                         onPress={() => onUpload(doc)}
                         activeOpacity={0.82}
                     >
-                        <Text style={[styles.uploadBtnTxt, cfg.canReupload && { color: cfg.color }]}>
-                            {cfg.canReupload ? 'Upload' : 'Upload'}
-                        </Text>
+                        <Text style={[styles.uploadBtnTxt, cfg.canReupload && { color: cfg.color }]}>Upload</Text>
                     </TouchableOpacity>
                 ) : null}
             </View>
@@ -245,9 +171,6 @@ function DocCard({ doc, index, uploading, onUpload, onView }) {
     );
 }
 
-// ─────────────────────────────────────────
-// AGENCY DOC CARD
-// ─────────────────────────────────────────
 function AgencyDocCard({ doc, index, onView }) {
     const fade = useRef(new Animated.Value(0)).current;
     useEffect(() => {
@@ -266,25 +189,16 @@ function AgencyDocCard({ doc, index, onView }) {
     return (
         <Animated.View style={{ opacity: fade }}>
             <View style={[styles.agencyCard, isCritical && { borderColor: C.blueBorder }]}>
-                {/* Real PDF thumbnail */}
                 <PDFThumb url={doc.fileURL} size={52} />
-
                 <View style={styles.agencyMeta}>
                     <Text style={styles.agencyName} numberOfLines={2}>{displayName}</Text>
                     {!!fmtDate(doc.createdAt) && (
                         <Text style={styles.agencyDate}>Received {fmtDate(doc.createdAt)}</Text>
                     )}
-                    {/* Plain View button */}
-                    <TouchableOpacity
-                        style={styles.viewBtn}
-                        onPress={() => onView(doc.fileURL)}
-                        activeOpacity={0.7}
-                    >
+                    <TouchableOpacity style={styles.viewBtn} onPress={() => onView(doc.fileURL)} activeOpacity={0.7}>
                         <Text style={styles.viewBtnTxt}>View</Text>
                     </TouchableOpacity>
                 </View>
-
-                {/* Received badge — text only */}
                 <View style={[styles.statusBadge, { backgroundColor: C.greenSoft }]}>
                     <Text style={[styles.statusBadgeTxt, { color: C.green }]}>Received</Text>
                 </View>
@@ -293,9 +207,6 @@ function AgencyDocCard({ doc, index, onView }) {
     );
 }
 
-// ─────────────────────────────────────────
-// SHARED
-// ─────────────────────────────────────────
 function Header({ title, onBack }) {
     return (
         <View style={styles.header}>
@@ -326,9 +237,6 @@ function PrimaryButton({ label, onPress }) {
     );
 }
 
-// ─────────────────────────────────────────
-// MAIN
-// ─────────────────────────────────────────
 export default function DocumentUpload({ stage, serverStage, onStageChange, onRefresh, onBack, onGoHome }) {
     const insets        = useSafeAreaInsets();
     const { userToken } = useAuth();
@@ -431,9 +339,7 @@ export default function DocumentUpload({ stage, serverStage, onStageChange, onRe
     const hasOfferLetter = agencyDocs.some(d => d.documentCategory === 'offer_letter');
     const canProceedToVisa = hasCOE || hasOfferLetter;
 
-    // ─────────────────────────────────────────
-    // WAITLIST VIEW
-    // ─────────────────────────────────────────
+    // ── WAITLIST VIEW ──
     if (stage === 'document_waitlist') {
         return (
             <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -470,9 +376,7 @@ export default function DocumentUpload({ stage, serverStage, onStageChange, onRe
         );
     }
 
-    // ─────────────────────────────────────────
-    // CHECKLIST VIEW
-    // ─────────────────────────────────────────
+    // ── CHECKLIST VIEW ──
     const title = stage === 'admission' ? 'Admission Documents' : 'Visa Documents';
 
     return (
@@ -491,7 +395,7 @@ export default function DocumentUpload({ stage, serverStage, onStageChange, onRe
                         showsVerticalScrollIndicator={false}
                         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={C.blue} colors={[C.blue]} />}
                     >
-                        {/* ── Summary card ── */}
+                        {/* Summary card */}
                         <View style={styles.summaryCard}>
                             <View style={styles.summaryStatsRow}>
                                 <Stat label="Uploaded"      value={uploaded} />
@@ -511,7 +415,6 @@ export default function DocumentUpload({ stage, serverStage, onStageChange, onRe
                             </View>
                         </View>
 
-                        {/* Action alert */}
                         {needsAction > 0 && (
                             <View style={styles.alertBox}>
                                 <Text style={styles.alertTxt}>
@@ -543,10 +446,11 @@ export default function DocumentUpload({ stage, serverStage, onStageChange, onRe
                         <View style={{ height: 100 }} />
                     </ScrollView>
 
+                    {/* ── Sticky button: only shows when ALL docs are approved ── */}
                     {allApproved && (
                         <StickyBar insets={insets}>
                             <PrimaryButton
-                                label={stage === 'admission' ? 'Continue to Next Stage' : 'Complete Application'}
+                                label={stage === 'admission' ? 'View Agency Documents' : 'Complete Application'}
                                 onPress={() => {
                                     if (stage === 'admission') onStageChange('document_waitlist');
                                     else setShowComplete(true);
@@ -565,9 +469,6 @@ export default function DocumentUpload({ stage, serverStage, onStageChange, onRe
     );
 }
 
-// ─────────────────────────────────────────
-// STYLES — no shadows anywhere
-// ─────────────────────────────────────────
 const styles = StyleSheet.create({
     root:      { flex: 1, backgroundColor: C.bg },
     loader:    { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
@@ -592,7 +493,6 @@ const styles = StyleSheet.create({
         letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 10,
     },
 
-    // ── Summary card — no shadow ──
     summaryCard: {
         backgroundColor: C.surface, borderRadius: 14, padding: 16,
         borderWidth: 1, borderColor: C.divider, marginBottom: 14,
@@ -609,14 +509,12 @@ const styles = StyleSheet.create({
     track:   { height: 5, backgroundColor: C.divider, borderRadius: 3, overflow: 'hidden' },
     fill:    { height: '100%', borderRadius: 3 },
 
-    // ── Alert ──
     alertBox: {
         backgroundColor: C.redSoft, borderRadius: 8, padding: 11, marginBottom: 14,
         borderWidth: 1, borderColor: C.redBorder,
     },
     alertTxt: { fontSize: 13, fontWeight: '600', color: C.red },
 
-    // ── Doc card — no shadow ──
     docCard: {
         backgroundColor: C.surface, borderRadius: 12, padding: 14, marginBottom: 10,
         borderWidth: 1, borderColor: C.divider, borderLeftWidth: 3,
@@ -628,17 +526,14 @@ const styles = StyleSheet.create({
     dcName:       { flex: 1, fontSize: 14, fontWeight: '600', color: C.ink1, lineHeight: 19 },
     dcDesc:       { fontSize: 12, color: C.ink2, marginBottom: 10, lineHeight: 17 },
 
-    // Status badge — text only, no icon
     statusBadge:    { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7 },
     statusBadgeTxt: { fontSize: 10, fontWeight: '600' },
 
-    // File row
     dcFileRow:   { flexDirection: 'row', gap: 12, marginBottom: 10, alignItems: 'flex-start' },
     dcFileMeta:  { flex: 1, gap: 3 },
     dcDocLabel:  { fontSize: 13, fontWeight: '600', color: C.ink1 },
     dcFileDate:  { fontSize: 11, color: C.ink3 },
 
-    // View button — plain, text only
     viewBtn:    { marginTop: 6, alignSelf: 'flex-start', paddingVertical: 5, paddingHorizontal: 12, borderRadius: 7, borderWidth: 1, borderColor: C.divider, backgroundColor: C.bg },
     viewBtnTxt: { fontSize: 12, fontWeight: '600', color: C.ink2 },
 
@@ -650,7 +545,6 @@ const styles = StyleSheet.create({
     uploadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 10 },
     uploadingTxt: { fontSize: 13, color: C.ink2 },
 
-    // ── Agency card — no shadow ──
     agencyCard: {
         flexDirection: 'row', alignItems: 'center', gap: 12,
         backgroundColor: C.surface, borderRadius: 12, padding: 14, marginBottom: 10,
@@ -660,32 +554,24 @@ const styles = StyleSheet.create({
     agencyName: { fontSize: 13, fontWeight: '600', color: C.ink1, lineHeight: 18 },
     agencyDate: { fontSize: 11, color: C.ink3 },
 
-    // ── Empty ──
     emptyCard:  { backgroundColor: C.surface, borderRadius: 12, padding: 36, alignItems: 'center', gap: 6, borderWidth: 1, borderColor: C.divider },
     emptyTitle: { fontSize: 14, fontWeight: '600', color: C.ink2 },
     emptySub:   { fontSize: 12, color: C.ink3, textAlign: 'center', lineHeight: 17 },
 
-    // ── Sticky / buttons ──
     stickyBar:     { backgroundColor: C.surface, paddingHorizontal: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.divider },
     primaryBtn:    { backgroundColor: C.blue, borderRadius: 11, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
     primaryBtnTxt: { fontSize: 15, fontWeight: '700', color: '#fff' },
 
-    // ── PDF thumbnail (real, from native module) ──
-    thumbImg: {
-        borderRadius: 7, borderWidth: 1, borderColor: C.divider,
-    },
-
-    // Placeholder shown while generating or on error
     thumbPlaceholder: {
         borderRadius: 7, borderWidth: 1, borderColor: C.divider,
         backgroundColor: C.surface, padding: 5,
         overflow: 'hidden', position: 'relative',
+        justifyContent: 'center', alignItems: 'center',
     },
     thumbFold:  { position: 'absolute', top: 0, right: 0, width: 10, height: 10, backgroundColor: C.divider, borderBottomLeftRadius: 4 },
-    thumbLines: { gap: 2.5, marginTop: 8 },
+    thumbLines: { position: 'absolute', bottom: 8, left: 8, right: 8, gap: 2.5 },
     thumbLine:  { height: 2.5, backgroundColor: C.divider, borderRadius: 2 },
 
-    // ── Completion modal ──
     completionBg:     { flex: 1, backgroundColor: 'rgba(15,20,35,0.5)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
     completionCard:   { backgroundColor: C.surface, borderRadius: 20, padding: 28, alignItems: 'center', width: '100%', maxWidth: 340, borderWidth: 1, borderColor: C.divider },
     completionTitle:  { fontSize: 22, fontWeight: '800', color: C.ink1, marginBottom: 10 },

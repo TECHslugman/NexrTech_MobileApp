@@ -43,19 +43,20 @@ const COLORS = {
   success: '#57C785',
 };
 
-const CARD_HEIGHT = Math.min(verticalScale(172), SCREEN_HEIGHT * 0.22);
+// FIX: Card height must accommodate back-card content on ALL screen sizes.
+// The back shows 2 stat tiles + universities tile + view-profile row + padding.
+// Using a generous minimum so nothing gets clipped on small phones.
+const CARD_HEIGHT = Math.max(
+  moderateScale(188),
+  Math.min(verticalScale(172), SCREEN_HEIGHT * 0.25),
+);
 
 function ProgressBar({ value, height = 5, color = COLORS.success }) {
   const pct = Math.max(0, Math.min(1, value)) * 100;
   return (
     <View style={{
-      width: '100%',
-      height,
-      backgroundColor: '#E9F3ED',
-      borderRadius: 50,
-      overflow: 'hidden',
-      borderWidth: 1,
-      borderColor: '#DAE9E1'
+      width: '100%', height, backgroundColor: '#E9F3ED',
+      borderRadius: 50, overflow: 'hidden', borderWidth: 1, borderColor: '#DAE9E1'
     }}>
       <View style={{ width: `${pct}%`, height: '100%', backgroundColor: color }} />
     </View>
@@ -93,17 +94,10 @@ function CityButton({ label, selected, onPress }) {
 export default function Dashboard() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  // FIX: Add isLoading to the destructuring
   const { signOut, userToken, activeAgency, isLoading } = useAuth();
 
-  // --- EARLY REDIRECT: if student already has an agency, skip this page ---
   useEffect(() => {
-    // FIX: Don't redirect while auth is still loading
-    if (isLoading) {
-      console.log('[DECISION] Auth is loading, waiting...');
-      return;
-    }
-    
+    if (isLoading) return;
     if (activeAgency?.id) {
       console.log('[DECISION] Agency already selected — redirecting to', activeAgency.name);
       router.replace({
@@ -113,10 +107,8 @@ export default function Dashboard() {
     } else {
       console.log('[DECISION] No agency selected, showing decision page');
     }
-    // FIX: Add isLoading to dependencies
   }, [activeAgency, isLoading]);
 
-  // --- STATE ---
   const [dynamicOptions, setDynamicOptions] = useState({ countries: [], levels: [], cities: [] });
   const [agencies, setAgencies] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -135,10 +127,8 @@ export default function Dashboard() {
 
   const fetchAgencies = async (isRefresh = false) => {
     if (!userToken) return;
-
     try {
       isRefresh ? setRefreshing(true) : setLoading(true);
-
       console.log("DEBUG: Sending Token ->", userToken);
       const response = await fetch(`${Config.API_BASE_URL}/agency`, {
         method: 'GET',
@@ -147,7 +137,6 @@ export default function Dashboard() {
           'Authorization': `Bearer ${userToken}`,
         },
       });
-
       if (!response.ok) {
         const errorText = await response.text();
         console.log("DECISION PAGE ERROR RAW:", errorText);
@@ -155,27 +144,50 @@ export default function Dashboard() {
       }
 
       const jsonResponse = await response.json();
+
+      // DEBUG: log raw response so you can see the exact field names your API returns
+      console.log("DEBUG: Raw agency response ->", JSON.stringify(jsonResponse, null, 2));
+
       const rawData = jsonResponse.agencies || jsonResponse.agency;
       const agenciesArray = Array.isArray(rawData) ? rawData : [rawData];
 
-      const formattedData = agenciesArray.map((item) => ({
-        ...item,
-        id: item._id,
-        name: item.organizationName || item.name || "Unknown Agency",
-        imageUri: item.profileUrl || null,
-        stats: {
-          students: item.studentCount || 0,
-          courses: item.courseCount || 0,
-          universities: item.uniCount || 0,
-        },
-        city: item.address ? item.address.split(',')[0].trim() : 'Bhutan',
-        country: item.country || 'Bhutan',
-        rating: item.rating || 5.0,
-        levels: item.levels || ['Undergraduate'],
-      }));
+      const formattedData = agenciesArray.map((item) => {
+        // DEBUG: log each item so you can confirm the exact stat field names
+        console.log("DEBUG: agency item keys ->", Object.keys(item));
+        console.log("DEBUG: ACTUAL STATS VALUES ->", {
+          partnerUniversities: item.partnerUniversities,
+          servicesOffered: item.servicesOffered,
+          process: item.process,
+        });
+
+        // Derived from actual API response keys: partnerUniversities, servicesOffered, process
+        const universities = Array.isArray(item.partnerUniversities)
+          ? item.partnerUniversities.length
+          : 0;
+
+        const courses = Array.isArray(item.servicesOffered)
+          ? item.servicesOffered.length
+          : 0;
+
+        // No student count in API — use process steps or default to 0
+        const students = Array.isArray(item.process)
+          ? item.process.length
+          : 0;
+
+        return {
+          ...item,
+          id: item._id,
+          name: item.organizationName || item.name || "Unknown Agency",
+          imageUri: item.profileUrl || null,
+          stats: { students, courses, universities },
+          city: item.address ? item.address.split(',')[0].trim() : 'Bhutan',
+          country: item.country || 'Bhutan',
+          rating: item.rating || 5.0,
+          levels: item.levels || ['Undergraduate'],
+        };
+      });
 
       setAgencies(formattedData);
-
     } catch (error) {
       console.error('Fetch Error:', error);
     } finally {
@@ -197,22 +209,18 @@ export default function Dashboard() {
 
   const openSheet = () => {
     setSheetOpen(true);
-    Animated.spring(sheetAnim, {
-      toValue: 1, damping: 25, stiffness: 200, useNativeDriver: true,
-    }).start();
+    Animated.spring(sheetAnim, { toValue: 1, damping: 25, stiffness: 200, useNativeDriver: true }).start();
   };
-
   const closeSheet = () => {
     Animated.timing(sheetAnim, {
       toValue: 0, duration: 280, easing: Easing.in(Easing.ease), useNativeDriver: true,
     }).start(({ finished }) => finished && setSheetOpen(false));
   };
 
-  const toggleCity = (city) => {
+  const toggleCity = (city) =>
     setSelectedCities((prev) =>
       prev.includes(city) ? prev.filter((v) => v !== city) : [...prev, city]
     );
-  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -230,6 +238,7 @@ export default function Dashboard() {
       params: { id: item.id, name: item.name, heroUri: item.imageUri || '' },
     });
   };
+
   const getSlideAnim = (id) => {
     if (!slideAnimRefs.current[id]) {
       slideAnimRefs.current[id] = new Animated.Value(0);
@@ -241,31 +250,26 @@ export default function Dashboard() {
     const id = item.id;
     const slideAnim = getSlideAnim(id);
     if (openCardId === id) {
-      Animated.timing(slideAnim, {
-        toValue: 0, duration: 100, useNativeDriver: true
-      }).start(() => setOpenCardId(null));
+      Animated.timing(slideAnim, { toValue: 0, duration: 100, useNativeDriver: true })
+        .start(() => setOpenCardId(null));
     } else {
       if (openCardId) {
-        Animated.timing(getSlideAnim(openCardId), {
-          toValue: 0, duration: 100, useNativeDriver: true
-        }).start();
+        Animated.timing(getSlideAnim(openCardId), { toValue: 0, duration: 100, useNativeDriver: true }).start();
       }
       setOpenCardId(id);
       Animated.timing(slideAnim, {
-        toValue: 1, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true
+        toValue: 1, duration: 300, easing: Easing.out(Easing.cubic), useNativeDriver: true,
       }).start();
     }
   };
 
   const closeAllCards = () => {
     if (openCardId) {
-      Animated.timing(getSlideAnim(openCardId), {
-        toValue: 0, duration: 200, useNativeDriver: true
-      }).start(() => setOpenCardId(null));
+      Animated.timing(getSlideAnim(openCardId), { toValue: 0, duration: 200, useNativeDriver: true })
+        .start(() => setOpenCardId(null));
     }
   };
 
-  // FIX: Show loading spinner while auth is loading
   if (isLoading) {
     return (
       <View style={{ flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' }}>
@@ -294,14 +298,15 @@ export default function Dashboard() {
     const s = item.stats || { students: 0, courses: 0, universities: 0 };
     return (
       <Pressable style={styles.backContainer} onPress={() => handleCardPress(item)}>
+        {/* Stats tiles */}
         <View style={styles.statsContent}>
           <View style={styles.statsGridBalanced}>
             <StatTile
-              label="Students" value={s.students || 0}
+              label="Students" value={s.students}
               icon={<Feather name="users" size={moderateScale(14)} color={COLORS.accent} />}
             />
             <StatTile
-              label="Courses" value={s.courses || 0}
+              label="Courses" value={s.courses}
               icon={<Feather name="book-open" size={moderateScale(14)} color={COLORS.accent} />}
             />
           </View>
@@ -310,17 +315,20 @@ export default function Dashboard() {
               <Feather name="award" size={moderateScale(14)} color={COLORS.accent} />
               <Text style={styles.statLabel}>Universities</Text>
             </View>
-            <Text style={styles.statValue}>{s.universities || 0}</Text>
+            <Text style={styles.statValue}>{s.universities}</Text>
           </View>
-          <TouchableOpacity
-            style={styles.viewProfileButton}
-            onPress={() => handleLearnMore(item)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Text style={styles.viewProfileText}>View profile</Text>
-            <Feather name="arrow-right" size={moderateScale(14)} color={COLORS.link} />
-          </TouchableOpacity>
         </View>
+
+        {/* FIX: View profile is now OUTSIDE statsContent and sits at the
+            bottom because backContainer uses justifyContent: 'space-between' */}
+        <TouchableOpacity
+          style={styles.viewProfileButton}
+          onPress={() => handleLearnMore(item)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Text style={styles.viewProfileText}>View profile</Text>
+          <Feather name="arrow-right" size={moderateScale(14)} color={COLORS.link} />
+        </TouchableOpacity>
       </Pressable>
     );
   };
@@ -511,22 +519,28 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.cardBg, borderRadius: moderateScale(14),
     borderWidth: 1, borderColor: COLORS.cardBorder, overflow: 'hidden', height: CARD_HEIGHT,
   },
+  // FIX: overlay fills the card exactly; no padding here — padding goes inside backContainer
   statsOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: COLORS.cardBg, borderRadius: moderateScale(14),
-    borderWidth: 1, borderColor: COLORS.cardBorder,
-    paddingVertical: moderateScale(12), paddingHorizontal: moderateScale(12), zIndex: 10,
+    borderWidth: 1, borderColor: COLORS.cardBorder, zIndex: 10,
   },
-  backContainer: { width: '100%', height: '100%', justifyContent: 'space-between' },
-  statsContent: { flex: 1 },
+  // FIX: flex + space-between so viewProfileButton always sticks to the bottom
+  backContainer: {
+    flex: 1,
+    paddingVertical: moderateScale(12),
+    paddingHorizontal: moderateScale(12),
+    justifyContent: 'space-between',
+  },
+  statsContent: { gap: moderateScale(8) },
   frontFill: { width: '100%', height: '100%' },
   fullImage: { width: '100%', height: '100%' },
   imagePlaceholder: { width: '100%', height: '100%', backgroundColor: '#EEE', justifyContent: 'center', alignItems: 'center' },
-  statsGridBalanced: { flexDirection: 'row', gap: moderateScale(8), marginBottom: moderateScale(8) },
+  statsGridBalanced: { flexDirection: 'row', gap: moderateScale(8) },
   universitiesTile: {
     width: '100%', borderWidth: 1, borderColor: COLORS.cardBorder, backgroundColor: COLORS.listBg,
     borderRadius: moderateScale(10), paddingVertical: moderateScale(8),
-    paddingHorizontal: moderateScale(8), marginBottom: moderateScale(8),
+    paddingHorizontal: moderateScale(8),
   },
   statTile: {
     flex: 1, borderWidth: 1, borderColor: COLORS.cardBorder, backgroundColor: COLORS.listBg,
@@ -535,8 +549,9 @@ const styles = StyleSheet.create({
   statTileHeader: { flexDirection: 'row', alignItems: 'center', gap: moderateScale(6) },
   statLabel: { color: COLORS.headerText, fontWeight: '700', fontSize: moderateScale(11), flexShrink: 1 },
   statValue: { color: COLORS.text, fontWeight: '700', fontSize: moderateScale(16), marginTop: moderateScale(6) },
+  // FIX: sits outside statsContent, aligned to bottom-right via space-between parent
   viewProfileButton: {
-    alignSelf: 'flex-end', marginTop: moderateScale(4),
+    alignSelf: 'flex-end',
     flexDirection: 'row', alignItems: 'center', gap: moderateScale(6),
   },
   viewProfileText: { color: COLORS.link, fontWeight: '700', fontSize: moderateScale(14) },
