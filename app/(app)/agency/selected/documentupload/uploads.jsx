@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
     ScrollView, RefreshControl, Linking, Modal, Animated, Image,
+    Dimensions, PixelRatio,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +11,34 @@ import * as DocumentPicker from 'expo-document-picker';
 import { useAuth } from '../../../../context/AuthContext';
 import { Config } from '../../../../config';
 
+// ─── Responsive helpers ───────────────────────────────────────────────────────
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+
+// Base design width (iPhone 14 Pro = 390pt)
+const BASE_W = 390;
+
+// Scale a size relative to screen width
+const scale  = (size) => Math.round(PixelRatio.roundToNearestPixel((SCREEN_W / BASE_W) * size));
+
+// Clamp to avoid extremes on tablets / very small phones
+const rs = (size, min, max) => {
+    const s = scale(size);
+    if (min !== undefined && s < min) return min;
+    if (max !== undefined && s > max) return max;
+    return s;
+};
+
+// Responsive font scale — gentler curve than full linear
+const rf = (size) => {
+    const ratio = SCREEN_W / BASE_W;
+    const clamped = Math.min(Math.max(ratio, 0.85), 1.25); // clamp between ~330pt and ~490pt
+    return Math.round(PixelRatio.roundToNearestPixel(size * clamped));
+};
+
+// Is this a tablet? (rough heuristic: shorter side > 600pt)
+const IS_TABLET = Math.min(SCREEN_W, SCREEN_H) >= 600;
+
+// ─── Palette ──────────────────────────────────────────────────────────────────
 const C = {
     blue:        '#769FCD',
     blueSoft:    'rgba(118,159,205,0.08)',
@@ -34,11 +63,11 @@ const C = {
 };
 
 const STATUS = {
-    pending:      { label: 'Not Uploaded',   color: C.ink3,   bg: C.divider,    accent: C.divider, canUpload: true,  canReupload: false },
-    under_review: { label: 'Under Review',   color: C.blue,   bg: C.blueSoft,   accent: C.blue,    canUpload: true,  canReupload: true },
-    reupload:     { label: 'Needs Reupload', color: C.amber,  bg: C.amberSoft,  accent: C.amber,   canUpload: false, canReupload: true  },
-    rejected:     { label: 'Rejected',       color: C.red,    bg: C.redSoft,    accent: C.red,     canUpload: false, canReupload: true  },
-    approved:     { label: 'Approved',       color: C.green,  bg: C.greenSoft,  accent: C.green,   canUpload: false, canReupload: false },
+    pending:      { label: 'Not Uploaded',   color: C.ink3,  bg: C.divider,   accent: C.divider, canUpload: true,  canReupload: false },
+    under_review: { label: 'Under Review',   color: C.blue,  bg: C.blueSoft,  accent: C.blue,    canUpload: true,  canReupload: true  },
+    reupload:     { label: 'Needs Reupload', color: C.amber, bg: C.amberSoft, accent: C.amber,   canUpload: false, canReupload: true  },
+    rejected:     { label: 'Rejected',       color: C.red,   bg: C.redSoft,   accent: C.red,     canUpload: false, canReupload: true  },
+    approved:     { label: 'Approved',       color: C.green, bg: C.greenSoft, accent: C.green,   canUpload: false, canReupload: false },
 };
 
 function fmtDate(str) {
@@ -48,10 +77,11 @@ function fmtDate(str) {
 }
 
 function PDFThumb({ url, label, size = 62 }) {
-    const h = Math.round(size * 1.4);
+    const s = rs(size, 44, 80);
+    const h = Math.round(s * 1.4);
     return (
-        <View style={[styles.thumbPlaceholder, { width: size, height: h }]}>
-            <Ionicons name="document-text-outline" size={size * 0.5} color={C.ink2} />
+        <View style={[styles.thumbPlaceholder, { width: s, height: h }]}>
+            <Ionicons name="document-text-outline" size={s * 0.5} color={C.ink2} />
             <View style={styles.thumbFold} />
             <View style={styles.thumbLines}>
                 {[86, 68, 90, 58, 76].map((w, i) => (
@@ -211,10 +241,10 @@ function Header({ title, onBack }) {
     return (
         <View style={styles.header}>
             <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-                <Ionicons name="chevron-back" size={22} color="#fff" />
+                <Ionicons name="chevron-back" size={rs(22, 18, 26)} color="#fff" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>{title}</Text>
-            <View style={{ width: 36 }} />
+            <View style={{ width: rs(36, 30, 44) }} />
         </View>
     );
 }
@@ -227,7 +257,7 @@ function Stat({ label, value, color }) {
     );
 }
 function StickyBar({ children, insets }) {
-    return <View style={[styles.stickyBar, { paddingBottom: insets.bottom || 16 }]}>{children}</View>;
+    return <View style={[styles.stickyBar, { paddingBottom: insets.bottom || rs(16, 12, 24) }]}>{children}</View>;
 }
 function PrimaryButton({ label, onPress }) {
     return (
@@ -364,7 +394,7 @@ export default function DocumentUpload({ stage, serverStage, onStageChange, onRe
                             ))}
                         </>
                     )}
-                    <View style={{ height: 100 }} />
+                    <View style={{ height: rs(100, 80, 120) }} />
                 </ScrollView>
 
                 {canProceedToVisa && (
@@ -443,10 +473,9 @@ export default function DocumentUpload({ stage, serverStage, onStageChange, onRe
                             />
                         ))}
 
-                        <View style={{ height: 100 }} />
+                        <View style={{ height: rs(100, 80, 120) }} />
                     </ScrollView>
 
-                    {/* ── Sticky button: only shows when ALL docs are approved ── */}
                     {allApproved && (
                         <StickyBar insets={insets}>
                             <PrimaryButton
@@ -471,111 +500,191 @@ export default function DocumentUpload({ stage, serverStage, onStageChange, onRe
 
 const styles = StyleSheet.create({
     root:      { flex: 1, backgroundColor: C.bg },
-    loader:    { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
-    loaderTxt: { fontSize: 14, color: C.ink2 },
+    loader:    { flex: 1, justifyContent: 'center', alignItems: 'center', gap: rs(12, 8, 16) },
+    loaderTxt: { fontSize: rf(14), color: C.ink2 },
 
     header: {
         backgroundColor: C.blue,
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        paddingHorizontal: 16, paddingTop: 14, paddingBottom: 18,
-        borderBottomLeftRadius: 20, borderBottomRightRadius: 20,
+        paddingHorizontal: rs(16, 12, 24),
+        paddingTop:        rs(14, 10, 20),
+        paddingBottom:     rs(18, 14, 24),
+        borderBottomLeftRadius:  rs(20, 14, 28),
+        borderBottomRightRadius: rs(20, 14, 28),
     },
     backBtn: {
-        width: 36, height: 36, borderRadius: 18,
+        width:  rs(36, 30, 44),
+        height: rs(36, 30, 44),
+        borderRadius: rs(18, 15, 22),
         backgroundColor: 'rgba(255,255,255,0.18)',
         justifyContent: 'center', alignItems: 'center',
     },
-    headerTitle: { fontSize: 17, fontWeight: '700', color: '#fff' },
-    scroll:      { padding: 16 },
+    headerTitle: { fontSize: rf(17), fontWeight: '700', color: '#fff' },
+    scroll:      { padding: rs(16, 12, 24) },
 
     sectionLabel: {
-        fontSize: 11, fontWeight: '700', color: C.ink3,
-        letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 10,
+        fontSize: rf(11), fontWeight: '700', color: C.ink3,
+        letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: rs(10, 8, 14),
     },
 
     summaryCard: {
-        backgroundColor: C.surface, borderRadius: 14, padding: 16,
-        borderWidth: 1, borderColor: C.divider, marginBottom: 14,
+        backgroundColor: C.surface,
+        borderRadius: rs(14, 10, 18),
+        padding:      rs(16, 12, 22),
+        borderWidth: 1, borderColor: C.divider,
+        marginBottom: rs(14, 10, 18),
     },
-    summaryStatsRow: { flexDirection: 'row', marginBottom: 14 },
+    summaryStatsRow: { flexDirection: 'row', marginBottom: rs(14, 10, 18) },
     stat:    { flex: 1, alignItems: 'center' },
     statSep: { width: 1, backgroundColor: C.divider },
-    statNum: { fontSize: 18, fontWeight: '800', color: C.blue },
-    statLbl: { fontSize: 10, color: C.ink3, marginTop: 2, fontWeight: '500' },
+    statNum: { fontSize: rf(18), fontWeight: '800', color: C.blue },
+    statLbl: { fontSize: rf(10), color: C.ink3, marginTop: 2, fontWeight: '500' },
 
-    progLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 5 },
-    progLbl: { fontSize: 12, color: C.ink2 },
-    progPct: { fontSize: 12, fontWeight: '700' },
-    track:   { height: 5, backgroundColor: C.divider, borderRadius: 3, overflow: 'hidden' },
-    fill:    { height: '100%', borderRadius: 3 },
+    progLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: rs(5, 4, 7) },
+    progLbl: { fontSize: rf(12), color: C.ink2 },
+    progPct: { fontSize: rf(12), fontWeight: '700' },
+    track:   { height: rs(5, 4, 7), backgroundColor: C.divider, borderRadius: rs(3, 2, 4), overflow: 'hidden' },
+    fill:    { height: '100%', borderRadius: rs(3, 2, 4) },
 
     alertBox: {
-        backgroundColor: C.redSoft, borderRadius: 8, padding: 11, marginBottom: 14,
+        backgroundColor: C.redSoft,
+        borderRadius: rs(8, 6, 12),
+        padding:      rs(11, 8, 14),
+        marginBottom: rs(14, 10, 18),
         borderWidth: 1, borderColor: C.redBorder,
     },
-    alertTxt: { fontSize: 13, fontWeight: '600', color: C.red },
+    alertTxt: { fontSize: rf(13), fontWeight: '600', color: C.red },
 
     docCard: {
-        backgroundColor: C.surface, borderRadius: 12, padding: 14, marginBottom: 10,
-        borderWidth: 1, borderColor: C.divider, borderLeftWidth: 3,
+        backgroundColor: C.surface,
+        borderRadius: rs(12, 8, 16),
+        padding:      rs(14, 10, 20),
+        marginBottom: rs(10, 8, 14),
+        borderWidth: 1, borderColor: C.divider,
+        borderLeftWidth: rs(3, 3, 4),
     },
     docCardAlert: { borderColor: C.redBorder, backgroundColor: '#FEFAFA' },
-    dcHeader:     { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
-    dcIndex:      { width: 23, height: 23, borderRadius: 6, backgroundColor: C.blueSoft, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
-    dcIndexTxt:   { fontSize: 11, fontWeight: '700', color: C.blue },
-    dcName:       { flex: 1, fontSize: 14, fontWeight: '600', color: C.ink1, lineHeight: 19 },
-    dcDesc:       { fontSize: 12, color: C.ink2, marginBottom: 10, lineHeight: 17 },
+    dcHeader:     { flexDirection: 'row', alignItems: 'center', gap: rs(10, 7, 14), marginBottom: rs(8, 6, 12) },
+    dcIndex: {
+        width:  rs(23, 18, 30),
+        height: rs(23, 18, 30),
+        borderRadius: rs(6, 4, 8),
+        backgroundColor: C.blueSoft,
+        justifyContent: 'center', alignItems: 'center', flexShrink: 0,
+    },
+    dcIndexTxt: { fontSize: rf(11), fontWeight: '700', color: C.blue },
+    dcName:     { flex: 1, fontSize: rf(14), fontWeight: '600', color: C.ink1, lineHeight: rf(19) },
+    dcDesc:     { fontSize: rf(12), color: C.ink2, marginBottom: rs(10, 8, 14), lineHeight: rf(17) },
 
-    statusBadge:    { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7 },
-    statusBadgeTxt: { fontSize: 10, fontWeight: '600' },
+    statusBadge:    { paddingHorizontal: rs(8, 6, 11), paddingVertical: rs(3, 2, 4), borderRadius: rs(7, 5, 9) },
+    statusBadgeTxt: { fontSize: rf(10), fontWeight: '600' },
 
-    dcFileRow:   { flexDirection: 'row', gap: 12, marginBottom: 10, alignItems: 'flex-start' },
-    dcFileMeta:  { flex: 1, gap: 3 },
-    dcDocLabel:  { fontSize: 13, fontWeight: '600', color: C.ink1 },
-    dcFileDate:  { fontSize: 11, color: C.ink3 },
+    dcFileRow:  { flexDirection: 'row', gap: rs(12, 8, 16), marginBottom: rs(10, 8, 14), alignItems: 'flex-start' },
+    dcFileMeta: { flex: 1, gap: rs(3, 2, 5) },
+    dcDocLabel: { fontSize: rf(13), fontWeight: '600', color: C.ink1 },
+    dcFileDate: { fontSize: rf(11), color: C.ink3 },
 
-    viewBtn:    { marginTop: 6, alignSelf: 'flex-start', paddingVertical: 5, paddingHorizontal: 12, borderRadius: 7, borderWidth: 1, borderColor: C.divider, backgroundColor: C.bg },
-    viewBtnTxt: { fontSize: 12, fontWeight: '600', color: C.ink2 },
+    viewBtn: {
+        marginTop: rs(6, 4, 8), alignSelf: 'flex-start',
+        paddingVertical:   rs(5, 4, 7),
+        paddingHorizontal: rs(12, 9, 16),
+        borderRadius: rs(7, 5, 9),
+        borderWidth: 1, borderColor: C.divider,
+        backgroundColor: C.bg,
+    },
+    viewBtnTxt: { fontSize: rf(12), fontWeight: '600', color: C.ink2 },
 
-    rejectBox: { backgroundColor: C.redSoft, borderRadius: 7, padding: 9, marginBottom: 10, borderWidth: 1, borderColor: C.redBorder },
-    rejectTxt: { fontSize: 12, lineHeight: 17 },
+    rejectBox: {
+        backgroundColor: C.redSoft,
+        borderRadius: rs(7, 5, 10),
+        padding:      rs(9, 7, 12),
+        marginBottom: rs(10, 8, 14),
+        borderWidth: 1, borderColor: C.redBorder,
+    },
+    rejectTxt: { fontSize: rf(12), lineHeight: rf(17) },
 
-    uploadBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: C.blue, borderRadius: 8, paddingVertical: 10 },
-    uploadBtnTxt: { fontSize: 13, fontWeight: '600', color: '#fff' },
-    uploadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 10 },
-    uploadingTxt: { fontSize: 13, color: C.ink2 },
+    uploadBtn: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        gap: rs(6, 4, 8),
+        backgroundColor: C.blue,
+        borderRadius:    rs(8, 6, 11),
+        paddingVertical: rs(10, 8, 13),
+    },
+    uploadBtnTxt: { fontSize: rf(13), fontWeight: '600', color: '#fff' },
+    uploadingRow: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        gap: rs(8, 6, 10), paddingVertical: rs(10, 8, 13),
+    },
+    uploadingTxt: { fontSize: rf(13), color: C.ink2 },
 
     agencyCard: {
-        flexDirection: 'row', alignItems: 'center', gap: 12,
-        backgroundColor: C.surface, borderRadius: 12, padding: 14, marginBottom: 10,
+        flexDirection: 'row', alignItems: 'center', gap: rs(12, 8, 16),
+        backgroundColor: C.surface,
+        borderRadius: rs(12, 8, 16),
+        padding:      rs(14, 10, 20),
+        marginBottom: rs(10, 8, 14),
         borderWidth: 1, borderColor: C.divider,
     },
-    agencyMeta: { flex: 1, gap: 2 },
-    agencyName: { fontSize: 13, fontWeight: '600', color: C.ink1, lineHeight: 18 },
-    agencyDate: { fontSize: 11, color: C.ink3 },
+    agencyMeta: { flex: 1, gap: rs(2, 1, 4) },
+    agencyName: { fontSize: rf(13), fontWeight: '600', color: C.ink1, lineHeight: rf(18) },
+    agencyDate: { fontSize: rf(11), color: C.ink3 },
 
-    emptyCard:  { backgroundColor: C.surface, borderRadius: 12, padding: 36, alignItems: 'center', gap: 6, borderWidth: 1, borderColor: C.divider },
-    emptyTitle: { fontSize: 14, fontWeight: '600', color: C.ink2 },
-    emptySub:   { fontSize: 12, color: C.ink3, textAlign: 'center', lineHeight: 17 },
+    emptyCard: {
+        backgroundColor: C.surface,
+        borderRadius: rs(12, 8, 16),
+        padding:      rs(36, 24, 48),
+        alignItems: 'center', gap: rs(6, 4, 8),
+        borderWidth: 1, borderColor: C.divider,
+    },
+    emptyTitle: { fontSize: rf(14), fontWeight: '600', color: C.ink2 },
+    emptySub:   { fontSize: rf(12), color: C.ink3, textAlign: 'center', lineHeight: rf(17) },
 
-    stickyBar:     { backgroundColor: C.surface, paddingHorizontal: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.divider },
-    primaryBtn:    { backgroundColor: C.blue, borderRadius: 11, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
-    primaryBtnTxt: { fontSize: 15, fontWeight: '700', color: '#fff' },
+    stickyBar: {
+        backgroundColor: C.surface,
+        paddingHorizontal: rs(16, 12, 24),
+        paddingTop: rs(12, 10, 16),
+        borderTopWidth: 1, borderTopColor: C.divider,
+    },
+    primaryBtn: {
+        backgroundColor: C.blue,
+        borderRadius:    rs(11, 8, 15),
+        paddingVertical: rs(14, 11, 18),
+        alignItems: 'center', justifyContent: 'center',
+    },
+    primaryBtnTxt: { fontSize: rf(15), fontWeight: '700', color: '#fff' },
 
     thumbPlaceholder: {
-        borderRadius: 7, borderWidth: 1, borderColor: C.divider,
-        backgroundColor: C.surface, padding: 5,
+        borderRadius: rs(7, 5, 9),
+        borderWidth: 1, borderColor: C.divider,
+        backgroundColor: C.surface,
+        padding: rs(5, 4, 7),
         overflow: 'hidden', position: 'relative',
         justifyContent: 'center', alignItems: 'center',
     },
-    thumbFold:  { position: 'absolute', top: 0, right: 0, width: 10, height: 10, backgroundColor: C.divider, borderBottomLeftRadius: 4 },
-    thumbLines: { position: 'absolute', bottom: 8, left: 8, right: 8, gap: 2.5 },
-    thumbLine:  { height: 2.5, backgroundColor: C.divider, borderRadius: 2 },
+    thumbFold: {
+        position: 'absolute', top: 0, right: 0,
+        width: rs(10, 8, 13), height: rs(10, 8, 13),
+        backgroundColor: C.divider,
+        borderBottomLeftRadius: rs(4, 3, 5),
+    },
+    thumbLines: {
+        position: 'absolute', bottom: rs(8, 6, 10),
+        left: rs(8, 6, 10), right: rs(8, 6, 10),
+        gap: rs(2.5, 2, 3.5),
+    },
+    thumbLine: { height: rs(2.5, 2, 3.5), backgroundColor: C.divider, borderRadius: 2 },
 
-    completionBg:     { flex: 1, backgroundColor: 'rgba(15,20,35,0.5)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
-    completionCard:   { backgroundColor: C.surface, borderRadius: 20, padding: 28, alignItems: 'center', width: '100%', maxWidth: 340, borderWidth: 1, borderColor: C.divider },
-    completionTitle:  { fontSize: 22, fontWeight: '800', color: C.ink1, marginBottom: 10 },
-    completionSub:    { fontSize: 14, color: C.ink2, textAlign: 'center', lineHeight: 21, marginBottom: 22 },
-    completionBtn:    { backgroundColor: C.blue, borderRadius: 10, paddingVertical: 13, paddingHorizontal: 32 },
-    completionBtnTxt: { fontSize: 15, fontWeight: '700', color: '#fff' },
+    completionBg:   { flex: 1, backgroundColor: 'rgba(15,20,35,0.5)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: rs(24, 16, 40) },
+    completionCard: {
+        backgroundColor: C.surface,
+        borderRadius: rs(20, 14, 26),
+        padding:      rs(28, 20, 36),
+        alignItems: 'center', width: '100%',
+        maxWidth: IS_TABLET ? 480 : 340,
+        borderWidth: 1, borderColor: C.divider,
+    },
+    completionTitle:  { fontSize: rf(22), fontWeight: '800', color: C.ink1, marginBottom: rs(10, 8, 14) },
+    completionSub:    { fontSize: rf(14), color: C.ink2, textAlign: 'center', lineHeight: rf(21), marginBottom: rs(22, 16, 28) },
+    completionBtn:    { backgroundColor: C.blue, borderRadius: rs(10, 7, 13), paddingVertical: rs(13, 10, 16), paddingHorizontal: rs(32, 22, 44) },
+    completionBtnTxt: { fontSize: rf(15), fontWeight: '700', color: '#fff' },
 });

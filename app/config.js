@@ -1,7 +1,7 @@
 // app/config.js
 export const Config = {
   // Base URLs
-  API_BASE_URL: "https://edu-agent-backend.vercel.app/api/v1",
+  API_BASE_URL: "https://edu-agent-backend-psi.vercel.app/api/v1",
   SOCKET_URL: "https://undeaf-crashing-ellie.ngrok-free.dev",
   
   // Auth Endpoints
