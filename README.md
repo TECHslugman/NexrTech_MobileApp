@@ -235,8 +235,6 @@ npx expo start --tunnel
 
 ## Changelog
 
-All notable changes are documented in [CHANGELOG.md](CHANGELOG.md).
-
 ### [0.2.0] — 2025-06-25
 - Added Google One-Tap OAuth sign-in
 - Introduced `expo-secure-store` for persistent sessions
@@ -274,7 +272,6 @@ Contributions are welcome and appreciated. This project follows a standard fork-
 
 ### Commit Message Convention
 
-This project uses [Conventional Commits](https://www.conventionalcommits.org/):
 
 | Prefix | Use for |
 | :--- | :--- |
@@ -297,12 +294,6 @@ Please open a [GitHub Issue](https://github.com/yourusername/eduagent-mobile/iss
 - TypeScript strict mode is enabled — avoid `any` types
 - Components live in `components/`; screens live in `app/`
 - Keep `AuthContext` lean — business logic belongs in service files, not the context
-
----
-
-## License
-
-Distributed under the **MIT License**. See [LICENSE](LICENSE) for the full text.
 
 ---
 
