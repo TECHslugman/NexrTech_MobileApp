@@ -6,36 +6,40 @@ import {
     ScrollView,
     TouchableOpacity,
     ActivityIndicator,
-    StatusBar
+    StatusBar,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../../../../context/AuthContext';
 import { Config } from '../../../../config';
 
 const COLORS = {
     bg: '#F8FAFD',
-    primary: '#769FCD',
-    primaryLight: 'rgba(118, 159, 205, 0.1)',
     white: '#FFFFFF',
+    primaryBlue: '#769FCD',
+    primaryLight: 'rgba(118, 159, 205, 0.08)',
+    headerBlue: '#5B8CBE',
     textPrimary: '#2D3748',
-    textSecondary: '#718096',
-    border: '#EEF2F7',
-    success: '#4CAF50',
-    cardBg: '#FFFFFF',
+    textSecondary: '#64748B',
+    textLight: '#94A3B8',
+    border: '#E9EDF2',
+    success: '#2E7D5E',
+    warning: '#B76E3C',
 };
 
 export default function ScholarshipDetail() {
     const router = useRouter();
+    const insets = useSafeAreaInsets();
     const { id, agencyId, scholarshipName } = useLocalSearchParams();
     const { userToken } = useAuth();
 
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState(null);
+    const [error, setError] = useState(null);
 
     const formatDate = (dateString) => {
-        if (!dateString) return "Date TBA";
+        if (!dateString) return "TBA";
         try {
             const date = new Date(dateString);
             if (isNaN(date.getTime())) return dateString;
@@ -49,92 +53,165 @@ export default function ScholarshipDetail() {
         }
     };
 
-    useEffect(() => {
-        const fetchDetail = async () => {
-            try {
-                const targetId = agencyId || id;
-                const response = await fetch(`${Config.API_BASE_URL}/agency/scholarships/agency/${targetId}`, {
-                    headers: { 'Authorization': `Bearer ${userToken}` }
-                });
+    const formatCurrency = (amount) => {
+        if (!amount) return "Amount TBD";
+        if (typeof amount === 'number') {
+            return `$${amount.toLocaleString()}`;
+        }
+        if (typeof amount === 'string') {
+            if (amount.startsWith('$')) return amount;
+            const num = parseFloat(amount);
+            if (!isNaN(num)) return `$${num.toLocaleString()}`;
+        }
+        return amount;
+    };
 
-                const json = await response.json();
+    const parseEligibility = (eligibility) => {
+        if (!eligibility) return [];
+        if (Array.isArray(eligibility)) return eligibility;
+        if (typeof eligibility === 'string') {
+            return eligibility.split(',').map(item => item.trim()).filter(item => item !== '');
+        }
+        return [];
+    };
 
-                if (response.ok) {
-                    const list = json.scholarship || json.data || json;
-                    const selected = Array.isArray(list) ? list.find(item => (item._id === id || item.id === id)) : null;
+    const parseFieldOfStudy = (fieldOfStudy) => {
+        if (!fieldOfStudy) return [];
+        if (Array.isArray(fieldOfStudy)) return fieldOfStudy;
+        if (typeof fieldOfStudy === 'string') {
+            return fieldOfStudy.split(',').map(item => item.trim()).filter(item => item !== '');
+        }
+        return [];
+    };
+
+    const fetchDetail = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            
+            const targetId = agencyId || id;
+            
+            const response = await fetch(`${Config.API_BASE_URL}/agency/scholarships/agency/${targetId}`, {
+                headers: { 'Authorization': `Bearer ${userToken}` }
+            });
+
+            const json = await response.json();
+
+            if (response.ok) {
+                const scholarshipList = json.scholarship || json.data || [];
+                
+                if (Array.isArray(scholarshipList) && scholarshipList.length > 0) {
+                    const selected = scholarshipList.find(item => 
+                        item._id === id || item.id === id
+                    );
 
                     if (selected) {
                         setData({
-                            title: selected.title || selected.name || scholarshipName,
-                            about: selected.about || "No description available.",
-                            howToApply: selected.howToApply || "Contact agency for details.",
-                            amount: selected.amount || "Check with provider",
-                            fieldOfStudy: Array.isArray(selected.fieldOfStudy)
-                                ? selected.fieldOfStudy
-                                : [selected.fieldOfStudy || "All Fields"],
-                            deadline: formatDate(selected.applicationDateline || selected.deadline),
-                            status: selected.Status || "Active",
-                            eligibility: selected.eligibility || ["Academic Transcripts", "Proof of Enrollment"],
-                            duration: selected.duration || "Full Program Duration",
-                            coverage: selected.coverage || "Tuition & Living Expenses"
+                            title: selected.title || selected.name || scholarshipName || "Scholarship Program",
+                            description: selected.about || selected.description || "",
+                            howToApply: selected.howToApply || "",
+                            amount: formatCurrency(selected.amount),
+                            fieldOfStudy: parseFieldOfStudy(selected.fieldOfStudy),
+                            deadline: formatDate(selected.applicationDateline || selected.deadline || selected.applicationDeadline),
+                            status: selected.status || selected.Status || "Active",
+                            eligibility: parseEligibility(selected.eligibility),
+                            duration: selected.duration || "",
+                            coverage: selected.coverage || "",
+                            provider: selected.provider || selected.agencyName || "",
                         });
                     } else {
-                        // Use fallback data if no match found
-                        setData(getFallbackData());
+                        setError('Scholarship not found');
                     }
                 } else {
-                    setData(getFallbackData());
+                    setError('No scholarships available');
                 }
-            } catch (error) {
-                console.error("Fetch error:", error);
-                setData(getFallbackData());
-            } finally {
-                setLoading(false);
+            } else {
+                setError('Failed to load scholarship details');
             }
-        };
+        } catch (error) {
+            console.error("Fetch error:", error);
+            setError('Network error. Please try again.');
+        } finally {
+            setLoading(false);
+        }
+    };
 
-        const getFallbackData = () => ({
-            title: scholarshipName || "Scholarship Program",
-            about: "This prestigious scholarship provides financial support to outstanding students who demonstrate academic excellence and leadership potential.",
-            howToApply: "Submit your application through the agency portal along with required documents including academic transcripts, recommendation letters, and a personal statement.",
-            amount: "$15,000/year",
-            fieldOfStudy: ["Engineering", "Computer Science", "Business", "Medicine"],
-            deadline: "March 31, 2024",
-            status: "Active",
-            eligibility: ["Minimum GPA 3.5", "IELTS 6.5+", "2 Recommendation Letters"],
-            duration: "4 Years",
-            coverage: "Tuition + Living Expenses"
-        });
-
+    useEffect(() => {
         fetchDetail();
-    }, [id, agencyId, userToken, scholarshipName]);
+    }, [id, agencyId, userToken]);
 
     if (loading) {
         return (
-            <View style={styles.center}>
-                <ActivityIndicator size="large" color={COLORS.primary} />
+            <View style={[styles.center, { paddingTop: insets.top }]}>
+                <ActivityIndicator size="large" color={COLORS.primaryBlue} />
                 <Text style={styles.loadingText}>Loading scholarship details...</Text>
             </View>
         );
     }
 
-    if (!data) return null;
+    if (error || !data) {
+        return (
+            <View style={[styles.container, { backgroundColor: COLORS.bg }]}>
+                <StatusBar barStyle="dark-content" />
+                <View style={[styles.errorHeader, { paddingTop: insets.top + 10 }]}>
+                    <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+                        <Ionicons name="chevron-back" size={26} color={COLORS.textPrimary} />
+                    </TouchableOpacity>
+                </View>
+                <View style={styles.center}>
+                    <View style={styles.errorCard}>
+                        <View style={styles.errorIconContainer}>
+                            <Ionicons name="alert-circle-outline" size={48} color={COLORS.primaryBlue} />
+                        </View>
+                        <Text style={styles.errorTitle}>Unable to Load</Text>
+                        <Text style={styles.errorText}>{error || 'Scholarship details not found'}</Text>
+                        <TouchableOpacity 
+                            style={styles.retryButton}
+                            onPress={fetchDetail}
+                        >
+                            <Text style={styles.retryButtonText}>Try Again</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </View>
+        );
+    }
 
     return (
-        <SafeAreaView style={styles.container} edges={['top']}>
-            <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
-            
-            {/* Header with consistent blue design */}
-            <View style={styles.header}>
+        <View style={[styles.container, { backgroundColor: COLORS.bg }]}>
+            <StatusBar barStyle="light-content" />
+
+            {/* Header */}
+            <View style={[
+                styles.header,
+                { paddingTop: insets.top + 10 }
+            ]}>
+                <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+                    <Ionicons name="chevron-back" size={26} color="#FFF" />
+                </TouchableOpacity>
+
                 <View style={styles.headerContent}>
-                    <TouchableOpacity
-                        style={styles.backButton}
-                        onPress={() => router.back()}
-                    >
-                        <Ionicons name="chevron-back" size={24} color={COLORS.white} />
-                    </TouchableOpacity>
-                    <Text style={styles.headerTitle}>Scholarship Details</Text>
-                    <View style={{ width: 40 }} />
+                    <Text style={styles.scholarshipTitle} numberOfLines={2}>
+                        {data.title}
+                    </Text>
+
+                    <View style={styles.scholarshipMeta}>
+                        {data.deadline && data.deadline !== "TBA" && (
+                            <View style={styles.metaItem}>
+                                <Feather name="calendar" size={14} color="rgba(255,255,255,0.9)" />
+                                <Text style={styles.metaText}>{data.deadline}</Text>
+                            </View>
+                        )}
+                        {data.amount && data.amount !== "Amount TBD" && (
+                            <>
+                                {data.deadline && data.deadline !== "TBA" && <View style={styles.metaDivider} />}
+                                <View style={styles.metaItem}>
+                                    <Feather name="award" size={14} color="rgba(255,255,255,0.9)" />
+                                    <Text style={styles.metaText}>{data.amount}</Text>
+                                </View>
+                            </>
+                        )}
+                    </View>
                 </View>
             </View>
 
@@ -142,163 +219,131 @@ export default function ScholarshipDetail() {
                 showsVerticalScrollIndicator={false} 
                 contentContainerStyle={styles.scrollContent}
             >
-                {/* Main Scholarship Card */}
-                <View style={styles.mainCard}>
-                    <View style={styles.titleContainer}>
-                        <View style={styles.trophyContainer}>
-                            <MaterialCommunityIcons name="trophy" size={32} color={COLORS.primary} />
+                {/* About Section */}
+                {data.description && data.description !== "" && (
+                    <View style={styles.section}>
+                        <View style={styles.sectionHeader}>
+                            <Feather name="info" size={18} color={COLORS.primaryBlue} />
+                            <Text style={styles.sectionTitle}>About this Scholarship</Text>
                         </View>
-                        <Text style={styles.scholarshipTitle}>{data.title}</Text>
-                        <View style={[
-                            styles.statusBadge,
-                            { backgroundColor: data.status === 'Active' ? 'rgba(76, 175, 80, 0.1)' : COLORS.primaryLight }
-                        ]}>
-                            <Text style={[
-                                styles.statusText,
-                                { color: data.status === 'Active' ? COLORS.success : COLORS.primary }
-                            ]}>
-                                {data.status}
-                            </Text>
+                        <View style={styles.card}>
+                            <Text style={styles.cardText}>{data.description}</Text>
                         </View>
                     </View>
-                </View>
-
-                {/* Key Information Cards */}
-                <View style={styles.infoGrid}>
-                    <View style={styles.infoCard}>
-                        <View style={[styles.infoIcon, { backgroundColor: COLORS.primaryLight }]}>
-                            <MaterialCommunityIcons name="calendar-clock" size={20} color={COLORS.primary} />
-                        </View>
-                        <Text style={styles.infoLabel}>Application Deadline</Text>
-                        <Text style={styles.infoValue}>{data.deadline}</Text>
-                    </View>
-                    
-                    <View style={styles.infoCard}>
-                        <View style={[styles.infoIcon, { backgroundColor: COLORS.primaryLight }]}>
-                            <MaterialCommunityIcons name="cash" size={20} color={COLORS.primary} />
-                        </View>
-                        <Text style={styles.infoLabel}>Scholarship Value</Text>
-                        <Text style={styles.infoValue}>{data.amount}</Text>
-                    </View>
-                </View>
+                )}
 
                 {/* Field of Study */}
-                <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <MaterialCommunityIcons name="book-open-variant" size={22} color={COLORS.primary} />
-                        <Text style={styles.sectionTitle}>Field of Study</Text>
-                    </View>
-                    <View style={styles.fieldContainer}>
-                        {data.fieldOfStudy.map((item, index) => (
-                            <View key={index} style={styles.fieldChip}>
-                                <Text style={styles.fieldText}>{item}</Text>
+                {data.fieldOfStudy && data.fieldOfStudy.length > 0 && (
+                    <View style={styles.section}>
+                        <View style={styles.sectionHeader}>
+                            <Feather name="book-open" size={18} color={COLORS.primaryBlue} />
+                            <Text style={styles.sectionTitle}>Field of Study</Text>
+                        </View>
+                        <View style={styles.card}>
+                            <View style={styles.chipContainer}>
+                                {data.fieldOfStudy.map((item, index) => (
+                                    <View key={index} style={styles.chip}>
+                                        <Text style={styles.chipText}>{item}</Text>
+                                    </View>
+                                ))}
                             </View>
-                        ))}
+                        </View>
                     </View>
-                </View>
+                )}
 
                 {/* Eligibility Criteria */}
-                <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <Feather name="check-circle" size={22} color={COLORS.primary} />
-                        <Text style={styles.sectionTitle}>Eligibility Criteria</Text>
+                {data.eligibility && data.eligibility.length > 0 && (
+                    <View style={styles.section}>
+                        <View style={styles.sectionHeader}>
+                            <Feather name="check-circle" size={18} color={COLORS.primaryBlue} />
+                            <Text style={styles.sectionTitle}>Eligibility Criteria</Text>
+                        </View>
+                        <View style={styles.card}>
+                            {data.eligibility.map((item, index) => (
+                                <View key={index} style={styles.requirementItem}>
+                                    <View style={styles.bulletPoint} />
+                                    <Text style={styles.requirementText}>{item}</Text>
+                                </View>
+                            ))}
+                        </View>
                     </View>
-                    <View style={styles.bulletContainer}>
-                        {data.eligibility.map((item, index) => (
-                            <View key={index} style={styles.bulletItem}>
-                                <View style={styles.bulletDot} />
-                                <Text style={styles.bulletText}>{item}</Text>
-                            </View>
-                        ))}
-                    </View>
-                </View>
-
-                {/* About Section */}
-                <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <Feather name="info" size={22} color={COLORS.primary} />
-                        <Text style={styles.sectionTitle}>About This Scholarship</Text>
-                    </View>
-                    <Text style={styles.paragraph}>{data.about}</Text>
-                </View>
+                )}
 
                 {/* How to Apply */}
-                <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <Feather name="send" size={22} color={COLORS.primary} />
-                        <Text style={styles.sectionTitle}>How to Apply</Text>
+                {data.howToApply && data.howToApply !== "" && (
+                    <View style={styles.section}>
+                        <View style={styles.sectionHeader}>
+                            <Feather name="send" size={18} color={COLORS.primaryBlue} />
+                            <Text style={styles.sectionTitle}>How to Apply</Text>
+                        </View>
+                        <View style={styles.card}>
+                            <Text style={styles.cardText}>{data.howToApply}</Text>
+                        </View>
                     </View>
-                    <Text style={styles.paragraph}>{data.howToApply}</Text>
-                </View>
+                )}
 
-                {/* Additional Details Card */}
-                <View style={styles.detailsCard}>
-                    <View style={styles.detailsHeader}>
-                        <Feather name="clipboard" size={20} color={COLORS.white} />
-                        <Text style={styles.detailsTitle}>Additional Details</Text>
-                    </View>
-                    <View style={styles.detailsGrid}>
-                        <View style={styles.detailItem}>
-                            <Text style={styles.detailLabel}>Program Duration</Text>
-                            <Text style={styles.detailValue}>{data.duration}</Text>
+                {/* Provider Section */}
+                {data.provider && data.provider !== "" && (
+                    <View style={styles.section}>
+                        <View style={styles.sectionHeader}>
+                            <MaterialIcons name="business" size={18} color={COLORS.primaryBlue} />
+                            <Text style={styles.sectionTitle}>Provided By</Text>
                         </View>
-                        <View style={styles.detailItem}>
-                            <Text style={styles.detailLabel}>Coverage</Text>
-                            <Text style={styles.detailValue}>{data.coverage}</Text>
+                        <View style={styles.providerCard}>
+                            <View style={styles.providerIconContainer}>
+                                <Text style={styles.providerInitial}>
+                                    {data.provider.charAt(0).toUpperCase()}
+                                </Text>
+                            </View>
+                            <View style={styles.providerInfo}>
+                                <Text style={styles.providerName}>{data.provider}</Text>
+                                <Text style={styles.providerNote}>Scholarship Provider</Text>
+                            </View>
                         </View>
                     </View>
-                </View>
-                
-                <View style={{ height: 100 }} />
+                )}
             </ScrollView>
 
-            {/* Fixed Apply Button */}
-            <View style={styles.bottomBar}>
-                <TouchableOpacity style={styles.applyButton} activeOpacity={0.85}>
-                    <Text style={styles.applyButtonText}>Apply Now</Text>
-                    <Feather name="arrow-right" size={20} color={COLORS.white} />
-                </TouchableOpacity>
+            {/* Footer note */}
+            <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 10 }]}>
+                <View style={styles.infoFooter}>
+                    <Feather name="info" size={14} color={COLORS.textLight} />
+                    <Text style={styles.footerText}>
+                        Contact the provider for application details
+                    </Text>
+                </View>
             </View>
-        </SafeAreaView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: COLORS.bg,
     },
     center: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: COLORS.bg,
+        paddingHorizontal: 40,
     },
     loadingText: {
+        marginTop: 16,
         fontSize: 16,
         color: COLORS.textSecondary,
-        marginTop: 12,
     },
-    // Header with consistent blue design
+    // Header Styles
     header: {
-        backgroundColor: COLORS.primary,
+        height: 180,
+        backgroundColor: COLORS.primaryBlue,
         paddingHorizontal: 20,
-        paddingTop: 15,
-        paddingBottom: 20,
-        borderBottomLeftRadius: 25,
-        borderBottomRightRadius: 25,
-        elevation: 4,
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
+       
     },
-    headerContent: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    backButton: {
+    backBtn: {
+        position: 'absolute',
+        top: 50,
+        left: 20,
+        zIndex: 10,
         width: 40,
         height: 40,
         borderRadius: 20,
@@ -306,249 +351,219 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
-    headerTitle: {
-        fontSize: 22,
-        fontWeight: '700',
-        color: COLORS.white,
-        textAlign: 'center',
+    headerContent: {
         flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingTop: 20,
     },
-    scrollContent: {
-        paddingBottom: 20,
+    scholarshipTitle: {
+        color: '#FFF',
+        fontSize: 24,
+        fontWeight: '700',
+        textAlign: 'center',
+        lineHeight: 32,
+        marginBottom: 16,
+        paddingHorizontal: 40,
     },
-    // Main Scholarship Card
-    mainCard: {
+    scholarshipMeta: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.15)',
+        borderRadius: 20,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+    },
+    metaItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    metaText: {
+        color: 'rgba(255,255,255,0.95)',
+        fontSize: 13,
+        fontWeight: '500',
+    },
+    metaDivider: {
+        width: 1,
+        height: 14,
+        backgroundColor: 'rgba(255,255,255,0.3)',
+        marginHorizontal: 12,
+    },
+    // Error Styles
+    errorHeader: {
+        paddingHorizontal: 20,
+        paddingBottom: 10,
         backgroundColor: COLORS.white,
-        borderRadius: 24,
-        padding: 24,
-        marginHorizontal: 20,
-        marginTop: 20,
-        marginBottom: 20,
+        borderBottomWidth: 1,
+        borderBottomColor: COLORS.border,
+    },
+    errorCard: {
+        backgroundColor: COLORS.white,
+        padding: 32,
+        borderRadius: 20,
+        alignItems: 'center',
         borderWidth: 1,
         borderColor: COLORS.border,
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
+        width: '100%',
     },
-    titleContainer: {
-        alignItems: 'center',
-    },
-    trophyContainer: {
-        width: 64,
-        height: 64,
-        borderRadius: 32,
+    errorIconContainer: {
+        width: 72,
+        height: 72,
+        borderRadius: 36,
         backgroundColor: COLORS.primaryLight,
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 16,
     },
-    scholarshipTitle: {
-        fontSize: 24,
+    errorTitle: {
+        fontSize: 20,
         fontWeight: '700',
         color: COLORS.textPrimary,
-        textAlign: 'center',
-        marginBottom: 16,
-        lineHeight: 30,
+        marginBottom: 8,
     },
-    statusBadge: {
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 20,
-    },
-    statusText: {
-        fontSize: 14,
-        fontWeight: '700',
-        textTransform: 'uppercase',
-    },
-    // Info Grid
-    infoGrid: {
-        flexDirection: 'row',
-        paddingHorizontal: 20,
-        gap: 15,
-        marginBottom: 24,
-    },
-    infoCard: {
-        flex: 1,
-        backgroundColor: COLORS.white,
-        borderRadius: 20,
-        padding: 20,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-        alignItems: 'center',
-        elevation: 1,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-    },
-    infoIcon: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-    infoLabel: {
-        fontSize: 13,
+    errorText: {
+        fontSize: 15,
         color: COLORS.textSecondary,
-        marginBottom: 4,
+        marginBottom: 24,
         textAlign: 'center',
+        lineHeight: 22,
     },
-    infoValue: {
-        fontSize: 16,
-        fontWeight: '700',
-        color: COLORS.textPrimary,
-        textAlign: 'center',
+    retryButton: {
+        backgroundColor: COLORS.primaryBlue,
+        paddingHorizontal: 32,
+        paddingVertical: 12,
+        borderRadius: 8,
     },
-    // Sections
+    retryButtonText: {
+        color: COLORS.white,
+        fontSize: 15,
+        fontWeight: '600',
+    },
+    // Content Styles
+    scrollContent: {
+        paddingHorizontal: 20,
+        paddingTop: 16,
+        paddingBottom: 20,
+    },
     section: {
-        backgroundColor: COLORS.white,
-        borderRadius: 20,
-        padding: 20,
-        marginHorizontal: 20,
         marginBottom: 20,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-        elevation: 1,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
     },
     sectionHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 16,
+        marginBottom: 10,
     },
     sectionTitle: {
-        fontSize: 18,
-        fontWeight: '700',
+        fontSize: 17,
+        fontWeight: '600',
         color: COLORS.textPrimary,
-        marginLeft: 10,
+        marginLeft: 8,
     },
-    fieldContainer: {
+    card: {
+        backgroundColor: COLORS.white,
+        borderRadius: 12,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+    },
+    cardText: {
+        fontSize: 15,
+        color: COLORS.textSecondary,
+        lineHeight: 22,
+    },
+    // Chip Styles
+    chipContainer: {
         flexDirection: 'row',
         flexWrap: 'wrap',
         gap: 8,
     },
-    fieldChip: {
+    chip: {
         backgroundColor: COLORS.primaryLight,
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 20,
-        marginBottom: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: 'rgba(118, 159, 205, 0.2)',
     },
-    fieldText: {
+    chipText: {
         fontSize: 14,
-        fontWeight: '600',
-        color: COLORS.primary,
+        color: COLORS.primaryBlue,
+        fontWeight: '500',
     },
-    bulletContainer: {
-        marginTop: 4,
-    },
-    bulletItem: {
+    // Requirement Styles
+    requirementItem: {
         flexDirection: 'row',
         alignItems: 'flex-start',
-        marginBottom: 12,
+        marginBottom: 10,
     },
-    bulletDot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-        backgroundColor: COLORS.primary,
+    bulletPoint: {
+        width: 5,
+        height: 5,
+        borderRadius: 2.5,
+        backgroundColor: COLORS.primaryBlue,
         marginTop: 8,
-        marginRight: 12,
+        marginRight: 10,
     },
-    bulletText: {
+    requirementText: {
         flex: 1,
         fontSize: 15,
         color: COLORS.textSecondary,
         lineHeight: 22,
     },
-    paragraph: {
-        fontSize: 15,
-        color: COLORS.textSecondary,
-        lineHeight: 24,
-    },
-    // Details Card
-    detailsCard: {
-        backgroundColor: COLORS.primary,
-        borderRadius: 20,
-        marginHorizontal: 20,
-        marginTop: 10,
-        marginBottom: 20,
-        overflow: 'hidden',
-        elevation: 3,
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-    },
-    detailsHeader: {
+    // Provider Styles
+    providerCard: {
+        backgroundColor: COLORS.white,
+        borderRadius: 12,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: COLORS.border,
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 20,
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
     },
-    detailsTitle: {
-        fontSize: 18,
+    providerIconContainer: {
+        width: 52,
+        height: 52,
+        borderRadius: 26,
+        backgroundColor: COLORS.primaryLight,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 14,
+    },
+    providerInitial: {
+        fontSize: 24,
         fontWeight: '700',
-        color: COLORS.white,
-        marginLeft: 10,
+        color: COLORS.primaryBlue,
     },
-    detailsGrid: {
-        padding: 20,
+    providerInfo: {
+        flex: 1,
     },
-    detailItem: {
-        marginBottom: 16,
+    providerName: {
+        fontSize: 17,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+        marginBottom: 2,
     },
-    detailLabel: {
+    providerNote: {
         fontSize: 13,
-        color: 'rgba(255, 255, 255, 0.8)',
-        marginBottom: 4,
+        color: COLORS.textLight,
     },
-    detailValue: {
-        fontSize: 16,
-        fontWeight: '700',
-        color: COLORS.white,
-    },
-    // Bottom Bar with Apply Button
+    // Footer
     bottomBar: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
+        padding: 16,
         backgroundColor: COLORS.white,
-        paddingHorizontal: 24,
-        paddingVertical: 20,
         borderTopWidth: 1,
         borderTopColor: COLORS.border,
-        elevation: 8,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
     },
-    applyButton: {
-        backgroundColor: COLORS.primary,
-        borderRadius: 16,
-        paddingVertical: 18,
+    infoFooter: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 10,
-        elevation: 2,
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
+        gap: 6,
     },
-    applyButtonText: {
-        fontSize: 17,
-        fontWeight: '700',
-        color: COLORS.white,
+    footerText: {
+        fontSize: 13,
+        color: COLORS.textLight,
+        fontWeight: '500',
     },
 });

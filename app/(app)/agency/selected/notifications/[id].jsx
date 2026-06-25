@@ -16,7 +16,7 @@ const COLORS = {
     border: '#EEF2F7',
     textPrimary: '#2D3748',
     textSecondary: '#718096',
-    unreadBg: '#F0F7FF', // Slightly darker for better contrast
+    unreadBg: '#F0F7FF',
     readBg: '#FFFFFF',
 };
 
@@ -24,16 +24,38 @@ export default function NotificationsScreen() {
     const router = useRouter();
     const { userToken } = useAuth();
 
+    // Data States
     const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
 
-    // Fetch notifications from API using token
-    const fetchNotifications = async () => {
+    // Pagination States
+    const [hasNextPage, setHasNextPage] = useState(false);
+    const [nextCursor, setNextCursor] = useState({ id: null, createdAt: null });
+
+    const fetchNotifications = async (isRefreshing = false) => {
         if (!userToken) return;
 
+        // Prevent fetching if already loading or no more pages (unless refreshing)
+        if (!isRefreshing && notifications.length > 0 && !hasNextPage) return;
+
         try {
-            const response = await fetch(`${Config.API_BASE_URL}/students/students/notification/history`, {
+            if (isRefreshing) {
+                setRefreshing(true);
+            } else if (notifications.length > 0) {
+                setLoadingMore(true);
+            }
+
+            // Construct URL
+            let url = `${Config.API_BASE_URL}/students/students/notification/history`;
+            
+            // Add pagination query params if loading more
+            if (!isRefreshing && nextCursor.id && nextCursor.createdAt) {
+                url += `?cursorId=${nextCursor.id}&cursorCreatedAt=${nextCursor.createdAt}`;
+            }
+
+            const response = await fetch(url, {
                 headers: {
                     'Authorization': `Bearer ${userToken}`,
                     'Content-Type': 'application/json'
@@ -42,9 +64,19 @@ export default function NotificationsScreen() {
 
             if (response.ok) {
                 const data = await response.json();
-                setNotifications(data.notifications || []);
+                
+                // Update list: replace on refresh, append on load more
+                setNotifications(prev => isRefreshing ? data.notifications : [...prev, ...data.notifications]);
+                
+                // Update pagination metadata
+                setHasNextPage(data.hasNextPage);
+                if (data.nextCursor) {
+                    setNextCursor({
+                        id: data.nextCursor.cursorId,
+                        createdAt: data.nextCursor.cursorCreatedAt
+                    });
+                }
             } else {
-                // UPDATED LOGGING HERE:
                 const errorBody = await response.text();
                 console.error(`❌ API Error ${response.status}:`, errorBody);
             }
@@ -53,23 +85,27 @@ export default function NotificationsScreen() {
         } finally {
             setLoading(false);
             setRefreshing(false);
+            setLoadingMore(false);
         }
     };
 
     useEffect(() => {
-        fetchNotifications();
+        fetchNotifications(true);
     }, [userToken]);
 
     const onRefresh = () => {
-        setRefreshing(true);
-        fetchNotifications();
+        fetchNotifications(true);
     };
 
-    // Mark specific notification as read
+    const handleLoadMore = () => {
+        if (!loadingMore && hasNextPage) {
+            fetchNotifications(false);
+        }
+    };
+
     const markAsRead = async (notificationId) => {
         try {
-            // Ensure this endpoint matches your backend's PATCH/PUT route
-            const response = await fetch(`${Config.API_BASE_URL}students/students/notification/read/${notificationId}`, {
+            const response = await fetch(`${Config.API_BASE_URL}/students/students/notification/read/${notificationId}`, {
                 method: 'PATCH',
                 headers: {
                     'Authorization': `Bearer ${userToken}`,
@@ -124,7 +160,6 @@ export default function NotificationsScreen() {
                 ]}
                 onPress={() => {
                     if (isUnread) markAsRead(item._id);
-                    // Handle navigation if link exists
                     if (item.link) router.push(item.link);
                 }}
             >
@@ -151,7 +186,16 @@ export default function NotificationsScreen() {
         );
     };
 
-    if (loading) {
+    const renderFooter = () => {
+        if (!loadingMore) return null;
+        return (
+            <View style={styles.footerLoader}>
+                <ActivityIndicator size="small" color={COLORS.primary} />
+            </View>
+        );
+    };
+
+    if (loading && !refreshing) {
         return (
             <SafeAreaView style={styles.container}>
                 <View style={styles.center}>
@@ -179,8 +223,15 @@ export default function NotificationsScreen() {
                     keyExtractor={(item) => item._id}
                     renderItem={renderNotificationItem}
                     contentContainerStyle={styles.listContainer}
+                    onEndReached={handleLoadMore}
+                    onEndReachedThreshold={0.3}
+                    ListFooterComponent={renderFooter}
                     refreshControl={
-                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
+                        <RefreshControl 
+                            refreshing={refreshing} 
+                            onRefresh={onRefresh} 
+                            tintColor={COLORS.primary} 
+                        />
                     }
                 />
             ) : (
@@ -224,4 +275,5 @@ const styles = StyleSheet.create({
     emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
     emptyTitle: { fontSize: 18, fontWeight: '600', color: COLORS.textPrimary, marginTop: 16 },
     emptyMessage: { fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', marginTop: 8 },
+    footerLoader: { paddingVertical: 20, alignItems: 'center' }
 });

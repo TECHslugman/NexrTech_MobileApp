@@ -22,6 +22,8 @@ const COLORS = {
     booked: '#E53E3E',
     available: '#718096',
     selected: '#38A169',
+    disabled: '#A0AEC0',
+    success: '#48BB78',
 };
 
 // MODAL 2: CONFIRMATION SUMMARY
@@ -71,7 +73,7 @@ const MultiSeatInfoModal = ({ visible, onClose, selectedSeats, onConfirm, regist
 };
 
 // MODAL 1: SEATING GRID
-const SeatingChartModal = ({ visible, onClose, seats, onConfirm, registering, eventId }) => {
+const SeatingChartModal = ({ visible, onClose, seats, onConfirm, registering, eventId, isAlreadyRegistered }) => {
     const [selectedSeats, setSelectedSeats] = useState([]);
     const [isSummaryVisible, setIsSummaryVisible] = useState(false);
     const [fetchingSeatId, setFetchingSeatId] = useState(null);
@@ -116,7 +118,6 @@ const SeatingChartModal = ({ visible, onClose, seats, onConfirm, registering, ev
                     type: sData.ticketTypes?.name || 'Standard'
                 }]);
 
-                // Optional: Subtle feedback that a seat was added
                 Toast.show({
                     type: 'success',
                     text1: 'Seat Added',
@@ -144,6 +145,34 @@ const SeatingChartModal = ({ visible, onClose, seats, onConfirm, registering, ev
     const handleReset = () => {
         setSelectedSeats([]);
     };
+
+    // If already registered, disable all seat selection
+    if (isAlreadyRegistered) {
+        return (
+            <Modal visible={visible} animationType="slide" transparent={true} statusBarTranslucent>
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color={COLORS.textPrimary} /></TouchableOpacity>
+                            <Text style={styles.modalTitle}>Already Registered</Text>
+                            <View style={{ width: 24 }} />
+                        </View>
+                        
+                        <View style={styles.alreadyRegisteredContainer}>
+                            <Ionicons name="checkmark-circle" size={80} color={COLORS.success} />
+                            <Text style={styles.alreadyRegisteredTitle}>You're Already Registered!</Text>
+                            <Text style={styles.alreadyRegisteredText}>
+                                You have already registered for this event. You cannot register again.
+                            </Text>
+                            <TouchableOpacity style={styles.closeModalBtn} onPress={onClose}>
+                                <Text style={styles.closeModalBtnText}>Close</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+        );
+    }
 
     return (
         <Modal visible={visible} animationType="slide" transparent={true} statusBarTranslucent>
@@ -228,33 +257,91 @@ export default function EventDetail() {
     const [registering, setRegistering] = useState(false);
     const [data, setData] = useState(null);
     const [isModalVisible, setIsModalVisible] = useState(false);
+    const [isRegistered, setIsRegistered] = useState(false);
+    const [registrationChecked, setRegistrationChecked] = useState(false);
 
+    // Single useEffect to fetch all data
     useEffect(() => {
-        const fetchDetail = async () => {
-            try {
-                const response = await fetch(`${Config.API_BASE_URL}/agency/events/profile/${id}`, {
-                    headers: { 'Authorization': `Bearer ${userToken}` }
-                });
+        if (id && userToken) {
+            fetchAllData();
+        }
+    }, [id, userToken]);
+
+    const checkRegistrationStatus = async () => {
+        try {
+            // Since the status endpoint returns 404, we'll try to get registered events instead
+            const response = await fetch(`${Config.API_BASE_URL}/students/events/registered`, {
+                headers: { 'Authorization': `Bearer ${userToken}` }
+            });
+            
+            if (response.ok) {
                 const json = await response.json();
-                if (response.ok && json.event) {
-                    const e = json.event;
+                console.log("Registered events:", json);
+                
+                // Check if current event is in the list of registered events
+                // Adjust this based on your API response structure
+                const registeredEvents = json.events || json.registeredEvents || [];
+                const isEventRegistered = registeredEvents.some(event => 
+                    event._id === id || event.id === id
+                );
+                
+                setIsRegistered(isEventRegistered);
+            }
+        } catch (error) {
+            console.log("Registration check error:", error);
+            setIsRegistered(false);
+        } finally {
+            setRegistrationChecked(true);
+        }
+    };
+
+    const fetchAllData = async () => {
+        try {
+            setLoading(true);
+            setRegistrationChecked(false);
+            console.log("Fetching data for event ID:", id);
+            
+            // Fetch event details
+            const eventResponse = await fetch(`${Config.API_BASE_URL}/agency/events/profile/${id}`, {
+                headers: { 'Authorization': `Bearer ${userToken}` }
+            });
+
+            // Handle event data
+            if (eventResponse.ok) {
+                const eventJson = await eventResponse.json();
+                console.log("Event data received:", eventJson);
+                if (eventJson.event) {
+                    const e = eventJson.event;
                     setData({
-                        id: e._id, title: e.title, subtitle: e.subtitle,
+                        id: e._id, 
+                        title: e.title, 
+                        subtitle: e.subtitle,
                         image: e.bannerImageUrl || eventImage,
-                        startAt: e.startAt, endAt: e.endAt,
+                        startAt: e.startAt, 
+                        endAt: e.endAt,
                         venueName: e.location?.venueName,
                         addressLine: e.location?.addressLine,
-                        description: e.description, about: e.about,
+                        description: e.description, 
+                        about: e.about,
                         whoShouldAttend: e.whoShouldAttend,
                         agenda: e.agendaItems || [],
                         mode: e.meetings?.[0]?.mode || 'offline',
                         seats: e.seats || []
                     });
                 }
-            } catch (error) { console.log("Fetch Error:", error); } finally { setLoading(false); }
-        };
-        fetchDetail();
-    }, [id]);
+            }
+
+            // Check registration status
+            await checkRegistrationStatus();
+
+        } catch (error) { 
+            console.log("Fetch Error:", error);
+            setIsRegistered(false);
+            setRegistrationChecked(true);
+        } finally { 
+            setLoading(false); 
+        }
+    };
 
     const formatDateTime = (dateString) => {
         if (!dateString) return { date: "TBA", time: "", day: "" };
@@ -279,7 +366,10 @@ export default function EventDetail() {
             });
 
             const result = await res.json();
+            console.log("Registration result:", result);
+            
             if (res.ok) {
+                setIsRegistered(true);
                 Toast.show({
                     type: 'success',
                     text1: 'Registration Successful!',
@@ -287,20 +377,30 @@ export default function EventDetail() {
                     visibilityTime: 2000
                 });
 
-                // Smooth transition: close modal and go back after toast shows
                 setTimeout(() => {
                     setIsModalVisible(false);
                     router.back();
                 }, 2100);
-
             } else {
-                Toast.show({
-                    type: 'error',
-                    text1: 'Registration Failed',
-                    text2: result.message || "Something went wrong."
-                });
+                // If it says already registered, update the state
+                if (result.message === "Already registered") {
+                    setIsRegistered(true);
+                    Toast.show({
+                        type: 'info',
+                        text1: 'Already Registered',
+                        text2: 'You have already registered for this event.',
+                        visibilityTime: 2000
+                    });
+                } else {
+                    Toast.show({
+                        type: 'error',
+                        text1: 'Registration Failed',
+                        text2: result.message || "Something went wrong."
+                    });
+                }
             }
         } catch (e) {
+            console.log("Registration error:", e);
             Toast.show({
                 type: 'error',
                 text1: 'Server Error',
@@ -310,7 +410,38 @@ export default function EventDetail() {
             setRegistering(false);
         }
     };
-    if (loading || !data) return <View style={styles.center}><ActivityIndicator size="large" color={COLORS.primary} /></View>;
+
+    const handleRegisterPress = () => {
+        console.log("Register pressed. isRegistered:", isRegistered);
+        
+        if (isRegistered) {
+            Toast.show({
+                type: 'info',
+                text1: 'Already Registered',
+                text2: 'You have already registered for this event.',
+                visibilityTime: 2000
+            });
+            return;
+        }
+        
+        if (data?.mode === 'seated') {
+            setIsModalVisible(true);
+        } else {
+            handleConfirmRegistration();
+        }
+    };
+
+    if (loading || !data || !registrationChecked) {
+        return (
+            <View style={styles.center}>
+                <ActivityIndicator size="large" color={COLORS.primary} />
+                <Text style={styles.loadingText}>Loading event details...</Text>
+            </View>
+        );
+    }
+
+    console.log("Rendering with isRegistered:", isRegistered);
+
     const startInfo = formatDateTime(data.startAt);
     const endInfo = formatDateTime(data.endAt);
 
@@ -319,7 +450,9 @@ export default function EventDetail() {
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()}><Ionicons name="chevron-back" size={24} color="#FFF" /></TouchableOpacity>
                 <Text style={styles.headerTitle}>Event Details</Text>
-                <View style={{ width: 24 }} />
+                <TouchableOpacity onPress={fetchAllData}>
+                    <Ionicons name="refresh" size={22} color="#FFF" />
+                </TouchableOpacity>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false}>
@@ -340,7 +473,7 @@ export default function EventDetail() {
                         </View>
                         {data.mode !== 'online' && (
                             <View style={styles.infoCard}>
-                                <View style={[styles.infoIcon, { backgroundColor: '#F0FFF4' }]}><Feather name="map-pin" size={18} color="#48BB78" /></View>
+                                <View style={[styles.infoIcon, { backgroundColor: '#F0FFF4' }]}><Feather name="map-pin" size={18} color={COLORS.success} /></View>
                                 <View><Text style={styles.infoLabel}>LOCATION</Text><Text style={styles.infoValue}>{data.venueName}</Text><Text style={styles.infoSub}>{data.addressLine}</Text></View>
                             </View>
                         )}
@@ -361,6 +494,13 @@ export default function EventDetail() {
                             ))}
                         </View>
                     )}
+                    
+                    {isRegistered && (
+                        <View style={styles.registeredBadge}>
+                            <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
+                            <Text style={styles.registeredBadgeText}>You have registered for this event</Text>
+                        </View>
+                    )}
                 </View>
                 <View style={{ height: 120 }} />
             </ScrollView>
@@ -373,16 +513,30 @@ export default function EventDetail() {
                     eventId={data.id}
                     onConfirm={handleConfirmRegistration}
                     registering={registering}
+                    isAlreadyRegistered={isRegistered}
                 />
             )}
 
             <View style={styles.stickyFooter}>
                 <TouchableOpacity
-                    style={styles.mainBtn}
-                    onPress={() => data.mode === 'seated' ? setIsModalVisible(true) : handleConfirmRegistration()}
-                    disabled={registering}
+                    style={[
+                        styles.mainBtn, 
+                        { backgroundColor: isRegistered ? COLORS.disabled : COLORS.primary },
+                        (isRegistered || registering) && styles.disabledBtn
+                    ]}
+                    onPress={handleRegisterPress}
+                    disabled={isRegistered || registering}
                 >
-                    {registering ? <ActivityIndicator color="#FFF" /> : <Text style={styles.mainBtnText}>{data.mode === 'seated' ? 'Select Seats & Register' : 'Register for Event'}</Text>}
+                    {registering ? (
+                        <ActivityIndicator color="#FFF" />
+                    ) : (
+                        <Text style={styles.mainBtnText}>
+                            {isRegistered 
+                                ? 'Already Registered' 
+                                : (data.mode === 'seated' ? 'Select Seats & Register' : 'Register for Event')
+                            }
+                        </Text>
+                    )}
                 </TouchableOpacity>
             </View>
         </SafeAreaView>
@@ -392,6 +546,7 @@ export default function EventDetail() {
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: COLORS.bg },
     center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    loadingText: { marginTop: 12, color: COLORS.primary, fontSize: 14 },
     header: { height: 60, backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 },
     headerTitle: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
     eventImage: { width: '100%', height: 250 },
@@ -412,8 +567,27 @@ const styles = StyleSheet.create({
     agendaRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
     agendaDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.primary, marginRight: 10 },
     stickyFooter: { position: 'absolute', bottom: 0, width: '100%', padding: 20, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: COLORS.border },
-    mainBtn: { backgroundColor: COLORS.primary, height: 50, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+    mainBtn: { height: 50, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+    disabledBtn: { opacity: 0.7 },
     mainBtnText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
+    registeredBadge: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        backgroundColor: '#F0FFF4', 
+        padding: 12, 
+        borderRadius: 8, 
+        marginTop: 16,
+        borderWidth: 1,
+        borderColor: '#C6F6D5'
+    },
+    registeredBadgeText: { 
+        marginLeft: 8, 
+        color: '#2F855A', 
+        fontSize: 14,
+        fontWeight: '500'
+    },
+    
+    // Modal Styles (keep all existing modal styles)
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
     modalContent: { backgroundColor: '#FFF', height: '85%', borderTopLeftRadius: 30, borderTopRightRadius: 30 },
     modalHeader: { flexDirection: 'row', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#F0F0F0', justifyContent: 'space-between' },
@@ -434,13 +608,47 @@ const styles = StyleSheet.create({
     selectionList: { fontSize: 12, color: COLORS.textSecondary },
     selectionBtn: { backgroundColor: COLORS.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
     selectionBtnText: { color: '#FFF', fontWeight: 'bold' },
+    
+    // Already Registered Modal
+    alreadyRegisteredContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    alreadyRegisteredTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: COLORS.textPrimary,
+        marginTop: 16,
+        marginBottom: 8,
+    },
+    alreadyRegisteredText: {
+        fontSize: 14,
+        color: COLORS.textSecondary,
+        textAlign: 'center',
+        marginBottom: 24,
+        lineHeight: 20,
+    },
+    closeModalBtn: {
+        backgroundColor: COLORS.primary,
+        paddingHorizontal: 32,
+        paddingVertical: 12,
+        borderRadius: 8,
+    },
+    closeModalBtnText: {
+        color: '#FFF',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    
+    // Info Modal Styles
     infoModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
     infoModalContent: { width: '90%', backgroundColor: '#FFF', borderRadius: 20, padding: 20 },
     infoTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
     infoDetailBox: { backgroundColor: COLORS.bg, padding: 15, borderRadius: 12, marginBottom: 20 },
     multiSeatRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5 },
     divider: { height: 1, backgroundColor: '#DDD', marginVertical: 10 },
-    infoLabel: { fontSize: 12, color: COLORS.textSecondary, marginBottom: 5 },
     boldText: { fontWeight: 'bold' },
     infoBtnRow: { flexDirection: 'row', gap: 10 },
     cancelSubBtn: { flex: 1, height: 45, borderRadius: 10, borderWidth: 1, borderColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' },

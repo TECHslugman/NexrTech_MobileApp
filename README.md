@@ -1,100 +1,300 @@
-# 🚀 EduAgent Mobile
+# EduAgent Mobile
 
-An intelligent mobile platform featuring a robust, dual-layered authentication system. Built with **React Native (Expo)** and powered by a **Node.js/Vercel** backend, this app provides a seamless onboarding experience via Google OAuth 2.0 and traditional secure email registration.
+> An intelligent mobile learning platform with a dual-layered authentication system — built for speed, security, and scale.
 
----
 
-## ✨ Features
-
-* **Smart Auth Guard:** Automatic redirection based on user session status using Expo Router segments and protected route logic.
-* **Google One-Tap Sign-In:** Integrated native Google Identity tokens for a frictionless "Continue with Google" experience.
-* **Traditional Login:** Secure email and password authentication with real-time field validation.
-* **Persistent Sessions:** Secure on-device token storage using `expo-secure-store`, ensuring users stay logged in across app restarts.
-* **Resilient Networking:** Advanced fetch handling that captures raw server responses to prevent JSON parsing crashes during backend outages.
-* **Fluid UI/UX:** Comprehensive loading states and activity indicators to provide constant feedback during network requests.
+[![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android-blue.svg)](https://expo.dev)
+[![Built with Expo](https://img.shields.io/badge/Built%20with-Expo-000020.svg?logo=expo)](https://expo.dev)
+[![Node.js](https://img.shields.io/badge/Backend-Node.js%2FVercel-brightgreen.svg)](https://vercel.com)
 
 ---
 
-## 🛠️ Tech Stack
+## Table of Contents
 
-| Component | Technology |
+- [Overview](#overview)
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Architecture](#architecture)
+- [Getting Started](#getting-started)
+- [Project Structure](#project-structure)
+- [API Endpoints](#api-endpoints)
+- [Environment Variables](#environment-variables)
+- [Changelog](#changelog)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## Overview
+
+EduAgent Mobile is a React Native application built with Expo that provides a seamless, secure onboarding experience for learners. It supports both **Google OAuth 2.0** (one-tap sign-in) and **traditional email/password** authentication, with persistent sessions and resilient networking baked in from the start.
+
+The app is designed to serve as a launchpad for AI-powered educational tools, with a protected route architecture that keeps unauthenticated users out while minimising friction for returning ones.
+
+---
+
+## Features
+
+### Authentication
+- **Google One-Tap Sign-In** — native Google Identity tokens for a frictionless OAuth flow
+- **Email & Password Login** — secure registration and login with real-time field validation
+- **Persistent Sessions** — on-device token storage via `expo-secure-store`; users stay logged in across app restarts
+- **Smart Auth Guard** — automatic redirection based on session state using Expo Router's protected segment logic
+
+### Networking & Reliability
+- **Resilient Fetch Handling** — raw server response capture prevents JSON parse crashes during backend outages or cold starts
+- **Loading States** — activity indicators across all async operations for constant user feedback
+
+### Developer Experience
+- **File-based Routing** — Expo Router keeps navigation declarative and colocated with screens
+- **Serverless Backend** — Node.js/Express deployed on Vercel; zero-config scaling
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
 | :--- | :--- |
-| **Frontend** | React Native (Expo) |
-| **Navigation** | Expo Router (File-based) |
-| **Backend** | Node.js / Express (Vercel Serverless) |
-| **State Management** | React Context API |
-| **Storage** | Expo SecureStore |
-| **Identity** | Google OAuth 2.0 / JWT |
+| Frontend | React Native (Expo SDK) |
+| Navigation | Expo Router (file-based) |
+| Backend | Node.js / Express (Vercel Serverless) |
+| State Management | React Context API |
+| Secure Storage | Expo SecureStore |
+| Identity | Google OAuth 2.0 / JWT |
 
 ---
 
-## 🚀 Getting Started
+## Architecture
 
-### 1. Prerequisites
-* [Node.js](https://nodejs.org/) (v18 or newer)
-* [Expo Go](https://expo.dev/client) app on your physical device
-* EAS CLI installed (`npm install -g eas-cli`)
+EduAgent implements a **Triangle of Trust** pattern for authentication:
 
-### 2. Environment Variables
-Create a `.env` file in the root directory:
-```env
-EXPO_PUBLIC_WEB_CLIENT_ID=your_google_web_client_id.apps.googleusercontent.com
-API_BASE_URL=[https://your-production-backend.vercel.app/api/auth/user](https://your-production-backend.vercel.app/api/auth/user)
-3. Installation
-Bash
+```
+App Launch
+    │
+    ▼
+AuthProvider (checks SecureStore for existing token)
+    │
+    ├── Token found ──────► router.replace("/(app)/dashboard")
+    │
+    └── No token ─────────► Restricted to /auth routes
+                                │
+                                ├── Google OAuth ──► Backend validates ──► JWT issued
+                                │
+                                └── Email/Password ─► Backend validates ──► JWT issued
+                                                           │
+                                                           ▼
+                                                  Token saved to SecureStore
+                                                           │
+                                                           ▼
+                                                  Auth state updated ──► Protected routes unlocked
+```
 
-# Clone the repository
-git clone [https://github.com/yourusername/eduagent-mobile.git](https://github.com/yourusername/eduagent-mobile.git)
+### Route Guards
 
-# Install dependencies
+The root `_layout.tsx` acts as the **Gatekeeper**. It watches the global `userToken` state and enforces:
+
+- `userToken === null` → user is constrained to the `/auth` segment
+- `userToken !== null` → user is redirected into `/(app)` automatically
+
+This means screens never need to manage auth redirects themselves — the guard handles it universally.
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) v18 or newer
+- [Expo Go](https://expo.dev/client) installed on a physical device, or an iOS/Android simulator
+- EAS CLI: `npm install -g eas-cli`
+
+### Installation
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/yourusername/eduagent-mobile.git
+cd eduagent-mobile
+
+# 2. Install dependencies
 npm install
 
-# Start the development server with a clean cache
+# 3. Copy the environment template and fill in your values
+cp .env.example .env
+
+# 4. Start the development server with a clean cache
 npx expo start -c
-🔒 Authentication Flow
-The app implements a Triangle of Trust architecture to handle user access:
+```
 
-Bootstrapping: The AuthProvider checks SecureStore for an existing userToken immediately upon app launch.
+Scan the QR code with Expo Go (Android) or the Camera app (iOS) to launch on your device.
 
-The Guard: The _layout.tsx monitors the userToken. If no token exists, it restricts the user to the /auth folder (Register/Login).
+### Running on a Simulator
 
-Handshake: Upon successful login (OAuth or Manual), the backend returns a token. The app saves this to SecureStore and updates the global userToken state.
+```bash
+# iOS (macOS only)
+npx expo run:ios
 
-Automatic Entry: The Layout Guard detects the new token state and instantly triggers router.replace to move the user into the /(app) protected group.
+# Android
+npx expo run:android
+```
 
-📁 Project Structure
-Plaintext
+---
 
+## Project Structure
+
+```
+eduagent-mobile/
 ├── app/
-│   ├── (app)/               # Protected routes (Dashboard, AI Tools)
-│   ├── auth/                # Public routes (Login, Register, OTP)
-│   ├── context/             # AuthContext.tsx (Global auth state)
-│   └── _layout.tsx          # The "Gatekeeper" - Route guard logic
-├── assets/                  # Images and brand assets
-├── components/              # Reusable UI (Buttons, Inputs)
-└── app.json                 # Expo config & Android Package Name
-⚠️ Troubleshooting
-DEPLOYMENT_NOT_FOUND: This occurs if your API_BASE_URL points to an old Vercel deployment. Always use your Production Domain in the .env file rather than a unique deployment hash.
+│   ├── (app)/                  # Protected routes — accessible after login
+│   │   ├── dashboard.tsx       # Main home screen
+│   │   └── _layout.tsx         # Inner layout for protected group
+│   ├── auth/                   # Public routes — no token required
+│   │   ├── login.tsx
+│   │   ├── register.tsx
+│   │   └── otp.tsx
+│   ├── context/
+│   │   └── AuthContext.tsx     # Global auth state — token, user, sign-out
+│   └── _layout.tsx             # Root gatekeeper — enforces auth guard
+├── components/                 # Reusable UI primitives (Buttons, Inputs, Cards)
+├── assets/                     # Images, fonts, icons
+├── api/                        # Vercel serverless functions (backend)
+│   └── auth/
+│       ├── register.js
+│       ├── login.js
+│       └── google.js
+├── .env.example                # Environment variable template
+├── app.json                    # Expo config and Android package name
+├── CHANGELOG.md
+├── CONTRIBUTING.md
+└── LICENSE
+```
 
-JSON Parse Error: Our logic captures raw text responses. If you see this, check the console logs for "Raw Server Response" to see if the backend is returning an HTML error page (like a 404 or 500) instead of JSON.
+---
 
-Metro Connection: Ensure your mobile device and computer are on the same Wi-Fi network. For physical devices on corporate or public Wi-Fi, use the npx expo start --tunnel flag.
+## API Endpoints
 
-🤝 Contributing
-Contributions are what make the open-source community such an amazing place to learn, inspire, and create.
+All endpoints are hosted at your `API_BASE_URL` (e.g. `https://your-app.vercel.app/api`).
 
-Fork the Project
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/auth/register` | Create a new user account |
+| `POST` | `/auth/login` | Authenticate with email and password |
+| `POST` | `/auth/google` | Validate a Google Identity token and issue a JWT |
+| `GET` | `/auth/user` | Return the authenticated user's profile (requires Bearer token) |
 
-Create your Feature Branch (git checkout -b feature/AmazingFeature)
+### Example Request — Login
 
-Commit your Changes (git commit -m 'Add some AmazingFeature')
+```bash
+curl -X POST https://your-app.vercel.app/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "password": "yourpassword"}'
+```
 
-Push to the Branch (git push origin feature/AmazingFeature)
+### Example Response
 
-Open a Pull Request
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": "64f1a2b3c4d5e6f7a8b9c0d1",
+    "email": "user@example.com",
+    "name": "Pradeep"
+  }
+}
+```
 
-📝 License
-Distributed under the MIT License. See LICENSE for more information.
+---
+
+## Environment Variables
+
+Create a `.env` file in the project root. A `.env.example` template is included for reference.
+
+| Variable | Description |
+| :--- | :--- |
+| `EXPO_PUBLIC_WEB_CLIENT_ID` | Google OAuth Web Client ID from Google Cloud Console |
+| `API_BASE_URL` | Your production Vercel backend URL (use the Production Domain, not a deployment hash) |
+
+> **Note:** Variables prefixed with `EXPO_PUBLIC_` are bundled into the client. Never put secret keys in `EXPO_PUBLIC_` variables.
+
+---
+
+## Troubleshooting
+
+**`DEPLOYMENT_NOT_FOUND`**
+Your `API_BASE_URL` is pointing to a specific Vercel deployment hash rather than the stable Production Domain. Update `.env` to use the domain shown in your Vercel project's "Domains" tab.
+
+**JSON Parse Error**
+The app logs the raw server response as `"Raw Server Response"` in the console. If you see this error, check those logs — the backend is likely returning an HTML error page (404 or 500) instead of JSON, usually due to a misconfigured route or cold-start crash.
+
+**Metro / Device Connection Issues**
+Your phone and computer must be on the same Wi-Fi network. On corporate, university, or public networks that block peer-to-peer connections, use the tunnel flag:
+```bash
+npx expo start --tunnel
+```
+
+---
+
+## Changelog
+
+### [0.2.0] — 2025-06-25
+- Added Google One-Tap OAuth sign-in
+- Introduced `expo-secure-store` for persistent sessions
+- Resilient fetch handler to capture raw server responses on error
+- Full loading/activity indicator states across all async flows
+
+### [0.1.0] — 2025-06-10
+- Initial project scaffold with Expo Router
+- Email/password registration and login
+- JWT-based authentication against Node.js/Vercel backend
+- Root layout auth guard (Triangle of Trust pattern)
+
+---
+
+## Contributing
+
+Contributions are welcome and appreciated. This project follows a standard fork-and-PR workflow.
+
+### How to Contribute
+
+1. **Fork** the repository
+2. **Create a branch** for your feature or fix:
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+3. **Make your changes** and write clear, focused commits:
+   ```bash
+   git commit -m "feat: add OTP resend cooldown timer"
+   ```
+4. **Push** to your fork:
+   ```bash
+   git push origin feature/your-feature-name
+   ```
+5. **Open a Pull Request** against the `main` branch with a clear description of what you changed and why.
+
+### Commit Message Convention
 
 
-Would you like me to add a **"Screenshots"** section placeholder or a **"API Endpoints
+| Prefix | Use for |
+| :--- | :--- |
+| `feat:` | A new feature |
+| `fix:` | A bug fix |
+| `docs:` | Documentation changes only |
+| `refactor:` | Code changes that neither fix a bug nor add a feature |
+| `chore:` | Maintenance tasks (deps, config, tooling) |
+
+### Reporting Issues
+
+Please open a [GitHub Issue](https://github.com/yourusername/eduagent-mobile/issues) and include:
+- Your OS and Expo SDK version
+- Steps to reproduce
+- Expected vs. actual behaviour
+- Relevant console logs or screenshots
+
+### Code Style
+
+- TypeScript strict mode is enabled — avoid `any` types
+- Components live in `components/`; screens live in `app/`
+- Keep `AuthContext` lean — business logic belongs in service files, not the context
+
+---
+
+*Built with Expo · Deployed on Vercel · Open for contributions*

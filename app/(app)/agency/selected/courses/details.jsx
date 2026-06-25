@@ -9,7 +9,7 @@ import {
     ActivityIndicator,
     StatusBar,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router'; // Remove useFocusEffect
 import Toast from 'react-native-toast-message';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
@@ -39,53 +39,81 @@ export default function CourseDetail() {
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [courseData, setCourseData] = useState(null);
-    const [isAlreadySelected, setIsAlreadySelected] = useState(false);
+    const [isAlreadySelected, setIsAlreadySelected] = useState(false); // Start with false instead of null
 
+    // Use useEffect like the mentor example - FIXED: changed 'id' to 'courseId'
     useEffect(() => {
-        const fetchCourseAndStatus = async () => {
-            try {
-                setLoading(true);
-                const [courseRes, statusRes] = await Promise.all([
-                    fetch(`${Config.API_BASE_URL}/agency/courses/${courseId}`, {
-                        headers: {
-                            'Authorization': `Bearer ${userToken}`,
-                            'Content-Type': 'application/json'
-                        }
-                    }),
-                    fetch(`${Config.API_BASE_URL}/students/application/status`, {
-                        headers: {
-                            'Authorization': `Bearer ${userToken}`,
-                            'Content-Type': 'application/json'
-                        }
-                    })
-                ]);
+        if (courseId) {
+            fetchAllData();
+        }
+    }, [courseId]); // Only re-run if courseId changes
 
-                if (courseRes.ok) {
-                    const courseJson = await courseRes.json();
-                    setCourseData(courseJson.course || getFallbackData());
-                }
+    const fetchAllData = async () => {
+        try {
+            setLoading(true);
+            
+            // 1. Fetch Course Details
+            const courseRes = await fetch(`${Config.API_BASE_URL}/agency/courses/${courseId}`, {
+                headers: {
+                    'Authorization': `Bearer ${userToken}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+            
+            // 2. Fetch Student Profile
+            const profileRes = await fetch(`${Config.API_BASE_URL}/students/profile`, {
+                headers: {
+                    'Authorization': `Bearer ${userToken}`,
+                    'Content-Type': 'application/json',
+                },
+            });
 
-                if (statusRes.ok) {
-                    const statusJson = await statusRes.json();
-                    if (statusJson.data !== null) {
+            // Handle course data
+            if (courseRes.ok) {
+                const courseJson = await courseRes.json();
+                setCourseData(courseJson.course || getFallbackData());
+            } else {
+                setCourseData(getFallbackData());
+            }
+           
+            // Handle profile data - exactly like mentor example logic
+            if (profileRes.ok) {
+                const profileJson = await profileRes.json();
+                // Get selected course - adjust based on your API response structure
+                const selectedCourseId = profileJson.selectedCourse || 
+                                        profileJson.data?.selectedCourse ||
+                                        profileJson.profile?.selectedCourse;
+                
+                // Logic: Block if student has any selected course
+                if (selectedCourseId) {
+                    if (String(selectedCourseId) === String(courseId)) {
+                        // This specific course is selected
                         setIsAlreadySelected(true);
                     } else {
-                        setIsAlreadySelected(false);
+                        // Another course is selected
+                        setIsAlreadySelected(true); // Still true because they have SOME course selected
                     }
+                } else {
+                    // No course selected at all
+                    setIsAlreadySelected(false);
                 }
-            } catch (error) {
-                setCourseData(getFallbackData());
-            } finally {
-                setLoading(false);
+            } else {
+                // Profile fetch failed, assume not selected
+                setIsAlreadySelected(false);
             }
-        };
-
-        if (userToken) {
-            fetchCourseAndStatus();
+        } catch (error) {
+            console.error("Fetch Error:", error);
+            setCourseData(getFallbackData());
+            setIsAlreadySelected(false);
+        } finally {
+            setLoading(false);
         }
-    }, [courseId, userToken]);
+    };
 
     const handleApplyNow = async () => {
+        // Don't allow if already has a selected course
+        if (isAlreadySelected) return;
+
         try {
             setSubmitting(true);
             const response = await fetch(
@@ -94,15 +122,14 @@ export default function CourseDetail() {
                     method: 'PATCH',
                     headers: {
                         'Authorization': `Bearer ${userToken}`,
-                        'Content-Type': 'application/json'
-                    }
+                        'Content-Type': 'application/json',
+                    },
                 }
             );
 
             if (response.ok) {
                 setIsAlreadySelected(true);
 
-                // REPLACED Success Alert
                 Toast.show({
                     type: 'success',
                     text1: 'Selection Successful',
@@ -110,30 +137,25 @@ export default function CourseDetail() {
                     visibilityTime: 2000,
                 });
 
-                // Delay navigation slightly so the user sees the toast
                 setTimeout(() => {
                     router.back();
                 }, 2100);
-
             } else {
                 const errorData = await response.json();
                 if (response.status === 400 || errorData.message?.includes('already')) {
                     setIsAlreadySelected(true);
                 }
-
-                // REPLACED Failure Alert
                 Toast.show({
                     type: 'error',
                     text1: 'Selection Failed',
-                    text2: errorData.message || "Something went wrong."
+                    text2: errorData.message || 'Something went wrong.',
                 });
             }
         } catch (error) {
-            // REPLACED Connection Alert
             Toast.show({
                 type: 'error',
                 text1: 'Network Error',
-                text2: 'Could not connect to the server.'
+                text2: 'Could not connect to the server.',
             });
         } finally {
             setSubmitting(false);
@@ -141,33 +163,60 @@ export default function CourseDetail() {
     };
 
     const getFallbackData = () => ({
-        title: courseName || "No data",
-        about: "no data",
-        description: "No data",
-        level: "No data",
-        duration: "No data",
-        tuitionFee: { totalfee: "No data", currency: "null" },
-        entryRequirements: ["No data"],
-        status: "null",
+        title: courseName || 'No data',
+        about: 'No data',
+        description: 'No data',
+        level: 'No data',
+        duration: 'No data',
+        tuitionFees: { totalfee: 'No data', currency: 'null' },
+        entryRequirements: ['No data'],
+        status: 'null',
         intakes: null,
-        providedBy: { _id: "695e06c57a990e549f30053f", logo: DEFAULT_UNI_LOGO }
+        providedBy: { _id: '695e06c57a990e549f30053f', logo: DEFAULT_UNI_LOGO },
     });
 
-    const formatTuitionFee = () => {
-        if (!courseData?.tuitionFee?.totalfee) return "Contact for details";
-        const { totalfee, currency } = courseData.tuitionFee;
+    const formatTuitionFees = () => {
+        if (!courseData?.tuitionFees?.totalfee) return 'Contact for details';
+        const { totalfee, currency } = courseData.tuitionFees;
         try {
             const feeNumber = parseInt(totalfee);
             if (isNaN(feeNumber)) return `${currency} ${totalfee}`;
-            return currency === 'AUD' ? `AUD $${feeNumber.toLocaleString()} per year` : `${currency} ${feeNumber.toLocaleString()}`;
+            return currency === 'AUD'
+                ? `AUD $${feeNumber.toLocaleString()} per year`
+                : `${currency} ${feeNumber.toLocaleString()}`;
         } catch (error) {
             return `${currency} ${totalfee}`;
         }
     };
 
     const formatIntakes = () => {
-        if (!courseData?.intakes) return "Limited seats";
+        if (!courseData?.intakes) return 'Limited seats';
         return `${courseData.intakes} seats available`;
+    };
+
+    // Helper function to determine button state - like getButtonConfig in mentor example
+    const getButtonConfig = () => {
+        if (courseData?.status !== 'open') {
+            return { 
+                text: 'APPLICATIONS CLOSED', 
+                disabled: true,
+                color: COLORS.textSecondary 
+            };
+        }
+        
+        if (isAlreadySelected) {
+            return { 
+                text: 'APPLICATION IN PROGRESS', 
+                disabled: true,
+                color: COLORS.textSecondary 
+            };
+        }
+        
+        return { 
+            text: 'APPLY NOW', 
+            disabled: false,
+            color: COLORS.primaryBlue 
+        };
     };
 
     if (loading) {
@@ -179,26 +228,34 @@ export default function CourseDetail() {
         );
     }
 
+    const buttonConfig = getButtonConfig();
 
     return (
         <View style={[styles.container, { backgroundColor: COLORS.bg }]}>
             <StatusBar barStyle="light-content" />
 
             {/* Header */}
-            <View style={[
-                styles.header,
-                {
-                    backgroundColor: courseData.level === 'graduate' ? '#4ECDC4' : '#FF6B6B',
-                    paddingTop: insets.top + 10
-                }
-            ]}>
+            <View
+                style={[
+                    styles.header,
+                    {
+                        backgroundColor:
+                            courseData.level === 'graduate' ? '#4ECDC4' : '#FF6B6B',
+                        paddingTop: insets.top + 10,
+                    },
+                ]}
+            >
                 <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
                     <Ionicons name="chevron-back" size={26} color="#FFF" />
                 </TouchableOpacity>
 
                 <View style={styles.headerContent}>
-                    <Text style={styles.courseLevel}>{courseData.level?.toUpperCase() || 'UNDERGRADUATE'}</Text>
-                    <Text style={styles.courseTitle} numberOfLines={2}>{courseData.title}</Text>
+                    <Text style={styles.courseLevel}>
+                        {courseData.level?.toUpperCase() || 'UNDERGRADUATE'}
+                    </Text>
+                    <Text style={styles.courseTitle} numberOfLines={2}>
+                        {courseData.title}
+                    </Text>
 
                     <View style={styles.courseMeta}>
                         <View style={styles.metaItem}>
@@ -213,13 +270,18 @@ export default function CourseDetail() {
                         <View style={styles.metaDivider} />
                         <View style={styles.metaItem}>
                             <Feather name="check-circle" size={16} color="rgba(255,255,255,0.8)" />
-                            <Text style={styles.metaText}>{courseData.status === 'open' ? 'Open' : 'Closed'}</Text>
+                            <Text style={styles.metaText}>
+                                {courseData.status === 'open' ? 'Open' : 'Closed'}
+                            </Text>
                         </View>
                     </View>
                 </View>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.scrollContent}
+            >
                 {/* About Section */}
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
@@ -227,7 +289,9 @@ export default function CourseDetail() {
                         <Text style={styles.sectionTitle}>About this Course</Text>
                     </View>
                     <View style={styles.card}>
-                        <Text style={styles.cardText}>{courseData.about || 'No description available'}</Text>
+                        <Text style={styles.cardText}>
+                            {courseData.about || 'No description available'}
+                        </Text>
                     </View>
                 </View>
 
@@ -252,7 +316,7 @@ export default function CourseDetail() {
                     </View>
                     <View style={styles.card}>
                         <View style={styles.feeContainer}>
-                            <Text style={styles.feeAmount}>{formatTuitionFee()}</Text>
+                            <Text style={styles.feeAmount}>{formatTuitionFees()}</Text>
                             <Text style={styles.feeNote}>Tuition fee per year</Text>
                         </View>
                     </View>
@@ -265,7 +329,8 @@ export default function CourseDetail() {
                         <Text style={styles.sectionTitle}>Entry Requirements</Text>
                     </View>
                     <View style={styles.card}>
-                        {courseData.entryRequirements && courseData.entryRequirements.length > 0 ? (
+                        {courseData.entryRequirements &&
+                        courseData.entryRequirements.length > 0 ? (
                             courseData.entryRequirements.map((requirement, index) => (
                                 <View key={index} style={styles.requirementItem}>
                                     <View style={styles.bulletPoint} />
@@ -273,7 +338,9 @@ export default function CourseDetail() {
                                 </View>
                             ))
                         ) : (
-                            <Text style={styles.noRequirementsText}>No specific requirements listed</Text>
+                            <Text style={styles.noRequirementsText}>
+                                No specific requirements listed
+                            </Text>
                         )}
                     </View>
                 </View>
@@ -287,46 +354,57 @@ export default function CourseDetail() {
                         </View>
                         <View style={styles.universityCard}>
                             <Image
-                                source={courseData.providedBy.logo ? { uri: courseData.providedBy.logo } : DEFAULT_UNI_LOGO}
+                                source={
+                                    courseData.providedBy.logo
+                                        ? { uri: courseData.providedBy.logo }
+                                        : DEFAULT_UNI_LOGO
+                                }
                                 style={styles.universityLogo}
                                 resizeMode="contain"
                             />
                             <View style={styles.universityInfo}>
-                                <Text style={styles.universityName}>{courseData.providedBy.name || 'University Partner'}</Text>
-                                <Text style={styles.universityNote}>This course is offered through our partner institution</Text>
+                                <Text style={styles.universityName}>
+                                    {courseData.providedBy.name || 'University Partner'}
+                                </Text>
+                                <Text style={styles.universityNote}>
+                                    This course is offered through our partner institution
+                                </Text>
                             </View>
                         </View>
                     </View>
                 )}
             </ScrollView>
 
-            {/* REMOVED: Tracker Notification logic was here */}
-
             {/* Bottom Action Bar */}
             <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 10 }]}>
                 <TouchableOpacity
                     style={[
                         styles.applyButton,
-                        (courseData.status !== 'open' || submitting || isAlreadySelected) && styles.applyButtonDisabled
+                        { backgroundColor: buttonConfig.color },
+                        buttonConfig.disabled && styles.applyButtonDisabled,
                     ]}
-                    disabled={courseData.status !== 'open' || submitting || isAlreadySelected}
+                    disabled={buttonConfig.disabled || submitting}
                     onPress={handleApplyNow}
                 >
                     {submitting ? (
                         <ActivityIndicator color="#FFF" />
                     ) : (
                         <Text style={styles.applyText}>
-                            {isAlreadySelected
-                                ? 'APPLICATION IN PROGRESS'
-                                : courseData.status === 'open' ? 'APPLY NOW' : 'APPLICATIONS CLOSED'}
+                            {buttonConfig.text}
                         </Text>
                     )}
                 </TouchableOpacity>
+                
+                {/* Show message if another course is selected - like blockedText in mentor example */}
+                {isAlreadySelected && courseData?.status === 'open' && (
+                    <Text style={styles.blockedText}>
+                        You already have an active course application.
+                    </Text>
+                )}
             </View>
         </View>
     );
 }
-
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
@@ -358,14 +436,9 @@ const styles = StyleSheet.create({
     universityInfo: { alignItems: 'center' },
     universityName: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 8, textAlign: 'center' },
     universityNote: { fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', lineHeight: 20 },
-    trackerLinkContainer: { paddingHorizontal: 20, marginBottom: 10 },
-    trackerBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#EBF2FA', padding: 15, borderRadius: 16, borderWidth: 1, borderColor: '#D0E1F5' },
-    trackerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    trackerIconCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center' },
-    trackerTitle: { fontSize: 14, fontWeight: '700', color: COLORS.textPrimary },
-    trackerSub: { fontSize: 12, color: COLORS.primaryBlue, fontWeight: '500', marginTop: 2 },
     bottomBar: { padding: 20, backgroundColor: COLORS.bg, borderTopWidth: 1, borderTopColor: COLORS.border },
-    applyButton: { backgroundColor: COLORS.primaryBlue, height: 55, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 5 },
-    applyButtonDisabled: { backgroundColor: COLORS.textSecondary },
+    applyButton: { height: 55, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 5 },
+    applyButtonDisabled: { opacity: 0.7 },
     applyText: { color: '#FFF', fontWeight: 'bold', fontSize: 15, letterSpacing: 1 },
+    blockedText: { textAlign: 'center', color: COLORS.textSecondary, marginTop: 10, fontSize: 12 },
 });
