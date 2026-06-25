@@ -83,6 +83,7 @@ export default function LoginScreen() {
             } else {
                 alert(data.message || "Login failed");
             }
+        // eslint-disable-next-line no-unused-vars
         } catch (error) {
             alert("Server returned an invalid response.");
         } finally {
