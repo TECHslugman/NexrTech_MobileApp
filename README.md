@@ -2,7 +2,7 @@
 
 > An intelligent mobile learning platform with a dual-layered authentication system — built for speed, security, and scale.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 [![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android-blue.svg)](https://expo.dev)
 [![Built with Expo](https://img.shields.io/badge/Built%20with-Expo-000020.svg?logo=expo)](https://expo.dev)
 [![Node.js](https://img.shields.io/badge/Backend-Node.js%2FVercel-brightgreen.svg)](https://vercel.com)
